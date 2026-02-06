@@ -71,6 +71,11 @@ The actual script executed is determined by in `homeos.yml`:
 - profile
 - package overrides
 
+#### Flags
+
+- `--installed`  
+  If this flag is given, list installed package only.
+
 ### Manage packages
 
 ```sh
@@ -253,3 +258,4 @@ Package-specific metadata.
 - `actions_overrides`  
   Override the default action mapping for this package.  
   `install` / `update` / `remove` is used for the alias for related action.
+
