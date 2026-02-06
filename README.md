@@ -1,5 +1,8 @@
 # homeos
 
+> Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).
+> ⚠️ This project is under active development.
+
 ## Commands
 
 ### General
@@ -23,7 +26,7 @@ homeos update [<package>]
 homeos remove [<package>]
 ```
 
-Operate packages defined in the repository.
+Operate on packages defined in the current repository.
 
 - `install`  
   Execute the install action for all applicable packages.  
@@ -194,7 +197,7 @@ profiles:
 Profiles control which packages are active.
 
 - `tags_any`  
-  Packages matching any tag are considered.
+  Packages matching any of the specified tags.
 - `tags_all`  
   Packages must contain all specified tags.
 
