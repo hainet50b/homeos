@@ -46,6 +46,7 @@ homeos cd
 ### Install packages
 
 ```sh
+homeos list
 homeos install [<package>]
 homeos update [<package>]
 homeos remove [<package>]
@@ -53,6 +54,8 @@ homeos remove [<package>]
 
 Operate on packages defined in the current repository.
 
+- `list`  
+  List all available packages across all registered repositories.
 - `install`  
   Execute the install action for all applicable packages.  
   If no package is specified, operate on the package.
@@ -71,6 +74,7 @@ The actual script executed is determined by in `homeos.yml`:
 ### Manage packages
 
 ```sh
+homeos package list
 homeos package add <package>
 homeos package remove <package>
 homeos package cd [<package>]
@@ -78,6 +82,8 @@ homeos package cd [<package>]
 
 Manage package definitions inside the repository.
 
+- `list`  
+  List all defined packages in the repository.
 - `add`  
   Create a new package directory under `packages/` and update `homeos.yml`.
 - `remove`  
@@ -89,12 +95,15 @@ Manage package definitions inside the repository.
 ### Manage repositories
 
 ```sh
+homeos repo list
 homeos repo add <repo_name> <repo_url>
 homeos repo remove <repo_name>
 ```
 
 Manage additional repositories alongside the default repository.
 
+- `list`  
+  List registered repositories.
 - `add`  
   Clone a remote repository into `repos/<repo_name>/`.
 - `remove`  
@@ -105,6 +114,7 @@ Each repository contains its own `homeos.yml`.
 ### Manage recipes
 
 ```sh
+homeos recipe list
 homeos recipe add <recipe>
 homeos recipe remove <recipe>
 homeos recipe cd [<recipe>]
@@ -114,6 +124,8 @@ homeos recipe exec <recipe>/<script>
 
 Recipes are ordered script collections used for grouped operations.
 
+- `list`  
+  Lis all available recipes in the repository.
 - `add`  
   Create a new recipe directory under `recipes/` and update `homeos.yml`.
 - `remove`  
