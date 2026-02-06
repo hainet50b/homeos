@@ -1,6 +1,6 @@
 # homeos
 
-> Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).
+> Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).  
 > ⚠️ This project is under active development.
 
 ## Commands
