@@ -3,6 +3,26 @@
 > Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).  
 > ⚠️ This project is under active development.
 
+## Quick Start
+
+> ⚠️ Under construction
+
+### Using a starter repository
+
+`homeos` itself does not provide built-in templates.  
+Instead, you can initialize your workspace from an external starter repository.
+
+If you want to use a boilerplate repository without inheriting its Git history, use the `--strip-git` option with the `init` subcommand.  
+This option removes the `.git` directory after cloning the remote repository, allowing you to start with a clean repository.
+
+**Example**
+
+```sh
+homeos init default https://github.com/hainet50b/homeos-starter --strip-git
+homeos cd
+git init
+```
+
 ## Commands
 
 ### General
@@ -17,6 +37,11 @@ homeos cd
   If `<repo_name>` and `<repo_url>` are given, clone the remote repository as the default repo.
 - `cd`  
   Move to the default repository directory.
+
+#### Flags
+
+- `--strip-git`  
+  If this flag is given, clone the remote repository without inheriting its Git history.
 
 ### Install packages
 
