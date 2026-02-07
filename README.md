@@ -325,3 +325,34 @@ packages:
 
 - `params` schema is defined by a plugin.
 - Package-level `actions_overrides` takes precedence over plugin-provided actions.
+
+## Repository design patterns
+
+There are two common ways to design your `homeos` repositories.
+
+### Pattern 1: Single repository (recommended for new users)
+
+Manage packages, recipes, and multiple plugins in a single repository.  
+This pattern keeps your workspace simple and is a good default for personal setups.
+
+- Use `platform` / `profile` to select actions and packages.
+- Register multiple plugins under `plugins/` as needed (e.g. `dnf` / `winget`).
+
+This is the recommended starting point.
+
+### Pattern 2: Multiple repositories by provider / platform
+
+Split repositories by package provider or platform, and use them side by side.
+
+Examples:
+
+- `homeos-repo-linux` (shell script and dnf/apt-based packages)
+- `homeos-repo-windows` (winget/scoop/chocolatey-based packages)
+
+This pattern can be useful when:
+
+- you maintain both Linux and Windows environments,
+- you want stricter separation of responsibilities,
+- or you share repositories across teams.
+
+`homeos` supports both patterns. Start with Pattern 1, and split repositories only when it becomes beneficial.
