@@ -3,6 +3,28 @@
 > Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).  
 > ⚠️ This project is under active development.
 
+## Table of contents
+
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+  - [General](#general)
+  - [Manage packages](#manage-packages)
+  - [Operate packages](#operate-packages)
+  - [Manage recipes](#manage-recipes)
+  - [Execute recipes](#execute-recipes)
+  - [Manage repositories](#manage-repositories)
+  - [Manage plugins](#manage-plugins)
+  - [Options](#options)
+- [Directory Structure](#directory-structure)
+- [Configuration File (homeos.yml)](#configuration-file-homeosyml)
+  - [Defaults](#defaults)
+  - [Platforms](#platforms)
+  - [Profiles](#profiles)
+  - [Packages](#packages)
+  - [Recipes](#recipes)
+  - [Plugins](#plugins)
+- [Repository Design Patterns](#repository-design-patterns)
+
 ## Quick Start
 
 > ⚠️ Under construction
