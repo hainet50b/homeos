@@ -30,6 +30,7 @@ git init
 ```sh
 homeos init [<repo_name> <repo_url>]
 homeos cd
+homeos apply
 ```
 
 - `init`  
@@ -37,6 +38,8 @@ homeos cd
   If `<repo_name>` and `<repo_url>` are given, clone the remote repository as the default repo.
 - `cd`  
   Move to the default repository directory.
+- `apply`  
+  Install missing packages, updating installed ones, and executing any unapplied recipes.
 
 #### Flags
 
@@ -46,7 +49,6 @@ homeos cd
 ### Install packages
 
 ```sh
-homeos list
 homeos install [<package>]
 homeos update [<package>]
 homeos remove [<package>]
@@ -54,8 +56,6 @@ homeos remove [<package>]
 
 Operate on packages defined in the current repository.
 
-- `list`  
-  List all available packages across all registered repositories.
 - `install`  
   Execute the install action for all applicable packages.  
   If no package is specified, operate on the package.
@@ -70,11 +70,6 @@ The actual script executed is determined by in `homeos.yml`:
 - platform
 - profile
 - package overrides
-
-#### Flags
-
-- `--installed`  
-  If this flag is given, list installed package only.
 
 ### Manage packages
 
@@ -96,6 +91,11 @@ Manage package definitions inside the repository.
 - `cd`  
   Move to the package root directory.  
   If name is given, move to the package directory.
+
+#### Flags
+
+- `--installed`  
+  If this flag is given, list installed package only.
 
 ### Manage repositories
 
