@@ -39,7 +39,7 @@ homeos apply
 - `cd`  
   Move to the default repository directory.
 - `apply`  
-  Install missing packages, update installed ones, and execute any unapplied recipes.
+  Install missing packages, update installed ones, execute any unapplied recipes, and add defined plugins.
 
 #### Flags
 
@@ -72,7 +72,7 @@ Manage package definitions inside the repository.
 - `--installed`  
   If this flag is given, list installed package only.
 
-### Install packages
+### Operate packages
 
 ```sh
 homeos package install [<package>]
@@ -149,6 +149,25 @@ Manage additional repositories alongside the default repository.
 
 Each repository contains its own `homeos.yml`.
 
+### Manage plugins
+
+```sh
+homeos plugin list
+homeos plugin add <plugin_name> <plugin_url>
+homeos plugin remove <plugin_name>
+```
+
+Manage plugins used to provide package action implementations.
+
+- `list`  
+  List registered plugins in the current repository.
+- `add`  
+  Register a plugin by name and clone it from the given URL.
+- `remove`  
+  Remove the plugin directory and entry from `homeos.yml`.
+
+Each repository manages its own plugins.
+
 ### Options
 
 ```
@@ -187,10 +206,12 @@ Profiles affect:
                 │   │       ├── install.sh
                 │   │       ├── update.sh
                 │   │       └── uninstall.sh
-                │   └── recipes/
-                │       └── my-recipe/
-                │           ├── 01-foo.sh
-                │           └── 02.bar.sh
+                │   ├── recipes/
+                │   │   └── my-recipe/
+                │   │       ├── 01-foo.sh
+                │   │       └── 02.bar.sh
+                │   └── plugins/
+                │       └── dnf/
                 ├── remote-repo1
                 └── remote-repo2
 ```
@@ -199,6 +220,7 @@ Profiles affect:
 - `homeos.yml` defines behavior and package metadata.
 - `packages/` contains package action scripts.
 - `recipes/` contains grouped execution flows.
+- `plugins/` contains plugin implementations.
 
 ## Configuration File (homeos.yml)
 
@@ -276,3 +298,30 @@ recipes:
 
 - `tags`  
   Used for profile-based selection.
+
+### Plugins
+
+```yaml
+plugins:
+  dnf:
+    url: https://github.com/hainet50b/homeos-plugin-dnf
+```
+
+Plugins provide implementations for package actions such as `install`, `update`, and `uninstall`.
+
+- Each plugin is identified by a unique name.
+- The `url` specifies the remote repository used to obtain the plugin.
+
+Packages can reference a plugin to delegate actions.  
+When a package specifies a plugin, its action behavior is resolved through that plugin.
+
+```yaml
+packages:
+  neovim:
+    plugin: dnf
+    params:
+      name: neovim.x86_64
+```
+
+- `params` schema is defined by a plugin.
+- Package-level `actions_overrides` takes precedence over plugin-provided actions.
