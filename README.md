@@ -250,6 +250,7 @@ Profiles control which packages are active.
   Packages must contain all specified tags.
 
 ### Packages
+
 ```yaml
 packages:
   neovim:
@@ -265,3 +266,13 @@ Package-specific metadata.
   Override the default action mapping for this package.  
   `install` / `update` / `uninstall` is used for the alias for related action.
 
+### Recipes
+
+```yaml
+recipes:
+  my-recipe:
+    tags: [ desktop, home ]
+```
+
+- `tags`  
+  Used for profile-based selection.
