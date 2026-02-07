@@ -39,37 +39,12 @@ homeos apply
 - `cd`  
   Move to the default repository directory.
 - `apply`  
-  Install missing packages, updating installed ones, and executing any unapplied recipes.
+  Install missing packages, update installed ones, and execute any unapplied recipes.
 
 #### Flags
 
 - `--strip-git`  
   If this flag is given, clone the remote repository without inheriting its Git history.
-
-### Install packages
-
-```sh
-homeos install [<package>]
-homeos update [<package>]
-homeos remove [<package>]
-```
-
-Operate on packages defined in the current repository.
-
-- `install`  
-  Execute the install action for all applicable packages.  
-  If no package is specified, operate on the package.
-- `update`  
-  Execute the update action for the specified package.
-- `remove`  
-  Execute the remove action for the specified package.
-
-The actual script executed is determined by in `homeos.yml`:
-
-- defaults
-- platform
-- profile
-- package overrides
 
 ### Manage packages
 
@@ -97,6 +72,64 @@ Manage package definitions inside the repository.
 - `--installed`  
   If this flag is given, list installed package only.
 
+### Install packages
+
+```sh
+homeos package install [<package>]
+homeos package update [<package>]
+homeos package uninstall [<package>]
+```
+
+Operate on packages defined in the current repository.
+
+- `install`  
+  Execute the install action for all applicable packages.  
+  If no package is specified, operate on the package.
+- `update`  
+  Execute the update action for the specified package.
+- `uninstall`  
+  Execute the uninstall action for the specified package.
+
+The actual script executed is determined by in `homeos.yml`:
+
+- defaults
+- platform
+- profile
+- package overrides
+
+### Manage recipes
+
+```sh
+homeos recipe list
+homeos recipe add <recipe>
+homeos recipe remove <recipe>
+homeos recipe cd [<recipe>]
+```
+
+Recipes are ordered script collections used for grouped operations.
+
+- `list`  
+  Lis all available recipes in the repository.
+- `add`  
+  Create a new recipe directory under `recipes/` and update `homeos.yml`.
+- `remove`  
+  Remove the recipe entry and directory.
+- `cd`  
+  Move to the recipe root directory.  
+  If name is given, move to the recipe directory.
+
+### Execute recipes
+
+```sh
+homeos recipe exec <recipe>
+homeos recipe exec <recipe>/<script>
+```
+
+- `exec`  
+  Execute all scripts in the recipe in order.
+- `exec <recipe>/<script>`  
+  Execute a specific script within the recipe.
+
 ### Manage repositories
 
 ```sh
@@ -115,33 +148,6 @@ Manage additional repositories alongside the default repository.
   Remove the local repository directory.
 
 Each repository contains its own `homeos.yml`.
-
-### Manage recipes
-
-```sh
-homeos recipe list
-homeos recipe add <recipe>
-homeos recipe remove <recipe>
-homeos recipe cd [<recipe>]
-homeos recipe exec <recipe>
-homeos recipe exec <recipe>/<script>
-```
-
-Recipes are ordered script collections used for grouped operations.
-
-- `list`  
-  Lis all available recipes in the repository.
-- `add`  
-  Create a new recipe directory under `recipes/` and update `homeos.yml`.
-- `remove`  
-  Remove the recipe entry and directory.
-- `cd`  
-  Move to the recipe root directory.  
-  If name is given, move to the recipe directory.
-- `exec`  
-  Execute all scripts in the recipe in order.
-- `exec <recipe>/<script>`  
-  Execute a specific script within the recipe.
 
 ### Options
 
@@ -180,7 +186,7 @@ Profiles affect:
                 │   │   └── neovim/
                 │   │       ├── install.sh
                 │   │       ├── update.sh
-                │   │       └── remove.sh
+                │   │       └── uninstall.sh
                 │   └── recipes/
                 │       └── my-recipe/
                 │           ├── 01-foo.sh
@@ -200,7 +206,7 @@ Profiles affect:
 
 ```yaml
 defaults:
-  actions: { install: install.sh, update: update.sh, remove: remove.sh }
+  actions: { install: install.sh, update: update.sh, uninstall: uninstall.sh }
   profile: home-desktop
   platform: linux
 ```
@@ -219,7 +225,7 @@ Global defaults used when no overrides are present.
 ```yaml
 platforms:
   linux:
-    actions_overrides: { install: install.ps1, update: update.ps1, remove: remove.ps1 }
+    actions_overrides: { install: install.ps1, update: update.ps1, uninstall: uninstall.ps1 }
 ```
 
 Platform-specific befavior overrides.
@@ -257,5 +263,5 @@ Package-specific metadata.
   Used for profile-based selection.
 - `actions_overrides`  
   Override the default action mapping for this package.  
-  `install` / `update` / `remove` is used for the alias for related action.
+  `install` / `update` / `uninstall` is used for the alias for related action.
 
