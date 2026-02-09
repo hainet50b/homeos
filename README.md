@@ -269,14 +269,14 @@ Global defaults used when no overrides are present.
   Default script names for each action.
 - `profile`  
   Default profile used when `--profile` is not specified.
-- `platform` (Optional)  
+- `platform` (optional)  
   The platform identifier used to resolve platform-specific overrides.
 
 ### Platforms
 
 ```yaml
 platforms:
-  linux:
+  windows:
     actions_overrides: { install: install.ps1, update: update.ps1, uninstall: uninstall.ps1 }
 ```
 
@@ -296,9 +296,9 @@ profiles:
 
 Profiles control which packages are active.
 
-- `tags_any`  
+- `tags_any` (optional)  
   Packages matching any of the specified tags.
-- `tags_all`  
+- `tags_all` (optional)  
   Packages must contain all specified tags.
 
 ### Packages
@@ -330,7 +330,7 @@ recipes:
     tags: [ desktop, home ]
 ```
 
-- `tags`  
+- `tags` (optional)  
   Used for profile-based selection.
 
 ### Plugins
@@ -340,6 +340,9 @@ plugins:
   dnf:
     url: https://github.com/hainet50b/homeos-plugin-dnf
 ```
+
+- `url`  
+  Specifies a plugin url.
 
 Plugins provide implementations for package actions such as `install`, `update`, and `uninstall`.
 
