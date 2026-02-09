@@ -100,6 +100,8 @@ Manage package definitions inside the repository.
 homeos package install [<package>]
 homeos package update [<package>]
 homeos package uninstall [<package>]
+homeos package enable <package>
+homeos package disable <package>
 ```
 
 Operate on packages defined in the current repository.
@@ -111,13 +113,19 @@ Operate on packages defined in the current repository.
   Execute the update action for the specified package.
 - `uninstall`  
   Execute the uninstall action for the specified package.
+- `enable`  
+  Mark the specified package as enabled in `homeos.yml`.  
+  This removes `enabled: false` so the package will be included in `homeos apply`.
+- `disable`  
+  Mark the specified package as disabled in `homeos.yml`.  
+  This sets `enabled: false` so the package will be skipped by `homeos apply` and shown as disabled in `homeos list`.
 
 The actual script executed is determined by in `homeos.yml`:
 
 - defaults
 - platform
 - profile
-- package overrides
+- packages
 
 ### Manage recipes
 
@@ -300,15 +308,19 @@ packages:
   neovim:
     tags: [ cli, home, work ]
     actions_overrides: { update: install }
+    enabled: false
 ```
 
 Package-specific metadata.
 
-- `tags`  
+- `tags` (optional)  
   Used for profile-based selection.
-- `actions_overrides`  
-  Override the default action mapping for this package.  
-  `install` / `update` / `uninstall` is used for the alias for related action.
+- `actions_overrides` (optional)  
+  Overrides the default action mapping for this package.  
+  `install` / `update` / `uninstall` can be used for the alias for related action.
+- `enabled` (optional, default: true)  
+  Controls whether this package is managed by homeos.  
+  When set to `false`, the package is ignored by `homeos apply`.
 
 ### Recipes
 
