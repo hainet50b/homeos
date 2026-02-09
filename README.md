@@ -61,7 +61,7 @@ homeos apply
 - `cd`  
   Move to the default repository directory.
 - `apply`  
-  Install missing packages, update installed ones, execute any unapplied recipes, and add defined plugins.
+  Install missing packages, update installed ones, execute any recipes that are not yet applied, and add defined plugins.
 
 #### Flags
 
@@ -280,7 +280,7 @@ platforms:
     actions_overrides: { install: install.ps1, update: update.ps1, uninstall: uninstall.ps1 }
 ```
 
-Platform-specific befavior overrides.
+Platform-specific behavior overrides.
 
 - `actions_overrides`  
   Replace default action scripts for the given platform.
@@ -342,7 +342,7 @@ plugins:
 ```
 
 - `url`  
-  Specifies a plugin url.
+  Specifies a plugin URL.
 
 Plugins provide implementations for package actions such as `install`, `update`, and `uninstall`.
 
