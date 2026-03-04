@@ -92,7 +92,7 @@ Manage package definitions inside the repository.
 #### Flags
 
 - `--installed`  
-  If this flag is given, list installed package only.
+  If this flag is given, list installed packages only.
 
 ### Operate packages
 
@@ -108,11 +108,13 @@ Operate on packages defined in the current repository.
 
 - `install`  
   Execute the install action for all applicable packages.  
-  If no package is specified, operate on the package.
+  If package is specified, operate on the package.
 - `update`  
-  Execute the update action for the specified package.
+  Execute the update action for all applicable packages.  
+  If package is specified, operate on the package.
 - `uninstall`  
-  Execute the uninstall action for the specified package.
+  Execute the uninstall action for all applicable packages.  
+  If package is specified, operate on the package.
 - `enable`  
   Mark the specified package as enabled in `homeos.yml`.  
   This removes `enabled: false` so the package will be included in `homeos apply`.
@@ -120,7 +122,7 @@ Operate on packages defined in the current repository.
   Mark the specified package as disabled in `homeos.yml`.  
   This sets `enabled: false` so the package will be skipped by `homeos apply` and shown as disabled in `homeos list`.
 
-The actual script executed is determined by in `homeos.yml`:
+The actual script executed is determined by the following sections in `homeos.yml`:
 
 - defaults
 - platform
@@ -139,11 +141,11 @@ homeos recipe cd [<recipe>]
 Recipes are ordered script collections used for grouped operations.
 
 - `list`  
-  Lis all available recipes in the repository.
+  List all available recipes in the repository.
 - `add`  
   Create a new recipe directory under `recipes/` and update `homeos.yml`.
 - `remove`  
-  Remove the recipe entry and directory.
+  Remove the recipe entry from `homeos.yml`.
 - `cd`  
   Move to the recipe root directory.  
   If name is given, move to the recipe directory.
@@ -239,7 +241,7 @@ Profiles affect:
                 │   ├── recipes/
                 │   │   └── my-recipe/
                 │   │       ├── 01-foo.sh
-                │   │       └── 02.bar.sh
+                │   │       └── 02-bar.sh
                 │   └── plugins/
                 │       └── dnf/
                 ├── remote-repo1
