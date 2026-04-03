@@ -1,6 +1,7 @@
 use crate::config::{Config, PackageConfig};
 use crate::confirm::{confirm_plan, Plan};
 use crate::context::Context;
+use crate::state::State;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -206,6 +207,21 @@ pub fn run_action<R: BufRead, W: Write>(
         writer.flush()?;
         execute_script(&script_path)?;
         writeln!(writer, "done")?;
+    }
+
+    if action == "install" {
+        let state_path = ctx.state_path();
+        let mut state = if state_path.exists() {
+            State::load(&state_path)?
+        } else {
+            State::default()
+        };
+        for name in &plan.enabled {
+            if !state.installed.contains(name) {
+                state.installed.push(name.clone());
+            }
+        }
+        state.save(&state_path)?;
     }
 
     Ok(())
@@ -1045,5 +1061,116 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_install_records_package_in_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "INSTALL_MARKER",
+        );
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_install_creates_state_file_if_missing() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "INSTALL_MARKER",
+        );
+        assert!(!ctx.state_path().exists());
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+
+        // Assert
+        assert!(ctx.state_path().exists());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_install_appends_to_existing_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n  ripgrep: {}\n",
+            "neovim",
+            "install",
+            "INSTALL_MARKER",
+        );
+        // Pre-populate state with ripgrep
+        let state = State {
+            installed: vec!["ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ripgrep", "neovim"]);
+    }
+
+    #[test]
+    fn test_install_does_not_duplicate_in_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "INSTALL_MARKER",
+        );
+        // Pre-populate state with neovim already installed
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_update_does_not_record_in_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "update",
+            "UPDATE_MARKER",
+        );
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output).unwrap();
+
+        // Assert
+        assert!(!ctx.state_path().exists());
     }
 }

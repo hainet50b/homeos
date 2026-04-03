@@ -503,3 +503,29 @@ Added a `gitignore_path()` method to `Context` returning `<default_repo_dir>/.gi
 
 - The `.gitignore` is created after `homeos.yml` so it's covered by the existing idempotency guard — if init was already run, neither file is touched.
 - All 90 tests pass (87 existing + 1 new context test + 2 new init tests).
+
+## Task: Enhance `homeos package install` to record installed packages in `state.yml`
+
+**Timestamp:**
+
+2026-04-03T17:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Depends on `state.yml` parsing (completed) and `package install` (completed).
+
+**What was done:**
+
+Enhanced `run_action` to record installed packages in `state.yml` after successful install execution. When the action is "install", the function loads `state.yml` (or creates a default `State` if the file doesn't exist), appends newly installed packages (avoiding duplicates), and saves. Added `use crate::state::State` import. Added 5 tests: recording a package in state, creating state file when missing, appending to existing state, deduplication when already in state, and verifying update does not modify state.
+
+**What was changed:**
+
+- src/commands/package.rs (added state recording logic in `run_action`, added `State` import, added 5 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The state recording only happens for the "install" action, not for "update" or "uninstall" (uninstall will be handled in the next task).
+- Deduplication uses `Vec::contains` which is O(n) but sufficient for the expected small number of packages.
+- All 95 tests pass (90 existing + 5 new).
