@@ -46,7 +46,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 
 ## Tasks
 
-- [ ] Scaffold Cargo project with clap CLI skeleton (`homeos --help` works). Base directory must be injectable so tests use a `tempdir` instead of the real data directory.
+- [x] Scaffold Cargo project with clap CLI skeleton (`homeos --help` works). Base directory must be injectable so tests use a `tempdir` instead of the real data directory.
 - [ ] Implement `homeos.yml` parsing with serde (packages with `actions_overrides` and `enabled`)
 - [ ] Implement `homeos init` — create directory structure and empty `homeos.yml`
 - [ ] Implement `homeos cd` — launch a shell in the default repository directory
