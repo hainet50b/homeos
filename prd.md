@@ -70,6 +70,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos package install <pkg>...` — execute install action scripts
 - [x] Implement `homeos package update <pkg>...` — execute update action scripts
 - [x] Implement `homeos package uninstall <pkg>...` — execute uninstall action scripts
+- [ ] Implement `homeos package cat <pkg>` — display all action scripts with filename headers. Show `(not found)` for missing scripts.
 
 ## Completion Criteria
 
