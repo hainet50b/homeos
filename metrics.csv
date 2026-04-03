@@ -2,3 +2,5 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-03T06:29:26Z,f578fa6,"Scaffold Cargo project with clap CLI skeleton",166,23,4685,0.5555059999999999
 2026-04-03T06:32:54Z,5d32c89,"Implement homeos.yml config parsing with serde",204,16,3866,0.3437535
 2026-04-03T06:34:29Z,4a3fff9,"Implement homeos init command",91,18,3353,0.37116849999999996
+2026-04-03T07:35:55Z,0432106,"Migrate from serde_yaml to yaml_serde",115,18,3389,0.40574499999999997
+2026-04-03T07:37:44Z,2a9d6d4,"Refactor all unit tests to follow 3A pattern (Arrange / Act / Assert)",105,13,6134,0.4012227499999999
