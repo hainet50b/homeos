@@ -24,8 +24,6 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
 
 ## Quick Start
 
-> ⚠️ Under construction
-
 ### Using a starter repository
 
 `homeos` itself does not provide built-in templates.  
