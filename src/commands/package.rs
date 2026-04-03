@@ -171,7 +171,19 @@ pub fn run_action<R: BufRead, W: Write>(
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
-    let plan = Plan::build(&config, packages, action)?;
+
+    let installed = if action == "install" {
+        let state_path = ctx.state_path();
+        if state_path.exists() {
+            State::load(&state_path)?.installed
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let plan = Plan::build(&config, packages, action, &installed)?;
 
     if plan.is_empty() {
         let display = plan.display();
@@ -1282,5 +1294,131 @@ mod tests {
 
         // Assert
         assert!(!ctx.state_path().exists());
+    }
+
+    #[test]
+    fn test_install_skips_already_installed_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "SHOULD_NOT_RUN",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (already installed)"));
+        assert!(written.contains("No packages to install."));
+        assert!(!written.contains("Installing"));
+    }
+
+    #[test]
+    fn test_install_skips_already_installed_but_installs_new() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n  zed: {}\n",
+            "neovim",
+            "install",
+            "NEOVIM_MARKER",
+        );
+        // Also create install script for zed
+        let zed_dir = ctx.packages_dir().join("zed");
+        std::fs::create_dir_all(&zed_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        std::fs::write(
+            zed_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'ZED_MARKER'\n",
+        )
+        .unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string(), "zed".to_string()],
+            "install",
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (already installed)"));
+        assert!(written.contains("Installing zed... done"));
+        assert!(!written.contains("Installing neovim"));
+    }
+
+    #[test]
+    fn test_install_all_already_installed_shows_no_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n  zed: {}\n",
+            "neovim",
+            "install",
+            "SHOULD_NOT_RUN",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string(), "zed".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string(), "zed".to_string()],
+            "install",
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (already installed)"));
+        assert!(written.contains("Skipping zed (already installed)"));
+        assert!(written.contains("No packages to install."));
+    }
+
+    #[test]
+    fn test_update_does_not_skip_already_installed() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "update",
+            "UPDATE_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating neovim... done"));
+        assert!(!written.contains("already installed"));
     }
 }

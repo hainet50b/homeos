@@ -90,6 +90,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Enhance `homeos init` to generate `.gitignore` that excludes `state.yml`
 - [x] Enhance `homeos package install` to record installed packages in `state.yml`. Create `state.yml` if it does not exist.
 - [x] Enhance `homeos package uninstall` to remove uninstalled packages from `state.yml`
+- [x] Enhance `homeos package install` to skip already-installed packages. Pass `state.yml` into `Plan::build` so it classifies installed packages separately. Display `Skipping <pkg> (already installed)` in the plan and do not execute the install script for those packages.
 
 ## Completion Criteria
 

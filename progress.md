@@ -554,3 +554,30 @@ Enhanced `run_action` to remove uninstalled packages from `state.yml` after succ
 
 - The state removal only happens when `state.yml` exists — unlike install which creates it if missing, uninstall has nothing to do if there's no state file.
 - All 99 tests pass (95 existing + 4 new).
+
+## Task: Enhance `homeos package install` to skip already-installed packages
+
+**Timestamp:**
+
+2026-04-03T18:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies (state.yml parsing, package install with state recording) were already in place.
+
+**What was done:**
+
+Enhanced `Plan::build` to accept an `installed` slice parameter. When a package is both enabled and present in the installed list, it is classified into a new `already_installed` field instead of `enabled`. Updated `Plan::display` to show `Skipping <pkg> (already installed)` for these packages. Modified `run_action` to load `state.yml` (when action is "install") and pass the installed list to `Plan::build`. Already-installed packages are not executed. Added 3 new tests to `confirm.rs` (classifies already-installed, all already-installed, display message) and 4 new tests to `package.rs` (skip single, skip with mix, all already-installed, update ignores installed state).
+
+**What was changed:**
+
+- src/confirm.rs (added `already_installed` field to `Plan`, updated `build` signature and logic, updated `display`, added 3 tests, updated all existing test call sites)
+- src/commands/package.rs (updated `run_action` to load state for install action and pass to `Plan::build`, added 4 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `installed` parameter is passed as `&[]` for non-install actions, so update/uninstall behavior is unchanged.
+- Disabled packages take precedence over already-installed in the classification logic (checked first).
+- All 106 tests pass (99 existing + 3 new confirm tests + 4 new package tests).
