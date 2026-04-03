@@ -9,7 +9,7 @@ See `README.md` for the full specification of commands, directory structure, and
 
 - Rust (latest stable)
 - clap (CLI argument parsing)
-- serde / serde_yaml (configuration parsing)
+- serde / yaml_serde (configuration parsing)
 - dirs (OS-appropriate data directory resolution)
 
 ## Data Model
@@ -49,7 +49,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Scaffold Cargo project with clap CLI skeleton (`homeos --help` works). Base directory must be injectable so tests use a `tempdir` instead of the real data directory.
 - [x] Implement `homeos.yml` parsing with serde (packages with `actions_overrides` and `enabled`)
 - [x] Implement `homeos init` — create directory structure and empty `homeos.yml`
-- [ ] Migrate from `serde_yaml` to `serde_yml` and update all existing code and tests
+- [ ] Migrate from `serde_yaml` to `yaml_serde` and update all existing code and tests
 - [ ] Refactor all existing unit tests to follow the 3A pattern (Arrange / Act / Assert)
 - [ ] Implement `homeos cd` — launch a shell in the default repository directory
 - [ ] Implement `homeos package list` — list all packages from `homeos.yml`
