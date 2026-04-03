@@ -222,6 +222,13 @@ pub fn run_action<R: BufRead, W: Write>(
             }
         }
         state.save(&state_path)?;
+    } else if action == "uninstall" {
+        let state_path = ctx.state_path();
+        if state_path.exists() {
+            let mut state = State::load(&state_path)?;
+            state.installed.retain(|name| !plan.enabled.contains(name));
+            state.save(&state_path)?;
+        }
     }
 
     Ok(())
@@ -1153,6 +1160,109 @@ mod tests {
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_uninstall_removes_package_from_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ripgrep"]);
+    }
+
+    #[test]
+    fn test_uninstall_noop_when_no_state_file() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        assert!(!ctx.state_path().exists());
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!ctx.state_path().exists());
+    }
+
+    #[test]
+    fn test_uninstall_removes_multiple_packages_from_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        for pkg in &["neovim", "ripgrep"] {
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            ).unwrap();
+        }
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string(), "zed".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "uninstall",
+            &mut input,
+            &mut output,
+        ).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["zed"]);
+    }
+
+    #[test]
+    fn test_uninstall_ignores_package_not_in_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ripgrep"]);
     }
 
     #[test]

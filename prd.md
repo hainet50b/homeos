@@ -89,7 +89,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `state.yml` parsing with serde (installed packages list)
 - [x] Enhance `homeos init` to generate `.gitignore` that excludes `state.yml`
 - [x] Enhance `homeos package install` to record installed packages in `state.yml`. Create `state.yml` if it does not exist.
-- [ ] Enhance `homeos package uninstall` to remove uninstalled packages from `state.yml`
+- [x] Enhance `homeos package uninstall` to remove uninstalled packages from `state.yml`
 
 ## Completion Criteria
 

@@ -529,3 +529,28 @@ Enhanced `run_action` to record installed packages in `state.yml` after successf
 - The state recording only happens for the "install" action, not for "update" or "uninstall" (uninstall will be handled in the next task).
 - Deduplication uses `Vec::contains` which is O(n) but sufficient for the expected small number of packages.
 - All 95 tests pass (90 existing + 5 new).
+
+## Task: Enhance `homeos package uninstall` to remove uninstalled packages from `state.yml`
+
+**Timestamp:**
+
+2026-04-03T17:30:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies (state.yml parsing, package uninstall execution) were already in place.
+
+**What was done:**
+
+Enhanced `run_action` to remove uninstalled packages from `state.yml` after successful uninstall execution. When the action is "uninstall" and `state.yml` exists, the function loads the state, removes the uninstalled packages using `Vec::retain`, and saves. If `state.yml` does not exist, the uninstall proceeds without state modification (no-op). Added 4 tests covering: removing a package from state, no-op when state file is missing, removing multiple packages from state, and ignoring packages not present in state.
+
+**What was changed:**
+
+- src/commands/package.rs (added state removal logic in `run_action` for "uninstall" action, added 4 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The state removal only happens when `state.yml` exists — unlike install which creates it if missing, uninstall has nothing to do if there's no state file.
+- All 99 tests pass (95 existing + 4 new).
