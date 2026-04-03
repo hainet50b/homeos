@@ -97,24 +97,37 @@ Manage package definitions inside the repository.
 ### Operate packages
 
 ```sh
-homeos package install [<package>]
-homeos package update [<package>]
-homeos package uninstall [<package>]
+homeos package install <package>...
+homeos package update <package>...
+homeos package uninstall <package>...
 homeos package enable <package>
 homeos package disable <package>
 ```
 
 Operate on packages defined in the current repository.
 
-- `install`  
-  Execute the install action for all applicable packages.  
-  If package is specified, operate on the package.
-- `update`  
-  Execute the update action for all applicable packages.  
-  If package is specified, operate on the package.
-- `uninstall`  
-  Execute the uninstall action for all applicable packages.  
-  If package is specified, operate on the package.
+- `install`
+  Execute the install action for the specified packages.
+- `update`
+  Execute the update action for the specified packages.
+- `uninstall`
+  Execute the uninstall action for the specified packages.
+
+Before execution, a confirmation prompt is shown with the list of packages to be operated on.
+Disabled packages are skipped and reported in the plan.
+
+```
+$ homeos package install neovim zed docker
+The following packages will be installed:
+  neovim
+  zed
+Skipping docker (disabled)
+
+Proceed? [y/N] y
+Installing neovim... done
+Installing zed... done
+```
+
 - `enable`  
   Mark the specified package as enabled in `homeos.yml`.  
   This removes `enabled: false` so the package will be included in `homeos apply`.
