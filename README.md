@@ -123,7 +123,7 @@ Manage package definitions inside the repository.
 ```sh
 homeos package install <package>...
 homeos package update <package>...
-homeos package uninstall <package>...
+homeos package uninstall <package>... | --all
 homeos package enable <package>
 homeos package disable <package>
 ```
@@ -138,7 +138,8 @@ Operate on packages defined in the current repository.
 - `uninstall`
   Execute the uninstall action for the specified packages.  
   Disables uninstalled packages in `homeos.yml` and removes them from `state.yml` if present.  
-  The uninstall script is always executed regardless of `state.yml` status.
+  The uninstall script is always executed regardless of `state.yml` status.  
+  With `--all`, uninstall all packages recorded in `state.yml`.
 
 Before execution, a confirmation prompt is shown with the list of packages to be operated on.
 Disabled packages are skipped and reported in the plan.

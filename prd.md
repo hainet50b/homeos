@@ -94,6 +94,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Refactor install/update/uninstall to update `state.yml` per package (not at the end). On script failure, report the error and continue to the next package instead of aborting. Successfully installed packages must be recorded in `state.yml` even if a later package fails. Same for uninstall — remove from `state.yml` per package after successful execution.
 - [ ] Enhance `homeos package uninstall` to disable uninstalled packages in `homeos.yml` after successful execution.
 - [ ] Fix `homeos package add` to preserve existing scripts when the package directory already exists. Only generate skeleton scripts for files that are missing.
+- [ ] Add `--all` flag to `homeos package uninstall` to uninstall all installed packages (from `state.yml`). Show confirmation prompt with the full list before execution.
 
 ## Completion Criteria
 
