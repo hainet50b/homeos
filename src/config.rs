@@ -27,12 +27,12 @@ fn is_true(v: &bool) -> bool {
 impl Config {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let contents = std::fs::read_to_string(path)?;
-        let config: Config = serde_yaml::from_str(&contents)?;
+        let config: Config = yaml_serde::from_str(&contents)?;
         Ok(config)
     }
 
     pub fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        let contents = serde_yaml::to_string(self)?;
+        let contents = yaml_serde::to_string(self)?;
         std::fs::write(path, contents)?;
         Ok(())
     }
@@ -55,7 +55,7 @@ packages:
   ripgrep:
     enabled: true
 "#;
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         assert_eq!(config.packages.len(), 2);
 
         let neovim = &config.packages["neovim"];
@@ -70,7 +70,7 @@ packages:
     #[test]
     fn test_parse_empty_packages() {
         let yaml = "packages: {}\n";
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         assert!(config.packages.is_empty());
     }
 
@@ -80,7 +80,7 @@ packages:
 packages:
   git: {}
 "#;
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         let git = &config.packages["git"];
         assert!(git.enabled);
         assert!(git.actions_overrides.is_empty());
@@ -92,7 +92,7 @@ packages:
 packages:
   fish: {}
 "#;
-        let config: Config = serde_yaml::from_str(yaml).unwrap();
+        let config: Config = yaml_serde::from_str(yaml).unwrap();
         let fish = &config.packages["fish"];
         assert!(fish.enabled);
         assert!(fish.actions_overrides.is_empty());
@@ -141,7 +141,7 @@ packages:
                 },
             )]),
         };
-        let yaml = serde_yaml::to_string(&config).unwrap();
+        let yaml = yaml_serde::to_string(&config).unwrap();
         assert!(!yaml.contains("actions_overrides"));
         assert!(!yaml.contains("enabled"));
     }

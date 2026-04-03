@@ -77,3 +77,28 @@ Created a `commands` module with an `init` submodule. The `init::run` function c
 
 - Init is idempotent: re-running on an already-initialized directory is a no-op that preserves existing config.
 - The `commands` module structure is set up to accommodate future command implementations (cd, package subcommands).
+
+## Task: Migrate from serde_yaml to yaml_serde
+
+**Timestamp:**
+
+2026-04-03T16:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. serde_yaml 0.9 is deprecated; migrating to yaml_serde removes the deprecation warning and uses a maintained crate.
+
+**What was done:**
+
+Replaced the `serde_yaml` dependency with `yaml_serde = "0.10"` in Cargo.toml. Updated all `serde_yaml::` references in `src/config.rs` (both production code and tests) to `yaml_serde::`. The API is compatible — `from_str` and `to_string` work identically.
+
+**What was changed:**
+
+- Cargo.toml (replaced serde_yaml 0.9 with yaml_serde 0.10)
+- src/config.rs (replaced all serde_yaml:: references with yaml_serde::)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- yaml_serde 0.10 is API-compatible with serde_yaml 0.9 for the functions used (from_str, to_string), so the migration was a straightforward find-and-replace.
+- All 13 existing tests pass without modification beyond the crate name change.
