@@ -128,7 +128,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Update { packages } => println!("package update: {packages:?}"),
+            PackageCommands::Update { packages } => {
+                if let Err(e) = commands::package::update(&ctx, &packages) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::Uninstall { packages } => println!("package uninstall: {packages:?}"),
         },
     }

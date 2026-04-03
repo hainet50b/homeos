@@ -369,3 +369,30 @@ Implemented `homeos package install <pkg>...` which executes install action scri
 - The `run_action` function is designed to be reused by `update` and `uninstall` — they only need thin wrappers passing the action name.
 - Changed all three action CLI variants (Install/Update/Uninstall) from `Option<String>` to `Vec<String>` at once for consistency, since they share the same `<pkg>...` interface.
 - All 68 tests pass (59 existing + 9 new).
+
+## Task: Implement `homeos package update <pkg>...`
+
+**Timestamp:**
+
+2026-04-03T14:30:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Update is the second of the three action execution commands and reuses the `run_action` infrastructure established by install.
+
+**What was done:**
+
+Added an `update` function in `commands::package` as a thin wrapper around `run_action` with action name "update". Wired the `PackageCommands::Update` variant in `main.rs` to call `commands::package::update` (replacing the placeholder `println!`). Added 3 tests covering: successful update execution, disabled package skipping for update, and abort on no confirmation for update.
+
+**What was changed:**
+
+- src/commands/package.rs (added `update` function and 3 tests)
+- src/main.rs (wired `PackageCommands::Update` to `commands::package::update`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The implementation is a one-line wrapper since `run_action` was designed to be generic across install/update/uninstall.
+- The existing `test_run_action_respects_action_overrides` test already covers the update action with overrides, so the new tests focus on the update-specific output formatting.
+- All 71 tests pass (68 existing + 3 new).
