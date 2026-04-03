@@ -8,3 +8,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-03T08:35:01Z,2485fe5,"Implement `homeos package list` to display packages from homeos.yml",88,18,3481,0.47371225000000006
 2026-04-03T08:36:25Z,4aa26fe,"Implement `homeos package add <pkg>` to create package directory and config entry",80,17,3345,0.4545659999999999
 2026-04-03T08:37:47Z,aeb73f8,"Implement `homeos package remove <pkg>` to remove config entry from homeos.yml",77,18,3102,0.40190974999999995
+2026-04-03T08:59:39Z,9ed383f,"Add skeleton script generation to `homeos package add`",75,14,3434,0.40836525
