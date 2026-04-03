@@ -1,5 +1,8 @@
 use crate::config::{Config, PackageConfig};
+use crate::confirm::{confirm_plan, Plan};
 use crate::context::Context;
+use std::io::{BufRead, Write};
+use std::path::Path;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
@@ -92,6 +95,91 @@ pub fn disable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::E
 
     println!("Disabled package '{package}'");
     Ok(())
+}
+
+pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    run_action(
+        ctx,
+        packages,
+        "install",
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
+}
+
+/// Execute an action for the given packages, with confirmation prompt.
+/// I/O is injectable for testability. Reusable for install/update/uninstall.
+pub fn run_action<R: BufRead, W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    action: &str,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+    let plan = Plan::build(&config, packages, action)?;
+
+    if plan.is_empty() {
+        let display = plan.display();
+        if !display.is_empty() {
+            writeln!(writer, "{display}")?;
+        }
+        writeln!(writer, "No packages to {action}.")?;
+        return Ok(());
+    }
+
+    if !confirm_plan(&plan, reader, writer) {
+        writeln!(writer, "Aborted.")?;
+        return Ok(());
+    }
+
+    let verb = match action {
+        "install" => "Installing",
+        "update" => "Updating",
+        "uninstall" => "Uninstalling",
+        other => other,
+    };
+
+    for name in &plan.enabled {
+        let pkg_config = &config.packages[name];
+        let script_name = resolve_script_name(pkg_config, action);
+        let script_path = ctx.packages_dir().join(name).join(&script_name);
+
+        if !script_path.exists() {
+            return Err(format!("Script not found: {}", script_path.display()).into());
+        }
+
+        write!(writer, "{verb} {name}... ")?;
+        writer.flush()?;
+        execute_script(&script_path)?;
+        writeln!(writer, "done")?;
+    }
+
+    Ok(())
+}
+
+/// Resolve the script filename for a given action, considering overrides.
+fn resolve_script_name(pkg_config: &PackageConfig, action: &str) -> String {
+    let resolved_action = pkg_config
+        .actions_overrides
+        .get(action)
+        .map(|s| s.as_str())
+        .unwrap_or(action);
+    let ext = if cfg!(windows) { "ps1" } else { "sh" };
+    format!("{resolved_action}.{ext}")
+}
+
+/// Execute a script file via the OS-appropriate shell. Returns the output.
+fn execute_script(script_path: &Path) -> Result<std::process::Output, Box<dyn std::error::Error>> {
+    let shell = if cfg!(windows) { "powershell" } else { "sh" };
+    let output = std::process::Command::new(shell)
+        .arg(script_path)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Script failed: {stderr}").into());
+    }
+    Ok(output)
 }
 
 fn skeleton_scripts() -> Vec<(&'static str, &'static str)> {
@@ -480,5 +568,201 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.is_empty());
+    }
+
+    fn fixture_with_script(yaml: &str, pkg: &str, action: &str, marker: &str) -> (TempDir, Context) {
+        let (tmp, ctx) = fixture(yaml);
+        let pkg_dir = ctx.packages_dir().join(pkg);
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let script_path = pkg_dir.join(format!("{action}.{ext}"));
+        std::fs::write(&script_path, format!("#!/usr/bin/env sh\necho '{marker}'\n")).unwrap();
+        (tmp, ctx)
+    }
+
+    #[test]
+    fn test_resolve_script_name_default() {
+        // Arrange
+        let pkg_config = PackageConfig::default();
+
+        // Act
+        let sut = resolve_script_name(&pkg_config, "install");
+
+        // Assert
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        assert_eq!(sut, format!("install.{ext}"));
+    }
+
+    #[test]
+    fn test_resolve_script_name_with_override() {
+        // Arrange
+        let pkg_config = PackageConfig {
+            actions_overrides: std::collections::BTreeMap::from([
+                ("update".to_string(), "install".to_string()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let sut = resolve_script_name(&pkg_config, "update");
+
+        // Assert
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        assert_eq!(sut, format!("install.{ext}"));
+    }
+
+    #[test]
+    fn test_execute_script_captures_output() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let script_path = tmp.path().join("test.sh");
+        std::fs::write(&script_path, "#!/usr/bin/env sh\necho 'MARKER_XYZ'\n").unwrap();
+
+        // Act
+        let sut = execute_script(&script_path).unwrap();
+
+        // Assert
+        let stdout = String::from_utf8(sut.stdout).unwrap();
+        assert!(stdout.contains("MARKER_XYZ"));
+    }
+
+    #[test]
+    fn test_run_action_executes_install_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "INSTALL_MARKER",
+        );
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing neovim... done"));
+    }
+
+    #[test]
+    fn test_run_action_skips_disabled_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim:\n    enabled: false\n",
+            "neovim",
+            "install",
+            "SHOULD_NOT_RUN",
+        );
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("No packages to install."));
+        assert!(!written.contains("Installing"));
+    }
+
+    #[test]
+    fn test_run_action_aborts_on_no_confirmation() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            "SHOULD_NOT_RUN",
+        );
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        assert!(!written.contains("Installing"));
+    }
+
+    #[test]
+    fn test_run_action_errors_on_missing_script() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Script not found"));
+    }
+
+    #[test]
+    fn test_run_action_respects_action_overrides() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n",
+        );
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        // Only create install script (update is overridden to install)
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'OVERRIDE_MARKER'\n",
+        ).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating neovim... done"));
+    }
+
+    #[test]
+    fn test_run_action_executes_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        for pkg in &["neovim", "ripgrep"] {
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            std::fs::write(
+                pkg_dir.join(format!("install.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_MARKER'\n"),
+            ).unwrap();
+        }
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "install",
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Installing ripgrep... done"));
     }
 }

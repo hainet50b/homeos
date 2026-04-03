@@ -342,3 +342,30 @@ Created a `confirm` module with three main components: `Plan` struct (builds a p
 - Used generic `BufRead`/`Write` traits for I/O injection rather than closures or trait objects, keeping the API simple while enabling test isolation.
 - The `display()` method maps action names to past-tense verbs (install -> installed, update -> updated, uninstall -> uninstalled) matching the README example format.
 - All 59 tests pass (43 existing + 16 new).
+
+## Task: Implement `homeos package install <pkg>...`
+
+**Timestamp:**
+
+2026-04-03T14:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Install is the first of the three action execution commands (install/update/uninstall) and establishes the shared `run_action` pattern.
+
+**What was done:**
+
+Implemented `homeos package install <pkg>...` which executes install action scripts for specified packages. Created a generic `run_action` function (reusable for update/uninstall) that: loads config, builds a confirmation plan, prompts the user, resolves scripts (respecting `actions_overrides`), and executes them via `sh` (or `powershell` on Windows). Added `resolve_script_name` (maps action to script filename with override support), `execute_script` (runs a script via OS shell and captures output), and a thin `install` wrapper. Changed the CLI `Install` variant from `Option<String>` to `Vec<String>` with `required = true` to accept one or more packages (also updated `Update` and `Uninstall` variants for consistency). I/O is injectable via `BufRead`/`Write` traits for full testability. Added 9 tests covering: script name resolution (default and with override), script execution with marker capture, full install flow, disabled package skipping, abort on no confirmation, missing script error, action override execution, and multiple package execution.
+
+**What was changed:**
+
+- src/commands/package.rs (added `install`, `run_action`, `resolve_script_name`, `execute_script`, and 9 tests)
+- src/main.rs (changed Install/Update/Uninstall to `Vec<String>`, wired install command)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `run_action` function is designed to be reused by `update` and `uninstall` — they only need thin wrappers passing the action name.
+- Changed all three action CLI variants (Install/Update/Uninstall) from `Option<String>` to `Vec<String>` at once for consistency, since they share the same `<pkg>...` interface.
+- All 68 tests pass (59 existing + 9 new).

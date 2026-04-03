@@ -56,18 +56,21 @@ pub enum PackageCommands {
     },
     /// Execute install action scripts
     Install {
-        /// Package name (optional, operates on all if omitted)
-        package: Option<String>,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
     /// Execute update action scripts
     Update {
-        /// Package name (optional, operates on all if omitted)
-        package: Option<String>,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
     /// Execute uninstall action scripts
     Uninstall {
-        /// Package name (optional, operates on all if omitted)
-        package: Option<String>,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
 }
 
@@ -119,9 +122,14 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Install { package } => println!("package install: {package:?}"),
-            PackageCommands::Update { package } => println!("package update: {package:?}"),
-            PackageCommands::Uninstall { package } => println!("package uninstall: {package:?}"),
+            PackageCommands::Install { packages } => {
+                if let Err(e) = commands::package::install(&ctx, &packages) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Update { packages } => println!("package update: {packages:?}"),
+            PackageCommands::Uninstall { packages } => println!("package uninstall: {packages:?}"),
         },
     }
 }

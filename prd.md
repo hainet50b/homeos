@@ -67,7 +67,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos package enable <pkg>` — remove `enabled: false` from package
 - [x] Implement `homeos package disable <pkg>` — set `enabled: false` on package
 - [x] Implement confirmation prompt — show plan with disabled package messages, prompt `Proceed? [y/N]`. Separate plan logic from stdin so the plan can be unit tested independently. — show plan with disabled package messages, prompt `Proceed? [y/N]`
-- [ ] Implement `homeos package install <pkg>...` — execute install action scripts
+- [x] Implement `homeos package install <pkg>...` — execute install action scripts
 - [ ] Implement `homeos package update <pkg>...` — execute update action scripts
 - [ ] Implement `homeos package uninstall <pkg>...` — execute uninstall action scripts
 
