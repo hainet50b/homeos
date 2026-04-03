@@ -135,11 +135,14 @@ homeos package disable <package>
 Operate on packages defined in the current repository.
 
 - `install`
-  Execute the install action for the specified packages.
+  Execute the install action for the specified packages.  
+  Records installed packages in `state.yml`.
 - `update`
   Execute the update action for the specified packages.
 - `uninstall`
-  Execute the uninstall action for the specified packages.
+  Execute the uninstall action for the specified packages.  
+  Removes uninstalled packages from `state.yml` if present.  
+  The uninstall script is always executed regardless of `state.yml` status.
 
 Before execution, a confirmation prompt is shown with the list of packages to be operated on.
 Disabled packages are skipped and reported in the plan.
@@ -278,7 +281,9 @@ The base directory depends on the operating system:
 <base_dir>/homeos/
             └── repos/
                 ├── default/
+                │   ├── .gitignore
                 │   ├── homeos.yml
+                │   ├── state.yml
                 │   ├── packages/
                 │   │   └── neovim/
                 │   │       ├── install.sh
@@ -296,6 +301,7 @@ The base directory depends on the operating system:
 
 - Each repository is self-contained.
 - `homeos.yml` defines behavior and package metadata.
+- `state.yml` tracks which packages are installed on this machine. This file is machine-specific and excluded from version control via `.gitignore`.
 - `packages/` contains package action scripts.
 - `recipes/` contains grouped execution flows.
 - `plugins/` contains plugin implementations.
