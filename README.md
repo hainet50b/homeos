@@ -1,7 +1,10 @@
 # homeos
 
-> Pronounced /ˈhoʊ.mi.oʊs/ (ho-mee-os).  
+> **Making install script hell feel like *home*.**  
 > ⚠️ This project is under active development.
+
+*homeos* (ho-mee-os) - named after *homeostasis*, keeping your environment in a steady state.  
+A CLI tool to set up and reproduce your personal machine environment from a single Git repository.
 
 ## Table of contents
 
