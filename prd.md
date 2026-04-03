@@ -25,12 +25,20 @@ packages:
 
 ### Action resolution
 
-Scripts are resolved by convention based on the OS:
+Scripts are resolved by convention based on the OS and executed via `std::process::Command`:
 
-- Linux / macOS: `install.sh`, `update.sh`, `uninstall.sh`
-- Windows: `install.ps1`, `update.ps1`, `uninstall.ps1`
+- Linux / macOS: `install.sh`, `update.sh`, `uninstall.sh` (run with `sh`)
+- Windows: `install.ps1`, `update.ps1`, `uninstall.ps1` (run with `powershell`)
 
 `actions_overrides` aliases an action to another (e.g., `{ update: install }` runs the install script for update).
+
+### Confirmation prompt
+
+Before executing install/update/uninstall, display the plan and prompt for confirmation (`Proceed? [y/N]`). Disabled packages are skipped with a message (e.g., `Skipping neovim (disabled)`).
+
+### Testing script execution
+
+Tests create temporary scripts that output a known marker string to stdout. Capture `Command` output and assert on the marker to verify execution without side effects.
 
 ### Directory structure (created by `homeos init`)
 
@@ -55,14 +63,11 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Implement `homeos package list` — list all packages from `homeos.yml`
 - [ ] Implement `homeos package add <pkg>` — create package directory and add entry to `homeos.yml`
 - [ ] Implement `homeos package remove <pkg>` — remove package entry from `homeos.yml`
-- [ ] Implement `homeos package install [pkg]` — execute install action scripts
-- [ ] Implement `homeos package update [pkg]` — execute update action scripts
-- [ ] Implement `homeos package uninstall [pkg]` — execute uninstall action scripts
-
-## Post Tasks
-
-- [ ] Verify full workflow: `init` → `package add` → write install script → `package install`
+- [ ] Implement confirmation prompt — show plan with disabled package messages, prompt `Proceed? [y/N]`
+- [ ] Implement `homeos package install <pkg>...` — execute install action scripts
+- [ ] Implement `homeos package update <pkg>...` — execute update action scripts
+- [ ] Implement `homeos package uninstall <pkg>...` — execute uninstall action scripts
 
 ## Completion Criteria
 
-All tasks and post tasks are checked off and `cargo test` passes with no failures.
+All tasks are checked off and `cargo test` passes with no failures.
