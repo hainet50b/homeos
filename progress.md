@@ -315,3 +315,30 @@ Added a `disable` function to `commands::package` that loads the config, finds t
 
 - The `disable` function is the exact mirror of `enable`, setting `enabled: false` which gets serialized to YAML (unlike `true` which is skipped as a default).
 - All 43 tests pass (38 existing + 5 new).
+
+## Task: Implement confirmation prompt
+
+**Timestamp:**
+
+2026-04-03T13:30:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The confirmation prompt is a prerequisite for install/update/uninstall commands which need to show a plan and get user confirmation before executing.
+
+**What was done:**
+
+Created a `confirm` module with three main components: `Plan` struct (builds a plan separating enabled/disabled packages, formats it for display), `prompt_confirm` function (reads y/Y from a `BufRead` and writes the prompt to a `Write`), and `confirm_plan` function (combines plan display with confirmation prompt). The plan logic is fully separated from I/O by accepting generic `BufRead`/`Write` traits, making it unit-testable with `Cursor` buffers. Added 16 tests covering plan building (enabled/disabled separation, all-enabled, all-disabled, unknown package error), plan display (mixed, disabled-only, verb forms for install/update/uninstall), prompt confirmation (y, Y, n, empty, prompt text output), confirm_plan integration, and `is_empty` checks.
+
+**What was changed:**
+
+- src/confirm.rs (new — Plan struct, prompt_confirm, confirm_plan, 16 tests)
+- src/main.rs (added `mod confirm` declaration)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Used generic `BufRead`/`Write` traits for I/O injection rather than closures or trait objects, keeping the API simple while enabling test isolation.
+- The `display()` method maps action names to past-tense verbs (install -> installed, update -> updated, uninstall -> uninstalled) matching the README example format.
+- All 59 tests pass (43 existing + 16 new).
