@@ -16,3 +16,7 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-03T09:36:42Z,cc81495,"Implement `homeos package update <pkg>...` command",97,15,3113,0.47919925
 2026-04-03T09:38:08Z,8a20e80,"Implement `homeos package uninstall <pkg>...` command",82,1451,3326,0.54798925
 2026-04-03T09:52:01Z,1395b46,"Implement `homeos package cat <pkg>` command",109,20,5488,0.78679
+2026-04-03T11:44:45Z,8838566,"Implement state.yml parsing with serde for tracking installed packages",93,16,3713,0.5376700000000001
+2026-04-03T11:46:12Z,5da0251,"Enhance homeos init to generate .gitignore excluding state.yml",83,17,3413,0.44539850000000003
+2026-04-03T11:47:51Z,e4a19b1,"Enhance package install to record installed packages in state.yml",96,18,4542,0.68261825
+2026-04-03T11:49:07Z,399a4ec,"Enhance package uninstall to remove uninstalled packages from state.yml",72,1245,3405,0.56726475
