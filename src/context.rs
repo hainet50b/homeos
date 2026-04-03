@@ -36,28 +36,43 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    fn fixture(base_dir: Option<PathBuf>) -> Context {
+        Context::new(base_dir)
+    }
+
     #[test]
     fn test_custom_base_dir() {
-        let ctx = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
-        assert_eq!(ctx.repos_dir(), Path::new("/tmp/test-homeos/repos"));
+        // Arrange
+        let base = PathBuf::from("/tmp/test-homeos");
+
+        // Act
+        let sut = fixture(Some(base));
+
+        // Assert
+        assert_eq!(sut.repos_dir(), Path::new("/tmp/test-homeos/repos"));
         assert_eq!(
-            ctx.default_repo_dir(),
+            sut.default_repo_dir(),
             Path::new("/tmp/test-homeos/repos/default")
         );
         assert_eq!(
-            ctx.packages_dir(),
+            sut.packages_dir(),
             Path::new("/tmp/test-homeos/repos/default/packages")
         );
         assert_eq!(
-            ctx.config_path(),
+            sut.config_path(),
             Path::new("/tmp/test-homeos/repos/default/homeos.yml")
         );
     }
 
     #[test]
     fn test_default_base_dir() {
-        let ctx = Context::new(None);
-        let data_dir = dirs::data_dir().unwrap();
-        assert_eq!(ctx.base_dir, data_dir.join("homeos"));
+        // Arrange
+        let expected = dirs::data_dir().unwrap().join("homeos");
+
+        // Act
+        let sut = fixture(None);
+
+        // Assert
+        assert_eq!(sut.base_dir, expected);
     }
 }

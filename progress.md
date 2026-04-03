@@ -102,3 +102,34 @@ Replaced the `serde_yaml` dependency with `yaml_serde = "0.10"` in Cargo.toml. U
 
 - yaml_serde 0.10 is API-compatible with serde_yaml 0.9 for the functions used (from_str, to_string), so the migration was a straightforward find-and-replace.
 - All 13 existing tests pass without modification beyond the crate name change.
+
+## Task: Refactor all existing unit tests to follow the 3A pattern
+
+**Timestamp:**
+
+2026-04-03T18:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Establishing the 3A test convention before implementing remaining commands ensures all future tests follow a consistent pattern.
+
+**What was done:**
+
+Refactored all 13 existing unit tests across 3 files to follow the Arrange / Act / Assert pattern:
+
+- **context.rs (2 tests):** Added a `fixture()` helper that wraps `Context::new`. Separated test setup (Arrange), SUT construction (Act), and assertions (Assert) with comments.
+- **config.rs (8 tests):** Added `fixture()` (parses YAML string into Config) and `fixture_file()` (writes content to a temp file) helpers. Restructured all tests with clear 3A sections, naming the primary object under test `sut`.
+- **commands/init.rs (3 tests):** Replaced `test_context()` with a `fixture()` that returns both TempDir and Context. Added 3A comments to all tests.
+
+**What was changed:**
+
+- src/context.rs (refactored tests)
+- src/config.rs (refactored tests)
+- src/commands/init.rs (refactored tests)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- Used `sut` as the variable name for the System Under Test to make the pattern explicit and consistent.
+- Fixture functions encapsulate common setup, reducing duplication while keeping each test's Arrange section focused on test-specific inputs.
+- All 13 tests continue to pass with no behavioral changes.

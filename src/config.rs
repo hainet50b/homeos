@@ -44,8 +44,19 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
+    fn fixture(yaml: &str) -> Config {
+        yaml_serde::from_str(yaml).unwrap()
+    }
+
+    fn fixture_file(content: &str) -> NamedTempFile {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write!(tmp, "{}", content).unwrap();
+        tmp
+    }
+
     #[test]
     fn test_parse_full_config() {
+        // Arrange
         let yaml = r#"
 packages:
   neovim:
@@ -55,65 +66,78 @@ packages:
   ripgrep:
     enabled: true
 "#;
-        let config: Config = yaml_serde::from_str(yaml).unwrap();
-        assert_eq!(config.packages.len(), 2);
 
-        let neovim = &config.packages["neovim"];
+        // Act
+        let sut = fixture(yaml);
+
+        // Assert
+        assert_eq!(sut.packages.len(), 2);
+        let neovim = &sut.packages["neovim"];
         assert_eq!(neovim.actions_overrides["update"], "install");
         assert!(!neovim.enabled);
-
-        let ripgrep = &config.packages["ripgrep"];
+        let ripgrep = &sut.packages["ripgrep"];
         assert!(ripgrep.actions_overrides.is_empty());
         assert!(ripgrep.enabled);
     }
 
     #[test]
     fn test_parse_empty_packages() {
+        // Arrange
         let yaml = "packages: {}\n";
-        let config: Config = yaml_serde::from_str(yaml).unwrap();
-        assert!(config.packages.is_empty());
+
+        // Act
+        let sut = fixture(yaml);
+
+        // Assert
+        assert!(sut.packages.is_empty());
     }
 
     #[test]
     fn test_parse_minimal_package() {
-        let yaml = r#"
-packages:
-  git: {}
-"#;
-        let config: Config = yaml_serde::from_str(yaml).unwrap();
-        let git = &config.packages["git"];
+        // Arrange
+        let yaml = "packages:\n  git: {}\n";
+
+        // Act
+        let sut = fixture(yaml);
+
+        // Assert
+        let git = &sut.packages["git"];
         assert!(git.enabled);
         assert!(git.actions_overrides.is_empty());
     }
 
     #[test]
     fn test_defaults_on_missing_fields() {
-        let yaml = r#"
-packages:
-  fish: {}
-"#;
-        let config: Config = yaml_serde::from_str(yaml).unwrap();
-        let fish = &config.packages["fish"];
+        // Arrange
+        let yaml = "packages:\n  fish: {}\n";
+
+        // Act
+        let sut = fixture(yaml);
+
+        // Assert
+        let fish = &sut.packages["fish"];
         assert!(fish.enabled);
         assert!(fish.actions_overrides.is_empty());
     }
 
     #[test]
     fn test_load_from_file() {
-        let mut tmp = NamedTempFile::new().unwrap();
-        write!(
-            tmp,
-            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n    enabled: false\n"
-        )
-        .unwrap();
+        // Arrange
+        let tmp = fixture_file(
+            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n    enabled: false\n",
+        );
 
-        let config = Config::load(tmp.path()).unwrap();
-        assert_eq!(config.packages.len(), 1);
-        assert!(!config.packages["neovim"].enabled);
+        // Act
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(sut.packages.len(), 1);
+        assert!(!sut.packages["neovim"].enabled);
     }
 
     #[test]
     fn test_save_and_reload() {
+        // Arrange
         let mut config = Config::default();
         config.packages.insert(
             "starship".to_string(),
@@ -122,17 +146,20 @@ packages:
                 enabled: true,
             },
         );
-
         let tmp = NamedTempFile::new().unwrap();
-        config.save(tmp.path()).unwrap();
 
-        let reloaded = Config::load(tmp.path()).unwrap();
-        assert_eq!(config, reloaded);
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(config, sut);
     }
 
     #[test]
     fn test_serialize_skips_defaults() {
-        let config = Config {
+        // Arrange
+        let sut = Config {
             packages: BTreeMap::from([(
                 "git".to_string(),
                 PackageConfig {
@@ -141,14 +168,24 @@ packages:
                 },
             )]),
         };
-        let yaml = yaml_serde::to_string(&config).unwrap();
+
+        // Act
+        let yaml = yaml_serde::to_string(&sut).unwrap();
+
+        // Assert
         assert!(!yaml.contains("actions_overrides"));
         assert!(!yaml.contains("enabled"));
     }
 
     #[test]
     fn test_load_nonexistent_file() {
-        let result = Config::load(Path::new("/nonexistent/homeos.yml"));
+        // Arrange
+        let path = Path::new("/nonexistent/homeos.yml");
+
+        // Act
+        let result = Config::load(path);
+
+        // Assert
         assert!(result.is_err());
     }
 }

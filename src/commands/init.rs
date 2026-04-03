@@ -25,33 +25,33 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn test_context(base: &TempDir) -> Context {
-        Context::new(Some(base.path().to_path_buf()))
+    fn fixture() -> (TempDir, Context) {
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+        (tmp, ctx)
     }
 
     #[test]
     fn test_init_creates_structure() {
-        let tmp = TempDir::new().unwrap();
-        let ctx = test_context(&tmp);
+        // Arrange
+        let (_tmp, ctx) = fixture();
 
+        // Act
         run(&ctx).unwrap();
 
+        // Assert
         assert!(ctx.default_repo_dir().exists());
         assert!(ctx.packages_dir().exists());
         assert!(ctx.config_path().exists());
-
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.is_empty());
     }
 
     #[test]
     fn test_init_idempotent() {
-        let tmp = TempDir::new().unwrap();
-        let ctx = test_context(&tmp);
-
+        // Arrange
+        let (_tmp, ctx) = fixture();
         run(&ctx).unwrap();
-
-        // Modify config to verify init doesn't overwrite
         let mut config = Config::load(&ctx.config_path()).unwrap();
         config.packages.insert(
             "test".to_string(),
@@ -59,19 +59,23 @@ mod tests {
         );
         config.save(&ctx.config_path()).unwrap();
 
+        // Act
         run(&ctx).unwrap();
 
+        // Assert
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.packages.len(), 1);
     }
 
     #[test]
     fn test_init_directory_paths() {
-        let tmp = TempDir::new().unwrap();
-        let ctx = test_context(&tmp);
+        // Arrange
+        let (tmp, ctx) = fixture();
 
+        // Act
         run(&ctx).unwrap();
 
+        // Assert
         let base = tmp.path();
         assert!(base.join("repos/default/packages").exists());
         assert!(base.join("repos/default/homeos.yml").exists());

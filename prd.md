@@ -50,7 +50,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos.yml` parsing with serde (packages with `actions_overrides` and `enabled`)
 - [x] Implement `homeos init` — create directory structure and empty `homeos.yml`
 - [x] Migrate from `serde_yaml` to `yaml_serde` and update all existing code and tests
-- [ ] Refactor all existing unit tests to follow the 3A pattern (Arrange / Act / Assert)
+- [x] Refactor all existing unit tests to follow the 3A pattern (Arrange / Act / Assert)
 - [ ] Implement `homeos cd` — launch a shell in the default repository directory
 - [ ] Implement `homeos package list` — list all packages from `homeos.yml`
 - [ ] Implement `homeos package add <pkg>` — create package directory and add entry to `homeos.yml`
