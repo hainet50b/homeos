@@ -5,3 +5,6 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-03T07:35:55Z,0432106,"Migrate from serde_yaml to yaml_serde",115,18,3389,0.40574499999999997
 2026-04-03T07:37:44Z,2a9d6d4,"Refactor all unit tests to follow 3A pattern (Arrange / Act / Assert)",105,13,6134,0.4012227499999999
 2026-04-03T08:03:26Z,b6cd672,"Implement `homeos cd` to launch a subshell in the default repo directory",88,16,3293,0.3976235
+2026-04-03T08:35:01Z,2485fe5,"Implement `homeos package list` to display packages from homeos.yml",88,18,3481,0.47371225000000006
+2026-04-03T08:36:25Z,4aa26fe,"Implement `homeos package add <pkg>` to create package directory and config entry",80,17,3345,0.4545659999999999
+2026-04-03T08:37:47Z,aeb73f8,"Implement `homeos package remove <pkg>` to remove config entry from homeos.yml",77,18,3102,0.40190974999999995
