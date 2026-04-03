@@ -289,3 +289,29 @@ Added an `enable` function to `commands::package` that loads the config, finds t
 
 - The `enable` function removes `enabled: false` by setting it to `true`, which then gets skipped during serialization (`skip_serializing_if = "is_true"`), resulting in clean YAML output.
 - All 38 tests pass (33 existing + 5 new).
+
+## Task: Implement `homeos package disable <pkg>`
+
+**Timestamp:**
+
+2026-04-03T13:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Disable is the counterpart to enable and is a prerequisite for the confirmation prompt task which checks enabled status.
+
+**What was done:**
+
+Added a `disable` function to `commands::package` that loads the config, finds the package, sets `enabled: false`, and saves. If the package is already disabled, it prints a message and returns without writing. Added `Disable` variant to `PackageCommands` enum and wired it in `main.rs`. Added 5 tests covering: disabling an enabled package, already-disabled noop, package not found error, not-initialized error, and preservation of other fields (actions_overrides).
+
+**What was changed:**
+
+- src/commands/package.rs (added `disable` function and 5 tests)
+- src/main.rs (added `Disable` variant to `PackageCommands`, wired to `commands::package::disable`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `disable` function is the exact mirror of `enable`, setting `enabled: false` which gets serialized to YAML (unlike `true` which is skipped as a default).
+- All 43 tests pass (38 existing + 5 new).

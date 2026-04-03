@@ -74,6 +74,26 @@ pub fn enable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+pub fn disable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    let pkg = config
+        .packages
+        .get_mut(package)
+        .ok_or_else(|| format!("Package '{package}' not found"))?;
+
+    if !pkg.enabled {
+        println!("Package '{package}' is already disabled");
+        return Ok(());
+    }
+
+    pkg.enabled = false;
+    config.save(&ctx.config_path())?;
+
+    println!("Disabled package '{package}'");
+    Ok(())
+}
+
 fn skeleton_scripts() -> Vec<(&'static str, &'static str)> {
     let actions = ["install", "update", "uninstall"];
     let ext = if cfg!(windows) { "ps1" } else { "sh" };
@@ -374,6 +394,77 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].enabled);
+        assert_eq!(config.packages["neovim"].actions_overrides["update"], "install");
+    }
+
+    #[test]
+    fn test_disable_sets_enabled_false() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = disable(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+    }
+
+    #[test]
+    fn test_disable_already_disabled_is_noop() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n");
+
+        // Act
+        let result = disable(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+    }
+
+    #[test]
+    fn test_disable_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = disable(&ctx, "nonexistent");
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_disable_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+
+        // Act
+        let result = disable(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_disable_preserves_other_fields() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n",
+        );
+
+        // Act
+        let result = disable(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
         assert_eq!(config.packages["neovim"].actions_overrides["update"], "install");
     }
 

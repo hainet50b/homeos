@@ -48,6 +48,11 @@ pub enum PackageCommands {
         /// Package name
         package: String,
     },
+    /// Disable a package
+    Disable {
+        /// Package name
+        package: String,
+    },
     /// Execute install action scripts
     Install {
         /// Package name (optional, operates on all if omitted)
@@ -103,6 +108,12 @@ fn main() {
             }
             PackageCommands::Enable { package } => {
                 if let Err(e) = commands::package::enable(&ctx, &package) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Disable { package } => {
+                if let Err(e) = commands::package::disable(&ctx, &package) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
