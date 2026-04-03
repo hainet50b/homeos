@@ -225,11 +225,16 @@ Profiles affect:
 
 ## Directory Structure
 
+The base directory depends on the operating system:
+
+| OS      | Base directory                         |
+|---------|----------------------------------------|
+| Linux   | `~/.local/share/homeos`                |
+| macOS   | `~/Library/Application Support/homeos` |
+| Windows | `%LOCALAPPDATA%/homeos`                |
+
 ```
-~/
-└── .local/
-    └── share/
-        └── homeos/
+<base_dir>/homeos/
             └── repos/
                 ├── default/
                 │   ├── homeos.yml
