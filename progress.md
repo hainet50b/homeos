@@ -133,3 +133,30 @@ Refactored all 13 existing unit tests across 3 files to follow the Arrange / Act
 - Used `sut` as the variable name for the System Under Test to make the pattern explicit and consistent.
 - Fixture functions encapsulate common setup, reducing duplication while keeping each test's Arrange section focused on test-specific inputs.
 - All 13 tests continue to pass with no behavioral changes.
+
+## Task: Implement `homeos cd`
+
+**Timestamp:**
+
+2026-04-03T20:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The `cd` command is independent of the package subcommands and is a straightforward command to implement.
+
+**What was done:**
+
+Created a `commands::cd` module with two functions: `resolve_target` (validates the default repo directory exists and returns its path) and `run` (resolves the target then spawns a subshell in that directory using `$SHELL`). The separation allows the directory resolution logic to be unit-tested without spawning actual shell processes. Added 3 tests covering: correct path returned, directory existence validation, and error when not initialized.
+
+**What was changed:**
+
+- src/commands/cd.rs (new — cd command implementation with tests)
+- src/commands.rs (added `pub mod cd`)
+- src/main.rs (wired cd command to `commands::cd::run`)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- The `run` function spawns a subshell using `$SHELL` (falling back to `/bin/sh`), since a CLI tool cannot change the parent shell's working directory directly.
+- `resolve_target` is separated from `run` to keep the testable logic isolated from the shell-spawning side effect.
+- All 19 tests pass (16 existing + 3 new).

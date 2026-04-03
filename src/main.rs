@@ -72,7 +72,10 @@ fn main() {
             }
         }
         Commands::Cd => {
-            println!("cd: {:?}", ctx.default_repo_dir());
+            if let Err(e) = commands::cd::run(&ctx) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
         }
         Commands::Package { command } => match command {
             PackageCommands::List => println!("package list"),
