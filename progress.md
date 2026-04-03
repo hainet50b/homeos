@@ -450,3 +450,30 @@ Added a `cat` command that displays all action scripts (install, update, uninsta
 - Used a `cat_to` inner function with a `Write` parameter (same pattern as `run_action`) to keep output capturable in tests without relying on stdout capture.
 - The output format matches the README spec exactly: `=== install.sh ===` headers with blank lines between sections.
 - All 79 tests pass (74 existing + 5 new).
+
+## Task: Implement `state.yml` parsing with serde
+
+**Timestamp:**
+
+2026-04-03T16:00:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. `state.yml` parsing is required by subsequent tasks that record/remove installed packages.
+
+**What was done:**
+
+Created a `state` module with a `State` struct containing an `installed: Vec<String>` field using serde derive. Added `load()` and `save()` methods for file I/O (same pattern as `Config`). Added `state_path()` method to `Context` returning `<default_repo_dir>/state.yml`. Added 7 tests for State (parsing, empty, defaults, file I/O round-trip, error case, default state) and 1 test for `state_path()`.
+
+**What was changed:**
+
+- src/state.rs (new — State struct with serde, load/save, 7 tests)
+- src/main.rs (added `mod state` declaration)
+- src/context.rs (added `state_path()` method and test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Followed the exact same patterns as `config.rs` for consistency (load/save methods, fixture helpers, 3A test pattern).
+- All 87 tests pass (79 existing + 7 new state tests + 1 new context test).

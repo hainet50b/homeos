@@ -29,6 +29,10 @@ impl Context {
     pub fn config_path(&self) -> PathBuf {
         self.default_repo_dir().join("homeos.yml")
     }
+
+    pub fn state_path(&self) -> PathBuf {
+        self.default_repo_dir().join("state.yml")
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +86,18 @@ mod tests {
 
         // Assert
         assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/homeos.yml"));
+    }
+
+    #[test]
+    fn test_state_path() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.state_path();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/state.yml"));
     }
 
     #[test]
