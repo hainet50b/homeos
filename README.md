@@ -13,8 +13,6 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
   - [General](#general)
   - [Manage packages](#manage-packages)
   - [Operate packages](#operate-packages)
-  - [Manage recipes](#manage-recipes)
-  - [Execute recipes](#execute-recipes)
   - [Manage repositories](#manage-repositories)
   - [Manage plugins](#manage-plugins)
   - [Options](#options)
@@ -24,7 +22,6 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
   - [Platforms](#platforms)
   - [Profiles](#profiles)
   - [Packages](#packages)
-  - [Recipes](#recipes)
   - [Plugins](#plugins)
 - [Repository Design Patterns](#repository-design-patterns)
 
@@ -64,7 +61,7 @@ homeos apply
 - `cd`  
   Move to the default repository directory.
 - `apply`  
-  Install missing packages, update installed ones, execute any recipes that are not yet applied, and add defined plugins.
+  Install missing packages, update installed ones, and add defined plugins.
 
 #### Flags
 
@@ -176,39 +173,6 @@ The actual script executed is determined by the following sections in `homeos.ym
 - profile
 - packages
 
-### Manage recipes
-
-```sh
-homeos recipe list
-homeos recipe add <recipe>
-homeos recipe remove <recipe>
-homeos recipe cd [<recipe>]
-```
-
-Recipes are ordered script collections used for grouped operations.
-
-- `list`  
-  List all available recipes in the repository.
-- `add`  
-  Create a new recipe directory under `recipes/` and update `homeos.yml`.
-- `remove`  
-  Remove the recipe entry from `homeos.yml`.
-- `cd`  
-  Move to the recipe root directory.  
-  If name is given, move to the recipe directory.
-
-### Execute recipes
-
-```sh
-homeos recipe exec <recipe>
-homeos recipe exec <recipe>/<script>
-```
-
-- `exec`  
-  Execute all scripts in the recipe in order.
-- `exec <recipe>/<script>`  
-  Execute a specific script within the recipe.
-
 ### Manage repositories
 
 ```sh
@@ -292,10 +256,6 @@ The base directory depends on the operating system:
                 │   │       ├── install.sh
                 │   │       ├── update.sh
                 │   │       └── uninstall.sh
-                │   ├── recipes/
-                │   │   └── my-recipe/
-                │   │       ├── 01-foo.sh
-                │   │       └── 02-bar.sh
                 │   └── plugins/
                 │       └── dnf/
                 ├── remote-repo1
@@ -306,7 +266,6 @@ The base directory depends on the operating system:
 - `homeos.yml` defines behavior and package metadata.
 - `state.yml` tracks which packages are installed on this machine. This file is machine-specific and excluded from version control via `.gitignore`.
 - `packages/` contains package action scripts.
-- `recipes/` contains grouped execution flows.
 - `plugins/` contains plugin implementations.
 
 ## Configuration File (homeos.yml)
@@ -379,17 +338,6 @@ Package-specific metadata.
   Controls whether this package is managed by homeos.  
   When set to `false`, the package is ignored by `homeos apply`.
 
-### Recipes
-
-```yaml
-recipes:
-  my-recipe:
-    tags: [ desktop, home ]
-```
-
-- `tags` (optional)  
-  Used for profile-based selection.
-
 ### Plugins
 
 ```yaml
@@ -426,7 +374,7 @@ There are two common ways to design your `homeos` repositories.
 
 ### Pattern 1: Single repository (recommended for new users)
 
-Manage packages, recipes, and multiple plugins in a single repository.  
+Manage packages and multiple plugins in a single repository.  
 This pattern keeps your workspace simple and is a good default for personal setups.
 
 - Use `platform` / `profile` to select actions and packages.
