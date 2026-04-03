@@ -16,7 +16,10 @@ pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::default();
     config.save(&config_path)?;
 
-    fs::write(ctx.gitignore_path(), "state.yml\n")?;
+    let gitignore_path = ctx.gitignore_path();
+    if !gitignore_path.exists() {
+        fs::write(&gitignore_path, "state.yml\n")?;
+    }
 
     println!("Initialized homeos at {}", ctx.default_repo_dir().display());
     Ok(())
