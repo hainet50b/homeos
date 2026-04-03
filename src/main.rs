@@ -84,7 +84,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Add { package } => println!("package add: {package}"),
+            PackageCommands::Add { package } => {
+                if let Err(e) = commands::package::add(&ctx, &package) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::Remove { package } => println!("package remove: {package}"),
             PackageCommands::Install { package } => println!("package install: {package:?}"),
             PackageCommands::Update { package } => println!("package update: {package:?}"),

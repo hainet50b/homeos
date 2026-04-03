@@ -187,3 +187,29 @@ Created a `commands::package` module with a `list` function that loads `homeos.y
 - Uses `BTreeMap` iteration from `Config`, so packages are listed in alphabetical order.
 - Disabled packages show as `name (disabled)` matching the convention from the README spec.
 - All 23 tests pass (19 existing + 4 new).
+
+## Task: Implement `homeos package add <pkg>`
+
+**Timestamp:**
+
+2026-04-03T23:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. `package add` is a prerequisite for testing subsequent package operations (install, update, uninstall) since they need packages to exist.
+
+**What was done:**
+
+Created an `add` function in `commands::package` that loads `homeos.yml`, checks for duplicate package names, inserts a default `PackageConfig` entry, saves the config, and creates the package directory under `packages/<pkg>/`. Wired the command into `main.rs`. Added 4 tests: successful creation (directory + config entry), duplicate package error, error when not initialized, and preservation of existing packages.
+
+**What was changed:**
+
+- src/commands/package.rs (added `add` function and 4 tests)
+- src/main.rs (wired `PackageCommands::Add` to `commands::package::add`)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- The function errors early if the package already exists in `homeos.yml`, preventing accidental overwrites.
+- `create_dir_all` is used for the package directory so it works even if the `packages/` parent doesn't exist yet.
+- All 27 tests pass (23 existing + 4 new).

@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, PackageConfig};
 use crate::context::Context;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
@@ -12,6 +12,25 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' already exists").into());
+    }
+
+    config
+        .packages
+        .insert(package.to_string(), PackageConfig::default());
+    config.save(&ctx.config_path())?;
+
+    let pkg_dir = ctx.packages_dir().join(package);
+    std::fs::create_dir_all(&pkg_dir)?;
+
+    println!("Added package '{package}'");
     Ok(())
 }
 
@@ -68,6 +87,64 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_creates_package_dir_and_config_entry() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("neovim"));
+        assert!(ctx.packages_dir().join("neovim").is_dir());
+    }
+
+    #[test]
+    fn test_add_errors_when_package_already_exists() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = add(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn test_add_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+
+        // Act
+        let result = add(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_preserves_existing_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ripgrep: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("ripgrep"));
+        assert!(config.packages.contains_key("neovim"));
     }
 
     #[test]
