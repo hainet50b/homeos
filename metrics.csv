@@ -4,3 +4,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-03T06:34:29Z,4a3fff9,"Implement homeos init command",91,18,3353,0.37116849999999996
 2026-04-03T07:35:55Z,0432106,"Migrate from serde_yaml to yaml_serde",115,18,3389,0.40574499999999997
 2026-04-03T07:37:44Z,2a9d6d4,"Refactor all unit tests to follow 3A pattern (Arrange / Act / Assert)",105,13,6134,0.4012227499999999
+2026-04-03T08:03:26Z,b6cd672,"Implement `homeos cd` to launch a subshell in the default repo directory",88,16,3293,0.3976235
