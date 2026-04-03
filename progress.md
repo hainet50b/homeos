@@ -477,3 +477,29 @@ Created a `state` module with a `State` struct containing an `installed: Vec<Str
 
 - Followed the exact same patterns as `config.rs` for consistency (load/save methods, fixture helpers, 3A test pattern).
 - All 87 tests pass (79 existing + 7 new state tests + 1 new context test).
+
+## Task: Enhance `homeos init` to generate `.gitignore` that excludes `state.yml`
+
+**Timestamp:**
+
+2026-04-03T16:30:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The `.gitignore` is part of the directory structure defined in the PRD and ensures `state.yml` (machine-specific state) is excluded from version control.
+
+**What was done:**
+
+Added a `gitignore_path()` method to `Context` returning `<default_repo_dir>/.gitignore`. Enhanced `init::run` to write a `.gitignore` file containing `state.yml` after creating the config. The idempotency check (early return when `homeos.yml` exists) ensures an existing `.gitignore` is not overwritten on re-init. Added 3 tests: `gitignore_path()` resolution, `.gitignore` creation with correct content, and idempotency preserving a modified `.gitignore`.
+
+**What was changed:**
+
+- src/context.rs (added `gitignore_path()` method and test)
+- src/commands/init.rs (added `.gitignore` creation in `run`, added 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `.gitignore` is created after `homeos.yml` so it's covered by the existing idempotency guard — if init was already run, neither file is touched.
+- All 90 tests pass (87 existing + 1 new context test + 2 new init tests).

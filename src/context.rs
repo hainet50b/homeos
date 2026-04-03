@@ -33,6 +33,10 @@ impl Context {
     pub fn state_path(&self) -> PathBuf {
         self.default_repo_dir().join("state.yml")
     }
+
+    pub fn gitignore_path(&self) -> PathBuf {
+        self.default_repo_dir().join(".gitignore")
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +102,18 @@ mod tests {
 
         // Assert
         assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/state.yml"));
+    }
+
+    #[test]
+    fn test_gitignore_path() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.gitignore_path();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/.gitignore"));
     }
 
     #[test]

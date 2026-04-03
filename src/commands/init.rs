@@ -16,6 +16,8 @@ pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::default();
     config.save(&config_path)?;
 
+    fs::write(ctx.gitignore_path(), "state.yml\n")?;
+
     println!("Initialized homeos at {}", ctx.default_repo_dir().display());
     Ok(())
 }
@@ -79,5 +81,35 @@ mod tests {
         let base = tmp.path();
         assert!(base.join("repos/default/packages").exists());
         assert!(base.join("repos/default/homeos.yml").exists());
+    }
+
+    #[test]
+    fn test_init_creates_gitignore_excluding_state_yml() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx).unwrap();
+
+        // Assert
+        let gitignore_path = ctx.gitignore_path();
+        assert!(gitignore_path.exists());
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert_eq!(content, "state.yml\n");
+    }
+
+    #[test]
+    fn test_init_idempotent_preserves_gitignore() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        run(&ctx).unwrap();
+        fs::write(ctx.gitignore_path(), "state.yml\ncustom\n").unwrap();
+
+        // Act
+        run(&ctx).unwrap();
+
+        // Assert
+        let content = fs::read_to_string(ctx.gitignore_path()).unwrap();
+        assert_eq!(content, "state.yml\ncustom\n");
     }
 }
