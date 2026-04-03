@@ -18,9 +18,6 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
   - [Options](#options)
 - [Directory Structure](#directory-structure)
 - [Configuration File (homeos.yml)](#configuration-file-homeosyml)
-  - [Defaults](#defaults)
-  - [Platforms](#platforms)
-  - [Profiles](#profiles)
   - [Packages](#packages)
   - [Plugins](#plugins)
 - [Repository Design Patterns](#repository-design-patterns)
@@ -166,12 +163,7 @@ Installing zed... done
   Mark the specified package as disabled in `homeos.yml`.  
   This sets `enabled: false` so the package will be skipped by `homeos apply` and shown as disabled in `homeos list`.
 
-The actual script executed is determined by the following sections in `homeos.yml`:
-
-- defaults
-- platform
-- profile
-- packages
+The actual script executed is resolved by convention based on the OS and any `actions_overrides` in `homeos.yml`.
 
 ### Manage repositories
 
@@ -215,24 +207,11 @@ Each repository manages its own plugins.
 
 ```
 --repo, -r        Specify repository
---profile, -p     Specify profile
---platform, -P    Specify platform
 ```
 
-- `--repo`  
+- `--repo`
   Select which repository to operate on.  
   Defaults to `default`.
-- `--profile`  
-  Select which profile to use when resolving packages and actions.  
-  Default profile is determined by `homeos.yml`.
-- `--platform`  
-  Select which platform to use when resolving actions.  
-  Default platform is determined by `homeos.yml`.
-
-Profiles affect:
-
-- tag filtering
-- action selection
 
 ## Directory Structure
 
@@ -264,73 +243,24 @@ The base directory depends on the operating system:
 
 - Each repository is self-contained.
 - `homeos.yml` defines behavior and package metadata.
-- `state.yml` tracks which packages are installed on this machine. This file is machine-specific and excluded from version control via `.gitignore`.
+- `state.yml` tracks which packages are installed on this machine.  
+  This file is machine-specific and excluded from version control via `.gitignore`.
 - `packages/` contains package action scripts.
 - `plugins/` contains plugin implementations.
 
 ## Configuration File (homeos.yml)
-
-### Defaults
-
-```yaml
-defaults:
-  actions: { install: install.sh, update: update.sh, uninstall: uninstall.sh }
-  profile: home-desktop
-  platform: linux
-```
-
-Global defaults used when no overrides are present.
-
-- `actions`  
-  Default script names for each action.
-- `profile`  
-  Default profile used when `--profile` is not specified.
-- `platform` (optional)  
-  The platform identifier used to resolve platform-specific overrides.
-
-### Platforms
-
-```yaml
-platforms:
-  windows:
-    actions_overrides: { install: install.ps1, update: update.ps1, uninstall: uninstall.ps1 }
-```
-
-Platform-specific behavior overrides.
-
-- `actions_overrides`  
-  Replace default action scripts for the given platform.
-
-### Profiles
-
-```yaml
-profiles:
-  home-desktop:
-    tags_any: [ cli, desktop ]
-    tags_all: [ home ]
-```
-
-Profiles control which packages are active.
-
-- `tags_any` (optional)  
-  Packages matching any of the specified tags.
-- `tags_all` (optional)  
-  Packages must contain all specified tags.
 
 ### Packages
 
 ```yaml
 packages:
   neovim:
-    tags: [ cli, home, work ]
     actions_overrides: { update: install }
     enabled: false
 ```
 
 Package-specific metadata.
 
-- `tags` (optional)  
-  Used for profile-based selection.
 - `actions_overrides` (optional)  
   Overrides the default action mapping for this package.  
   `install` / `update` / `uninstall` can be used for the alias for related action.
@@ -372,29 +302,19 @@ packages:
 
 There are two common ways to design your `homeos` repositories.
 
-### Pattern 1: Single repository (recommended for new users)
+### Pattern 1: Single repository (recommended)
 
-Manage packages and multiple plugins in a single repository.  
-This pattern keeps your workspace simple and is a good default for personal setups.
+Manage all packages in a single repository per machine.  
+This pattern keeps your workspace simple and is the recommended starting point.
 
-- Use `platform` / `profile` to select actions and packages.
-- Register multiple plugins under `plugins/` as needed (e.g. `dnf` / `winget`).
+### Pattern 2: Shared + machine-specific repositories
 
-This is the recommended starting point.
-
-### Pattern 2: Multiple repositories by provider / platform
-
-Split repositories by package provider or platform, and use them side by side.
+Use a shared repository for common packages and separate repositories for machine-specific packages.
 
 Examples:
 
-- `homeos-repo-linux` (shell script and dnf/apt-based packages)
-- `homeos-repo-windows` (winget/scoop/chocolatey-based packages)
+- `homeos-common` (packages shared across all machines)
+- `homeos-desktop` (desktop-specific packages)
+- `homeos-server` (server-specific packages)
 
-This pattern can be useful when:
-
-- you maintain both Linux and Windows environments,
-- you want stricter separation of responsibilities,
-- or you share repositories across teams.
-
-`homeos` supports both patterns. Start with Pattern 1, and split repositories only when it becomes beneficial.
+This pattern is useful when you maintain multiple machines with overlapping but not identical setups.
