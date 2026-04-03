@@ -51,3 +51,29 @@ Created a `config` module with `Config` and `PackageConfig` structs using serde 
 - Used `BTreeMap` instead of `HashMap` for deterministic serialization order in YAML output.
 - `serde_yaml` 0.9 shows a deprecation warning during compilation — it still works fine but a future migration to a maintained YAML crate may be needed.
 - `skip_serializing_if` is used to keep generated YAML clean by omitting default values.
+
+## Task: Implement `homeos init`
+
+**Timestamp:**
+
+2026-04-03T14:00:00Z
+
+**Why this task:**
+
+Next in dependency order — `init` creates the directory structure and config file that all subsequent commands depend on.
+
+**What was done:**
+
+Created a `commands` module with an `init` submodule. The `init::run` function creates the full directory structure (`repos/default/packages/`) and an empty `homeos.yml` with `Config::default()`. If `homeos.yml` already exists, it prints a message and returns without overwriting (idempotent). Wired the command into `main.rs`. Added 3 tests: structure creation, idempotency (doesn't overwrite existing config), and correct directory paths.
+
+**What was changed:**
+
+- src/commands.rs (new — module declaration for commands)
+- src/commands/init.rs (new — init command implementation with tests)
+- src/main.rs (added `mod commands`, wired init command to `commands::init::run`)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- Init is idempotent: re-running on an already-initialized directory is a no-op that preserves existing config.
+- The `commands` module structure is set up to accommodate future command implementations (cd, package subcommands).

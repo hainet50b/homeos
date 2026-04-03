@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod commands;
 mod config;
 mod context;
 
@@ -65,7 +66,10 @@ fn main() {
 
     match cli.command {
         Commands::Init => {
-            println!("init: {:?}", ctx.repos_dir());
+            if let Err(e) = commands::init::run(&ctx) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
         }
         Commands::Cd => {
             println!("cd: {:?}", ctx.default_repo_dir());
