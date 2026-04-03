@@ -423,3 +423,30 @@ Added an `uninstall` function in `commands::package` as a thin wrapper around `r
 - The implementation is a one-line wrapper since `run_action` was designed to be generic across install/update/uninstall.
 - The "Uninstalling" verb was already handled in `run_action`'s match arm, so no changes were needed to the shared code.
 - All 74 tests pass (71 existing + 3 new).
+
+## Task: Implement `homeos package cat <pkg>`
+
+**Timestamp:**
+
+2026-04-03T15:30:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies were already in place.
+
+**What was done:**
+
+Added a `cat` command that displays all action scripts (install, update, uninstall) for a given package with `=== <filename> ===` headers. If a script file does not exist, `(not found)` is shown instead of its content. Implemented as a `cat` public function (delegates to stdout) and a `cat_to` internal function accepting a generic `Write` for testability. Added `Cat` variant to `PackageCommands` and wired it in `main.rs`. Added 5 tests covering: all scripts present, mixed present/missing scripts, all scripts missing, package not found error, and not-initialized error.
+
+**What was changed:**
+
+- src/commands/package.rs (added `cat` and `cat_to` functions and 5 tests)
+- src/main.rs (added `Cat` variant to `PackageCommands`, wired to `commands::package::cat`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Used a `cat_to` inner function with a `Write` parameter (same pattern as `run_action`) to keep output capturable in tests without relying on stdout capture.
+- The output format matches the README spec exactly: `=== install.sh ===` headers with blank lines between sections.
+- All 79 tests pass (74 existing + 5 new).

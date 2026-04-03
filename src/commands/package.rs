@@ -97,6 +97,39 @@ pub fn disable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+pub fn cat(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    cat_to(ctx, package, &mut std::io::stdout())
+}
+
+fn cat_to<W: Write>(ctx: &Context, package: &str, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let actions = ["install", "update", "uninstall"];
+    let ext = if cfg!(windows) { "ps1" } else { "sh" };
+    let pkg_dir = ctx.packages_dir().join(package);
+
+    for (i, action) in actions.iter().enumerate() {
+        if i > 0 {
+            writeln!(writer)?;
+        }
+        let filename = format!("{action}.{ext}");
+        writeln!(writer, "=== {filename} ===")?;
+        let script_path = pkg_dir.join(&filename);
+        if script_path.is_file() {
+            let content = std::fs::read_to_string(&script_path)?;
+            write!(writer, "{content}")?;
+        } else {
+            writeln!(writer, "(not found)")?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     run_action(
         ctx,
@@ -916,5 +949,101 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Installing neovim... done"));
         assert!(written.contains("Installing ripgrep... done"));
+    }
+
+    #[test]
+    fn test_cat_displays_all_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        std::fs::write(pkg_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho install\n").unwrap();
+        std::fs::write(pkg_dir.join(format!("update.{ext}")), "#!/usr/bin/env sh\necho update\n").unwrap();
+        std::fs::write(pkg_dir.join(format!("uninstall.{ext}")), "#!/usr/bin/env sh\necho uninstall\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains(&format!("=== install.{ext} ===")));
+        assert!(written.contains("echo install"));
+        assert!(written.contains(&format!("=== update.{ext} ===")));
+        assert!(written.contains("echo update"));
+        assert!(written.contains(&format!("=== uninstall.{ext} ===")));
+        assert!(written.contains("echo uninstall"));
+    }
+
+    #[test]
+    fn test_cat_shows_not_found_for_missing_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        std::fs::write(pkg_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho install\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains(&format!("=== install.{ext} ===")));
+        assert!(written.contains("echo install"));
+        assert!(written.contains(&format!("=== update.{ext} ===\n(not found)")));
+        assert!(written.contains(&format!("=== uninstall.{ext} ===\n(not found)")));
+    }
+
+    #[test]
+    fn test_cat_all_scripts_missing() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        assert!(written.contains(&format!("=== install.{ext} ===\n(not found)")));
+        assert!(written.contains(&format!("=== update.{ext} ===\n(not found)")));
+        assert!(written.contains(&format!("=== uninstall.{ext} ===\n(not found)")));
+    }
+
+    #[test]
+    fn test_cat_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_cat_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_err());
     }
 }

@@ -54,6 +54,11 @@ pub enum PackageCommands {
         /// Package name
         package: String,
     },
+    /// Display all action scripts for a package
+    Cat {
+        /// Package name
+        package: String,
+    },
     /// Execute install action scripts
     Install {
         /// Package names
@@ -118,6 +123,12 @@ fn main() {
             }
             PackageCommands::Disable { package } => {
                 if let Err(e) = commands::package::disable(&ctx, &package) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Cat { package } => {
+                if let Err(e) = commands::package::cat(&ctx, &package) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
