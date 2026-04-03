@@ -213,3 +213,28 @@ Created an `add` function in `commands::package` that loads `homeos.yml`, checks
 - The function errors early if the package already exists in `homeos.yml`, preventing accidental overwrites.
 - `create_dir_all` is used for the package directory so it works even if the `packages/` parent doesn't exist yet.
 - All 27 tests pass (23 existing + 4 new).
+
+## Task: Implement `homeos package remove <pkg>`
+
+**Timestamp:**
+
+2026-04-03T23:30:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. `package remove` is the counterpart to `package add` and completes the basic package CRUD operations before moving to action execution commands.
+
+**What was done:**
+
+Created a `remove` function in `commands::package` that loads `homeos.yml`, checks the package exists, removes the entry from the config, and saves. Per the README spec, only the config entry is removed (not the package directory). Wired the command into `main.rs`. Added 4 tests: successful removal preserving other packages, error on nonexistent package, error when not initialized, and removing the last package leaves an empty packages map.
+
+**What was changed:**
+
+- src/commands/package.rs (added `remove` function and 4 tests)
+- src/main.rs (wired `PackageCommands::Remove` to `commands::package::remove`)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- The spec says "Remove the package entry from `homeos.yml`" — it does not mention removing the package directory, so the implementation only modifies the config file.
+- All 31 tests pass (27 existing + 4 new).

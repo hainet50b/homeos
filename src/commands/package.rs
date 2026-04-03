@@ -15,6 +15,20 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    config.packages.remove(package);
+    config.save(&ctx.config_path())?;
+
+    println!("Removed package '{package}'");
+    Ok(())
+}
+
 pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
@@ -170,5 +184,60 @@ mod tests {
 
         // Assert
         assert_eq!(output, vec!["neovim (disabled)", "ripgrep"]);
+    }
+
+    #[test]
+    fn test_remove_deletes_config_entry() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = remove(&ctx, "nonexistent");
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_remove_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_last_package_leaves_empty_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.is_empty());
     }
 }

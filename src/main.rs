@@ -90,7 +90,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Remove { package } => println!("package remove: {package}"),
+            PackageCommands::Remove { package } => {
+                if let Err(e) = commands::package::remove(&ctx, &package) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::Install { package } => println!("package install: {package:?}"),
             PackageCommands::Update { package } => println!("package update: {package:?}"),
             PackageCommands::Uninstall { package } => println!("package uninstall: {package:?}"),

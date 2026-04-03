@@ -62,7 +62,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos cd` — launch a shell in the default repository directory
 - [x] Implement `homeos package list` — list all packages from `homeos.yml`
 - [x] Implement `homeos package add <pkg>` — create package directory and add entry to `homeos.yml`
-- [ ] Implement `homeos package remove <pkg>` — remove package entry from `homeos.yml`
+- [x] Implement `homeos package remove <pkg>` — remove package entry from `homeos.yml`
 - [ ] Implement confirmation prompt — show plan with disabled package messages, prompt `Proceed? [y/N]`
 - [ ] Implement `homeos package install <pkg>...` — execute install action scripts
 - [ ] Implement `homeos package update <pkg>...` — execute update action scripts
