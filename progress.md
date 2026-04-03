@@ -263,3 +263,29 @@ Enhanced the `add` function to generate skeleton action scripts (install, update
 
 - Uses `cfg!(windows)` at compile time to determine the script extension, matching the PRD's OS-appropriate extension requirement.
 - All 33 tests pass (31 existing + 2 new).
+
+## Task: Implement `homeos package enable <pkg>`
+
+**Timestamp:**
+
+2026-04-03T12:30:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Enable/disable are prerequisites for the confirmation prompt task which checks enabled status.
+
+**What was done:**
+
+Added an `enable` function to `commands::package` that loads the config, finds the package, sets `enabled: true`, and saves. If the package is already enabled, it prints a message and returns without writing. Added `Enable` variant to `PackageCommands` enum and wired it in `main.rs`. Added 5 tests covering: enabling a disabled package, already-enabled noop, package not found error, not-initialized error, and preservation of other fields (actions_overrides).
+
+**What was changed:**
+
+- src/commands/package.rs (added `enable` function and 5 tests)
+- src/main.rs (added `Enable` variant to `PackageCommands`, wired to `commands::package::enable`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `enable` function removes `enabled: false` by setting it to `true`, which then gets skipped during serialization (`skip_serializing_if = "is_true"`), resulting in clean YAML output.
+- All 38 tests pass (33 existing + 5 new).
