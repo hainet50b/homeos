@@ -396,3 +396,30 @@ Added an `update` function in `commands::package` as a thin wrapper around `run_
 - The implementation is a one-line wrapper since `run_action` was designed to be generic across install/update/uninstall.
 - The existing `test_run_action_respects_action_overrides` test already covers the update action with overrides, so the new tests focus on the update-specific output formatting.
 - All 71 tests pass (68 existing + 3 new).
+
+## Task: Implement `homeos package uninstall <pkg>...`
+
+**Timestamp:**
+
+2026-04-03T15:00:00Z
+
+**Why this task:**
+
+Last remaining unchecked task in the PRD. All dependencies (run_action infrastructure, confirmation prompt) were already in place from previous tasks.
+
+**What was done:**
+
+Added an `uninstall` function in `commands::package` as a thin wrapper around `run_action` with action name "uninstall". Wired the `PackageCommands::Uninstall` variant in `main.rs` to call `commands::package::uninstall` (replacing the placeholder `println!`). Added 3 tests covering: successful uninstall execution, disabled package skipping for uninstall, and abort on no confirmation for uninstall.
+
+**What was changed:**
+
+- src/commands/package.rs (added `uninstall` function and 3 tests)
+- src/main.rs (wired `PackageCommands::Uninstall` to `commands::package::uninstall`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The implementation is a one-line wrapper since `run_action` was designed to be generic across install/update/uninstall.
+- The "Uninstalling" verb was already handled in `run_action`'s match arm, so no changes were needed to the shared code.
+- All 74 tests pass (71 existing + 3 new).

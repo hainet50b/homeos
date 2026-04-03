@@ -134,7 +134,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Uninstall { packages } => println!("package uninstall: {packages:?}"),
+            PackageCommands::Uninstall { packages } => {
+                if let Err(e) = commands::package::uninstall(&ctx, &packages) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
         },
     }
 }

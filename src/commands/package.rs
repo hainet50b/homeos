@@ -117,6 +117,16 @@ pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
     )
 }
 
+pub fn uninstall(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    run_action(
+        ctx,
+        packages,
+        "uninstall",
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
+}
+
 /// Execute an action for the given packages, with confirmation prompt.
 /// I/O is injectable for testability. Reusable for install/update/uninstall.
 pub fn run_action<R: BufRead, W: Write>(
@@ -808,6 +818,72 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Aborted."));
         assert!(!written.contains("Updating"));
+    }
+
+    #[test]
+    fn test_run_action_executes_uninstall_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
+    }
+
+    #[test]
+    fn test_run_action_skips_disabled_packages_for_uninstall() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim:\n    enabled: false\n",
+            "neovim",
+            "uninstall",
+            "SHOULD_NOT_RUN",
+        );
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("No packages to uninstall."));
+        assert!(!written.contains("Uninstalling"));
+    }
+
+    #[test]
+    fn test_run_action_aborts_uninstall_on_no_confirmation() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "SHOULD_NOT_RUN",
+        );
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        assert!(!written.contains("Uninstalling"));
     }
 
     #[test]
