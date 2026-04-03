@@ -78,7 +78,12 @@ fn main() {
             }
         }
         Commands::Package { command } => match command {
-            PackageCommands::List => println!("package list"),
+            PackageCommands::List => {
+                if let Err(e) = commands::package::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::Add { package } => println!("package add: {package}"),
             PackageCommands::Remove { package } => println!("package remove: {package}"),
             PackageCommands::Install { package } => println!("package install: {package:?}"),

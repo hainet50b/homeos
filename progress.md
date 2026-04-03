@@ -160,3 +160,30 @@ Created a `commands::cd` module with two functions: `resolve_target` (validates 
 - The `run` function spawns a subshell using `$SHELL` (falling back to `/bin/sh`), since a CLI tool cannot change the parent shell's working directory directly.
 - `resolve_target` is separated from `run` to keep the testable logic isolated from the shell-spawning side effect.
 - All 19 tests pass (16 existing + 3 new).
+
+## Task: Implement `homeos package list`
+
+**Timestamp:**
+
+2026-04-03T22:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The `package list` command is a prerequisite for understanding and testing subsequent package management commands (add, remove, install, etc.).
+
+**What was done:**
+
+Created a `commands::package` module with a `list` function that loads `homeos.yml` and prints each package name. Disabled packages are annotated with `(disabled)`. Wired the command into `main.rs`. Added 4 tests: listing multiple packages, empty packages, error when not initialized, and correct formatting of enabled/disabled packages.
+
+**What was changed:**
+
+- src/commands/package.rs (new — package list implementation with tests)
+- src/commands.rs (added `pub mod package`)
+- src/main.rs (wired list command to `commands::package::list`)
+- prd.md (checked off task)
+
+**Remarks:**
+
+- Uses `BTreeMap` iteration from `Config`, so packages are listed in alphabetical order.
+- Disabled packages show as `name (disabled)` matching the convention from the README spec.
+- All 23 tests pass (19 existing + 4 new).
