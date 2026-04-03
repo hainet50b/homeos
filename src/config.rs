@@ -44,10 +44,6 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
-    fn fixture(yaml: &str) -> Config {
-        yaml_serde::from_str(yaml).unwrap()
-    }
-
     fn fixture_file(content: &str) -> NamedTempFile {
         let mut tmp = NamedTempFile::new().unwrap();
         write!(tmp, "{}", content).unwrap();
@@ -68,7 +64,7 @@ packages:
 "#;
 
         // Act
-        let sut = fixture(yaml);
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
         assert_eq!(sut.packages.len(), 2);
@@ -86,7 +82,7 @@ packages:
         let yaml = "packages: {}\n";
 
         // Act
-        let sut = fixture(yaml);
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
         assert!(sut.packages.is_empty());
@@ -98,7 +94,7 @@ packages:
         let yaml = "packages:\n  git: {}\n";
 
         // Act
-        let sut = fixture(yaml);
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
         let git = &sut.packages["git"];
@@ -112,7 +108,7 @@ packages:
         let yaml = "packages:\n  fish: {}\n";
 
         // Act
-        let sut = fixture(yaml);
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
         let fish = &sut.packages["fish"];
@@ -159,7 +155,7 @@ packages:
     #[test]
     fn test_serialize_skips_defaults() {
         // Arrange
-        let sut = Config {
+        let config = Config {
             packages: BTreeMap::from([(
                 "git".to_string(),
                 PackageConfig {
@@ -170,11 +166,11 @@ packages:
         };
 
         // Act
-        let yaml = yaml_serde::to_string(&sut).unwrap();
+        let sut = yaml_serde::to_string(&config).unwrap();
 
         // Assert
-        assert!(!yaml.contains("actions_overrides"));
-        assert!(!yaml.contains("enabled"));
+        assert!(!sut.contains("actions_overrides"));
+        assert!(!sut.contains("enabled"));
     }
 
     #[test]

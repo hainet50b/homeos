@@ -36,32 +36,52 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    fn fixture(base_dir: Option<PathBuf>) -> Context {
-        Context::new(base_dir)
+    #[test]
+    fn test_repos_dir() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.repos_dir();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos"));
     }
 
     #[test]
-    fn test_custom_base_dir() {
+    fn test_default_repo_dir() {
         // Arrange
-        let base = PathBuf::from("/tmp/test-homeos");
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
 
         // Act
-        let sut = fixture(Some(base));
+        let result = sut.default_repo_dir();
 
         // Assert
-        assert_eq!(sut.repos_dir(), Path::new("/tmp/test-homeos/repos"));
-        assert_eq!(
-            sut.default_repo_dir(),
-            Path::new("/tmp/test-homeos/repos/default")
-        );
-        assert_eq!(
-            sut.packages_dir(),
-            Path::new("/tmp/test-homeos/repos/default/packages")
-        );
-        assert_eq!(
-            sut.config_path(),
-            Path::new("/tmp/test-homeos/repos/default/homeos.yml")
-        );
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default"));
+    }
+
+    #[test]
+    fn test_packages_dir() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.packages_dir();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/packages"));
+    }
+
+    #[test]
+    fn test_config_path() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.config_path();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/homeos.yml"));
     }
 
     #[test]
@@ -70,7 +90,7 @@ mod tests {
         let expected = dirs::data_dir().unwrap().join("homeos");
 
         // Act
-        let sut = fixture(None);
+        let sut = Context::new(None);
 
         // Assert
         assert_eq!(sut.base_dir, expected);
