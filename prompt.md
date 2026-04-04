@@ -2,7 +2,7 @@ Read the PRD at prd.md and progress.md, then follow these instructions:
 
 1. Read all unchecked tasks (- [ ]) in the PRD and review `progress.md` to understand what has been completed and any remarks from previous work.
 2. Select the next task to work on, considering dependencies between tasks and current project state. Process Tasks before Post Tasks.
-3. Implement ONLY that one task.
+3. Implement ONLY that one task. When adding new functions, methods, or CLI subcommands, place them in the order defined in `README.md`.
 4. Write corresponding unit tests following the 3A pattern (Arrange / Act / Assert). Fixtures must only handle Arrange (preconditions). Act must explicitly call the method or function under test — never hide it inside a fixture.
 5. Run `cargo clippy` and fix any warnings.
 6. Run `cargo test` to verify all existing tests still pass.
