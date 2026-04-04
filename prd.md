@@ -10,6 +10,7 @@ See `README.md` for the full specification of commands, directory structure, and
 - Rust (latest stable)
 - clap (CLI argument parsing)
 - serde / yaml_serde (configuration parsing)
+- reqwest with `blocking` feature (HTTP client for GitHub API)
 - dirs (OS-appropriate data directory resolution)
 
 ## Data Model
@@ -124,6 +125,17 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos repo remove <name>` — remove the local repository directory
 - [x] Enhance `homeos apply` to include disabled packages in the plan display as `Skipping <pkg> (disabled)` instead of silently filtering them out.
 - [ ] Enhance `homeos repo remove` to reject removal if the repository's `state.yml` contains installed packages. Error with a message to uninstall first.
+- [ ] Implement `homeos package cd [<package>]` — launch a shell in the package root or specific package directory
+- [ ] Enhance `homeos init` to accept an optional `<url>` argument to clone a remote repository as the default repo
+- [ ] Implement `--strip-git` flag for `homeos init` — remove `.git` directory after cloning
+- [ ] Add `plugins` section to Config (serde: `BTreeMap<String, PluginConfig>` with `url` field)
+- [ ] Add `plugin` (optional `String`) and `params` (optional `BTreeMap<String, String>`) fields to PackageConfig
+- [ ] Implement `homeos plugin list` — list registered plugins in the current repository
+- [ ] Implement `homeos plugin list-remote` — fetch `hainet50b/homeos-plugin-*` repositories from GitHub API, display name, description, and URL in a table. Show error message on network failure.
+- [ ] Implement `homeos plugin add <name> [<url>]` — register plugin in `homeos.yml` and clone into `plugins/<name>/`. Without URL, resolve as `https://github.com/hainet50b/homeos-plugin-<name>`.
+- [ ] Implement `homeos plugin remove <name>` — remove `plugins/<name>/` directory and entry from `homeos.yml`. Warn (but do not block) if packages reference this plugin.
+- [ ] Add `--plugin <name>` and `--params <key=value>...` options to `homeos package add` CLI definition
+- [ ] Integrate plugin into `homeos package add` — when `--plugin` is specified, load `params.yml` from `plugins/<plugin>/`, read the OS-appropriate template (`<action>.sh.tmpl` or `<action>.ps1.tmpl`), replace `{{key}}` placeholders with `params` values, and write the result as the action script. Skip actions whose templates do not exist for the current OS. Record `plugin` and `params` in `homeos.yml`.
 
 ## Completion Criteria
 

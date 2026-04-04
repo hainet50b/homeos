@@ -21,6 +21,10 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
   - [Packages](#packages)
   - [Plugins](#plugins)
 - [Repository Design Patterns](#repository-design-patterns)
+- [Plugin Development](#plugin-development)
+  - [Plugin structure](#plugin-structure)
+  - [params.yml](#paramsyml)
+  - [Template syntax](#template-syntax)
 
 ## Quick Start
 
@@ -31,25 +35,26 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
 ### General
 
 ```sh
-homeos init [<repo_name> <repo_url>]
+homeos init [<url>]
 homeos cd
 homeos apply
 ```
 
-- `init` — Create the initial repository structure under `~/.local/share/homeos/repos`.  
-  If `<repo_name>` and `<repo_url>` are given, clone the remote repository as the default repo.
+- `init` — Initialize the default repository.  
+  Without arguments, creates an empty repository with a skeleton `homeos.yml`.  
+  If `<url>` is given, clone the remote repository as the default repo.
 - `cd` — Move to the default repository directory.
 - `apply` — Install missing packages, update installed ones, and add defined plugins.
 
 #### Flags
 
-- `--strip-git` — Clone the remote repository without inheriting its Git history.
+- `--strip-git` — Remove `.git` directory after cloning. Used with `homeos init <url>`.
 
 ### Manage packages
 
 ```sh
 homeos package list
-homeos package add <package> [--depends-on <dependency>...]
+homeos package add <package> [--depends-on <dependency>...] [--plugin <name> --params <key=value>...]
 homeos package remove <package>
 homeos package add-dep <package> <dependency>...
 homeos package remove-dep <package> <dependency>...
@@ -64,6 +69,7 @@ Manage package definitions inside the repository.
 - `list` — List all defined packages in the repository.
 - `add` — Create a new package directory under `packages/` and update `homeos.yml`.  
   Use `--depends-on` to specify dependencies at creation time.  
+  Use `--plugin` and `--params` to generate scripts from a plugin's templates instead of default skeletons.  
   Skeleton action scripts are generated with OS-appropriate extensions:
 
   ```
@@ -99,10 +105,6 @@ Manage package definitions inside the repository.
   ```
 - `cd` — Move to the package root directory.  
   If name is given, move to the package directory.
-
-#### Flags
-
-- `--installed` — List installed packages only.
 
 ### Operate packages
 
@@ -170,14 +172,18 @@ Each repository contains its own `homeos.yml`.
 
 ```sh
 homeos plugin list
-homeos plugin add <plugin_name> <plugin_url>
-homeos plugin remove <plugin_name>
+homeos plugin list-remote
+homeos plugin add <name> [<url>]
+homeos plugin remove <name>
 ```
 
 Manage plugins used to provide package action implementations.
 
 - `list` — List registered plugins in the current repository.
-- `add` — Register a plugin by name and clone it from the given URL.
+- `list-remote` — List official plugins available from GitHub.
+- `add` — Register a plugin and clone it into `plugins/`.  
+  Without `<url>`, resolves the official repository automatically.  
+  With `<url>`, clones the specified repository.
 - `remove` — Remove the plugin directory and entry from `homeos.yml`.
 
 Each repository manages its own plugins.
@@ -258,13 +264,11 @@ plugins:
 - `url`  
   Specifies a plugin URL.
 
-Plugins provide implementations for package actions such as `install`, `update`, and `uninstall`.
+Plugins provide script templates for `homeos package add`.  
+When a package specifies a plugin, `add` generates action scripts from the plugin's templates instead of the default skeletons.
 
 - Each plugin is identified by a unique name.
 - The `url` specifies the remote repository used to obtain the plugin.
-
-Packages can reference a plugin to delegate actions.  
-When a package specifies a plugin, its action behavior is resolved through that plugin.
 
 ```yaml
 packages:
@@ -274,8 +278,8 @@ packages:
       name: neovim.x86_64
 ```
 
-- `params` schema is defined by a plugin.
-- Package-level `actions_overrides` takes precedence over plugin-provided actions.
+- `params` are passed to the plugin's templates during script generation.
+- The generated scripts can be further edited by the user after creation.
 
 ## Repository design patterns
 
@@ -297,3 +301,52 @@ Examples:
 - `homeos-server` (server-specific packages)
 
 This pattern is useful when you maintain multiple machines with overlapping but not identical setups.
+
+## Plugin Development
+
+This section is for plugin developers.
+
+### Plugin structure
+
+A plugin is a Git repository with the following structure:
+
+```
+homeos-plugin-dnf/
+├── params.yml
+├── install.sh.tmpl
+├── update.sh.tmpl
+├── uninstall.sh.tmpl
+├── install.ps1.tmpl      # optional (OS-specific)
+├── update.ps1.tmpl       # optional
+└── uninstall.ps1.tmpl    # optional
+```
+
+`homeos package add` selects templates based on the OS (`.sh.tmpl` for Linux/macOS, `.ps1.tmpl` for Windows).  
+Templates that do not exist for the current OS are skipped — no script is generated for that action.
+
+### params.yml
+
+Defines the parameters that the plugin accepts:
+
+```yaml
+params:
+  - name
+```
+
+Each entry is a required parameter. When a user adds a package with this plugin, the `params` values from `homeos.yml` are used to render the templates.
+
+### Template syntax
+
+Templates use `{{key}}` placeholders, which are replaced with the corresponding `params` values during script generation.
+
+```sh
+#!/usr/bin/env sh
+sudo dnf install -y {{name}}
+```
+
+Given `params: { name: neovim.x86_64 }`, this produces:
+
+```sh
+#!/usr/bin/env sh
+sudo dnf install -y neovim.x86_64
+```
