@@ -129,12 +129,7 @@ Operate on packages defined in the current repository.
 - `enable` — Mark the package as enabled in `homeos.yml`.
 - `disable` — Mark the package as disabled in `homeos.yml`.
 
-#### Behavior
-
-- A confirmation prompt is shown before execution.
-- Disabled packages are skipped for `install` and `update`. `uninstall` ignores the disabled status.
-- On script failure, the error is reported and execution continues to the next package.
-- Scripts are resolved by convention based on the OS and any `actions_overrides` in `homeos.yml`.
+A confirmation prompt is shown before execution.
 
 ```
 $ homeos package install neovim zed docker
@@ -147,6 +142,21 @@ Proceed? [y/N] y
 Installing neovim... done
 Installing zed... done
 ```
+
+#### Behavior
+
+| State                       | install                   | update                   | uninstall                |
+|-----------------------------|---------------------------|--------------------------|--------------------------|
+| enabled + not in state      | Execute                   | Skip (not installed)     | Skip (not installed)     |
+| enabled + in state          | Skip (already installed)  | Execute                  | Execute                  |
+| disabled + not in state     | Skip (disabled)           | Skip (disabled)          | Skip (not installed)     |
+| disabled + in state         | Skip (disabled)           | Skip (disabled)          | Execute                  |
+
+> [!NOTE]
+> `uninstall` ignores the enabled/disabled status because its only concern is whether the package is installed on the machine (`state.yml`). The `enabled` flag controls `apply` behavior, not `uninstall`. After a successful uninstall, the package is automatically disabled in `homeos.yml` to prevent re-installation by `apply`.
+
+- On script failure, the error is reported and execution continues to the next package.
+- Scripts are resolved by convention based on the OS and any `actions_overrides` in `homeos.yml`.
 
 ### Manage repositories
 
