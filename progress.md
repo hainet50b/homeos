@@ -632,3 +632,29 @@ Enhanced `update_state_per_package` to also disable packages in `homeos.yml` aft
 - The disable logic is placed inside `update_state_per_package` alongside the state.yml update, keeping the per-package post-execution side effects co-located.
 - Config is loaded and saved per package (same pattern as state.yml). This is fine for small package counts.
 - All 114 tests pass (110 existing + 4 new).
+
+## Task: Fix `homeos package add` to preserve existing scripts
+
+**Timestamp:**
+
+2026-04-04T14:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. No dependencies on the remaining `--all` flag task.
+
+**What was done:**
+
+Fixed the `add` function to check if each skeleton script file already exists before writing it. Previously, `add` unconditionally overwrote all scripts in the package directory. Now it only generates skeleton scripts for files that are missing, preserving any user-written scripts.
+
+**What was changed:**
+
+- src/commands/package.rs (added existence check in script generation loop, added 3 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The fix is a single `if !path.exists()` guard around the write call — minimal and targeted.
+- Added 3 tests: preserving one existing script while generating others, preserving two existing scripts, and preserving all three existing scripts.
+- All 117 tests pass (114 existing + 3 new).
