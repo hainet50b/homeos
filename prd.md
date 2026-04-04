@@ -122,7 +122,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos repo list` — list registered repositories
 - [x] Implement `homeos repo add <name> <url>` — clone a remote repository into `repos/<name>/`
 - [x] Implement `homeos repo remove <name>` — remove the local repository directory
-- [ ] Enhance `homeos apply` to include disabled packages in the plan display as `Skipping <pkg> (disabled)` instead of silently filtering them out.
+- [x] Enhance `homeos apply` to include disabled packages in the plan display as `Skipping <pkg> (disabled)` instead of silently filtering them out.
 
 ## Completion Criteria
 

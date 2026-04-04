@@ -1399,3 +1399,35 @@ Implemented `homeos repo remove <name>` which removes the local repository direc
 
 - All 239 tests pass (236 existing + 3 new).
 - Tests cover: successful removal, nonexistent repo error, removal doesn't affect other repos.
+
+## Task: Enhance `homeos apply` to show disabled packages in plan
+
+**Timestamp:**
+
+2026-04-04T14:37:57Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD (both Tasks and Post Tasks sections).
+
+**What was done:**
+
+Modified `apply_to` to collect disabled packages during the classification loop and display `Skipping <pkg> (disabled)` messages in the plan output. Two cases are handled:
+1. When there are enabled packages: disabled messages appear after the install/update plan lines but before the confirmation prompt.
+2. When all packages are disabled (nothing to do): disabled messages appear before the "Nothing to do." message.
+
+Updated two existing tests (`test_apply_skips_disabled_packages` and `test_apply_nothing_to_do_when_all_disabled`) to expect the new disabled messages. Added three new tests:
+- `test_apply_shows_disabled_in_plan_with_enabled_packages` — mixed install/update/disabled scenario
+- `test_apply_shows_multiple_disabled_packages` — multiple disabled packages shown
+- `test_apply_disabled_shown_before_prompt` — disabled message ordering relative to confirmation prompt
+
+**What was changed:**
+
+- src/commands/package/action.rs (added disabled collection in apply_to, display disabled in plan, updated 2 tests, added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 242 tests pass (239 existing + 3 new).
+- The disabled messages are displayed at the `apply_to` level rather than injected into `Plan::build`, since `apply` handles disabled filtering before plan construction. This keeps `Plan::build` unchanged and avoids passing disabled packages through the plan machinery.

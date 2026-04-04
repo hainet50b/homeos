@@ -26,9 +26,11 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
 
     let mut to_install = Vec::new();
     let mut to_update = Vec::new();
+    let mut disabled_packages = Vec::new();
 
     for (name, pkg) in &config.packages {
         if !pkg.enabled {
+            disabled_packages.push(name.clone());
             continue;
         }
         if installed.contains(name) {
@@ -39,6 +41,9 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     if to_install.is_empty() && to_update.is_empty() {
+        for name in &disabled_packages {
+            writeln!(writer, "Skipping {name} (disabled)")?;
+        }
         writeln!(writer, "Nothing to do.")?;
         return Ok(());
     }
@@ -106,6 +111,9 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         if !display.is_empty() {
             writeln!(writer, "{display}")?;
         }
+    }
+    for name in &disabled_packages {
+        writeln!(writer, "Skipping {name} (disabled)")?;
     }
 
     writeln!(writer)?;
@@ -2075,7 +2083,8 @@ mod tests {
         // Assert
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Installing zed... done"));
-        assert!(!written.contains("neovim"));
+        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(!written.contains("Installing neovim"));
     }
 
     #[test]
@@ -2091,6 +2100,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (disabled)"));
         assert!(written.contains("Nothing to do."));
     }
 
@@ -2333,5 +2343,71 @@ mod tests {
         assert!(a_pos < b_pos, "a should be updated before b is updated");
         assert!(b_pos < d_pos, "b should be updated before d is installed");
         assert!(c_pos < d_pos, "c should be installed before d is installed");
+    }
+
+    #[test]
+    fn test_apply_shows_disabled_in_plan_with_enabled_packages() {
+        // Arrange: neovim disabled, zed enabled+not-in-state, ripgrep enabled+in-state
+        let yaml =
+            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", "ZED_INSTALL");
+        write_script(&ctx, "ripgrep", "update", "RG_UPDATE");
+        let state = State {
+            installed: vec!["ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("Installing zed... done"));
+        assert!(written.contains("Updating ripgrep... done"));
+    }
+
+    #[test]
+    fn test_apply_shows_multiple_disabled_packages() {
+        // Arrange: two disabled packages, one enabled
+        let yaml = "packages:\n  docker:\n    enabled: false\n  neovim:\n    enabled: false\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", "ZED_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping docker (disabled)"));
+        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("Installing zed... done"));
+    }
+
+    #[test]
+    fn test_apply_disabled_shown_before_prompt() {
+        // Arrange: disabled package should appear in plan before confirmation prompt
+        let yaml = "packages:\n  docker:\n    enabled: false\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", "ZED_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let skip_pos = written.find("Skipping docker (disabled)").unwrap();
+        let prompt_pos = written.find("Proceed? [y/N]").unwrap();
+        assert!(
+            skip_pos < prompt_pos,
+            "disabled message should appear before confirmation prompt"
+        );
     }
 }
