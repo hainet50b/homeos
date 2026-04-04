@@ -16,6 +16,20 @@ pub struct PluginConfig {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PluginManifest {
+    #[serde(default)]
+    pub params: Vec<String>,
+}
+
+impl PluginManifest {
+    pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let contents = std::fs::read_to_string(path)?;
+        let manifest: PluginManifest = yaml_serde::from_str(&contents)?;
+        Ok(manifest)
+    }
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct PackageConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub actions_overrides: BTreeMap<String, String>,
@@ -496,5 +510,53 @@ plugins:
             sut.plugins["dnf"].url,
             "https://github.com/hainet50b/homeos-plugin-dnf"
         );
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest() {
+        // Arrange
+        let yaml = "params:\n  - name\n  - repo\n";
+
+        // Act
+        let sut: PluginManifest = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert_eq!(sut.params, vec!["name", "repo"]);
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest_empty_params() {
+        // Arrange
+        let yaml = "params: []\n";
+
+        // Act
+        let sut: PluginManifest = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert!(sut.params.is_empty());
+    }
+
+    #[test]
+    fn test_load_plugin_manifest_from_file() {
+        // Arrange
+        let tmp = fixture_file("params:\n  - name\n");
+
+        // Act
+        let sut = PluginManifest::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(sut.params, vec!["name"]);
+    }
+
+    #[test]
+    fn test_load_plugin_manifest_nonexistent_file() {
+        // Arrange
+        let path = Path::new("/nonexistent/params.yml");
+
+        // Act
+        let result = PluginManifest::load(path);
+
+        // Assert
+        assert!(result.is_err());
     }
 }

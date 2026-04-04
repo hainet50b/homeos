@@ -1736,3 +1736,38 @@ Added `--plugin <name>` and `--params <key=value>...` options to the `Add` varia
 - The `parse_key_value` function splits on the first `=` only, allowing values to contain `=` characters.
 - The `--params` option uses `Vec<(String, String)>` at the CLI level, converted to `BTreeMap` in the dispatch for deterministic ordering in config.
 - This task only adds the CLI definition and storage — the actual template integration (loading templates, replacing placeholders) is the next task.
+
+## Task: Integrate plugin into homeos package add
+
+**Timestamp:**
+
+2026-04-04T16:42:23Z
+
+**Why this task:**
+
+This is the last remaining unchecked task in the PRD. All previous tasks are complete.
+
+**What was done:**
+
+- Added `PluginManifest` struct to `config.rs` for parsing `params.yml` files from plugin directories
+- Modified `add` in `registry.rs` to branch on `--plugin`: when specified, loads the plugin directory, validates required params against `params.yml`, reads OS-appropriate templates (`<action>.sh.tmpl` or `<action>.ps1.tmpl`), replaces `{{key}}` placeholders with param values, and writes rendered scripts. When no plugin is specified, generates skeleton scripts as before.
+- Extracted `generate_skeleton_scripts` and `generate_plugin_scripts` helper functions
+- Added `render_template` function for `{{key}}` placeholder replacement
+- Updated 3 existing tests to set up plugin directories (previously they only stored plugin/params in config without needing the plugin dir to exist)
+- Added 8 new plugin integration tests covering: template rendering, missing templates skipped, plugin not found error, missing required params error, multiple params replacement, preserving existing scripts, no params.yml skips validation, no templates creates no scripts
+- Added 4 new `PluginManifest` tests in `config.rs`
+
+**What was changed:**
+
+- src/config.rs (added PluginManifest struct, load method, and 4 tests)
+- src/commands/package/registry.rs (refactored add function, added generate_skeleton_scripts, generate_plugin_scripts, render_template, updated 3 existing tests, added 8 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 326 tests pass (314 existing + 12 new tests).
+- The plugin directory must exist before `package add --plugin` is called; the error message guides the user to run `homeos plugin add` first.
+- `params.yml` is optional in the plugin directory — if absent, no parameter validation is performed.
+- Templates that don't exist for the current OS are silently skipped, matching the PRD requirement.
+- Existing scripts in the package directory are preserved even when using plugin templates, consistent with the existing skeleton script behavior.

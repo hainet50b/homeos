@@ -1,6 +1,7 @@
-use crate::config::{Config, PackageConfig};
+use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
 use crate::state::State;
+use std::collections::BTreeMap;
 use std::io::Write;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
@@ -58,7 +59,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&str>, params: &std::collections::BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&str>, params: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
@@ -79,6 +80,17 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&
     let pkg_dir = ctx.packages_dir().join(package);
     std::fs::create_dir_all(&pkg_dir)?;
 
+    if let Some(plugin_name) = plugin {
+        generate_plugin_scripts(ctx, &pkg_dir, plugin_name, params)?;
+    } else {
+        generate_skeleton_scripts(&pkg_dir, package)?;
+    }
+
+    println!("Added package '{package}'");
+    Ok(())
+}
+
+fn generate_skeleton_scripts(pkg_dir: &std::path::Path, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     for (action, ext) in skeleton_scripts() {
         let filename = format!("{action}.{ext}");
         let path = pkg_dir.join(&filename);
@@ -87,9 +99,57 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&
             std::fs::write(path, content)?;
         }
     }
-
-    println!("Added package '{package}'");
     Ok(())
+}
+
+fn generate_plugin_scripts(ctx: &Context, pkg_dir: &std::path::Path, plugin_name: &str, params: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+    let plugin_dir = ctx.plugins_dir().join(plugin_name);
+    if !plugin_dir.exists() {
+        return Err(format!("Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}").into());
+    }
+
+    let manifest_path = plugin_dir.join("params.yml");
+    if manifest_path.exists() {
+        let manifest = PluginManifest::load(&manifest_path)?;
+        let missing: Vec<&String> = manifest.params.iter().filter(|p| !params.contains_key(p.as_str())).collect();
+        if !missing.is_empty() {
+            let list = missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+            return Err(format!("Missing required plugin parameters: {list}").into());
+        }
+    }
+
+    let ext = super::script_extension();
+    let tmpl_ext = format!("{ext}.tmpl");
+    let actions = ["install", "update", "uninstall"];
+
+    for action in &actions {
+        let tmpl_filename = format!("{action}.{tmpl_ext}");
+        let tmpl_path = plugin_dir.join(&tmpl_filename);
+        if !tmpl_path.exists() {
+            continue;
+        }
+
+        let script_filename = format!("{action}.{ext}");
+        let script_path = pkg_dir.join(&script_filename);
+        if script_path.exists() {
+            continue;
+        }
+
+        let template = std::fs::read_to_string(&tmpl_path)?;
+        let rendered = render_template(&template, params);
+        std::fs::write(script_path, rendered)?;
+    }
+
+    Ok(())
+}
+
+fn render_template(template: &str, params: &BTreeMap<String, String>) -> String {
+    let mut result = template.to_string();
+    for (key, value) in params {
+        let placeholder = format!("{{{{{key}}}}}");
+        result = result.replace(&placeholder, value);
+    }
+    result
 }
 
 pub fn add_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -680,6 +740,7 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
 
         // Act
         let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
@@ -695,6 +756,7 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
@@ -727,6 +789,7 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
         params.insert("repo".to_string(), "extra".to_string());
@@ -740,6 +803,196 @@ mod tests {
         assert_eq!(config.packages["neovim"].params.len(), 2);
         assert_eq!(config.packages["neovim"].params["name"], "neovim.x86_64");
         assert_eq!(config.packages["neovim"].params["repo"], "extra");
+    }
+
+    #[test]
+    fn test_add_with_plugin_generates_scripts_from_templates() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            plugin_dir.join(format!("install.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
+        ).unwrap();
+        std::fs::write(
+            plugin_dir.join(format!("update.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf update -y {{name}}\n",
+        ).unwrap();
+        std::fs::write(
+            plugin_dir.join(format!("uninstall.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf remove -y {{name}}\n",
+        ).unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+
+        // Act
+        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+
+        // Assert
+        let install_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("install.{ext}"))).unwrap();
+        assert!(install_content.contains("sudo dnf install -y neovim.x86_64"));
+        let update_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("update.{ext}"))).unwrap();
+        assert!(update_content.contains("sudo dnf update -y neovim.x86_64"));
+        let uninstall_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("uninstall.{ext}"))).unwrap();
+        assert!(uninstall_content.contains("sudo dnf remove -y neovim.x86_64"));
+    }
+
+    #[test]
+    fn test_add_with_plugin_skips_missing_templates() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let ext = script_extension();
+        // Only create install template, no update or uninstall
+        std::fs::write(
+            plugin_dir.join(format!("install.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
+        ).unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+
+        // Act
+        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+
+        // Assert
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        assert!(pkg_dir.join(format!("install.{ext}")).exists());
+        assert!(!pkg_dir.join(format!("update.{ext}")).exists());
+        assert!(!pkg_dir.join(format!("uninstall.{ext}")).exists());
+    }
+
+    #[test]
+    fn test_add_with_plugin_errors_when_plugin_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim", &[], Some("nonexistent"), &BTreeMap::new());
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Plugin 'nonexistent' not found"));
+    }
+
+    #[test]
+    fn test_add_with_plugin_errors_on_missing_required_params() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("params.yml"), "params:\n  - name\n  - repo\n").unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Missing required plugin parameters"));
+        assert!(err.contains("name"));
+        assert!(err.contains("repo"));
+    }
+
+    #[test]
+    fn test_add_with_plugin_replaces_multiple_params() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            plugin_dir.join(format!("install.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf install -y {{name}} --repo={{repo}}\n",
+        ).unwrap();
+        std::fs::write(plugin_dir.join("params.yml"), "params:\n  - name\n  - repo\n").unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+        params.insert("repo".to_string(), "extra".to_string());
+
+        // Act
+        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+
+        // Assert
+        let content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("install.{ext}"))).unwrap();
+        assert!(content.contains("sudo dnf install -y neovim.x86_64 --repo=extra"));
+    }
+
+    #[test]
+    fn test_add_with_plugin_preserves_existing_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(pkg_dir.join(format!("install.{ext}")), "existing content").unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join(format!("install.{ext}.tmpl")),
+            "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
+        ).unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+
+        // Act
+        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+
+        // Assert
+        let content = std::fs::read_to_string(pkg_dir.join(format!("install.{ext}"))).unwrap();
+        assert_eq!(content, "existing content");
+    }
+
+    #[test]
+    fn test_add_with_plugin_no_params_yml_skips_validation() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("simple");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            plugin_dir.join(format!("install.{ext}.tmpl")),
+            "#!/usr/bin/env sh\necho hello\n",
+        ).unwrap();
+        // No params.yml
+
+        // Act
+        let result = add(&ctx, "mypkg", &[], Some("simple"), &BTreeMap::new());
+
+        // Assert
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(ctx.packages_dir().join("mypkg").join(format!("install.{ext}"))).unwrap();
+        assert!(content.contains("echo hello"));
+    }
+
+    #[test]
+    fn test_add_with_plugin_no_templates_creates_no_scripts() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("empty");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        // No template files
+
+        // Act
+        let result = add(&ctx, "mypkg", &[], Some("empty"), &BTreeMap::new());
+
+        // Assert
+        assert!(result.is_ok());
+        let pkg_dir = ctx.packages_dir().join("mypkg");
+        let ext = script_extension();
+        assert!(!pkg_dir.join(format!("install.{ext}")).exists());
+        assert!(!pkg_dir.join(format!("update.{ext}")).exists());
+        assert!(!pkg_dir.join(format!("uninstall.{ext}")).exists());
     }
 
     #[test]
