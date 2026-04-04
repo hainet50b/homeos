@@ -266,6 +266,15 @@ fn update_state_per_package(
             state.installed.retain(|n| n != name);
             state.save(&state_path)?;
         }
+
+        let config_path = ctx.config_path();
+        let mut config = Config::load(&config_path)?;
+        if let Some(pkg) = config.packages.get_mut(name) {
+            if pkg.enabled {
+                pkg.enabled = false;
+                config.save(&config_path)?;
+            }
+        }
     }
 
     Ok(())
@@ -1568,6 +1577,111 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Uninstalling neovim... done"));
         assert!(written.contains("Script not found"));
+    }
+
+    #[test]
+    fn test_uninstall_disables_package_in_config() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+    }
+
+    #[test]
+    fn test_uninstall_disables_multiple_packages_in_config() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        for pkg in &["neovim", "ripgrep"] {
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "uninstall",
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+        assert!(!config.packages["ripgrep"].enabled);
+    }
+
+    #[test]
+    fn test_uninstall_does_not_disable_on_failure() {
+        // Arrange: neovim has no script, so uninstall will fail
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let _ = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert: package should still be enabled since uninstall failed
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].enabled);
+    }
+
+    #[test]
+    fn test_uninstall_already_disabled_stays_disabled() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim:\n    enabled: false\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — disabled packages are skipped by the plan, so uninstall is a no-op
+        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+
+        // Assert: package remains disabled
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
     }
 
     #[test]

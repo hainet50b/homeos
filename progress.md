@@ -606,3 +606,29 @@ Refactored `run_action` to update `state.yml` after each successful script execu
 
 - The `update_state_per_package` function loads and saves state.yml on each call. This is correct for ensuring durability but involves repeated file I/O. Acceptable for the expected small number of packages.
 - All 110 tests pass (106 existing + 4 new).
+
+## Task: Enhance `homeos package uninstall` to disable uninstalled packages in `homeos.yml`
+
+**Timestamp:**
+
+2026-04-04T12:30:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Enhanced `update_state_per_package` to also disable packages in `homeos.yml` after successful uninstall execution. When the action is "uninstall" and the script succeeds, the function loads the config, sets `enabled: false` on the package (if it exists and is currently enabled), and saves. Packages that fail uninstall remain enabled. Already-disabled packages are not touched. Added 4 new tests covering: single package disable after uninstall, multiple packages disable, no disable on failure, and already-disabled package stays disabled.
+
+**What was changed:**
+
+- src/commands/package.rs (added config disable logic in `update_state_per_package` for "uninstall" action, added 4 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The disable logic is placed inside `update_state_per_package` alongside the state.yml update, keeping the per-package post-execution side effects co-located.
+- Config is loaded and saved per package (same pattern as state.yml). This is fine for small package counts.
+- All 114 tests pass (110 existing + 4 new).
