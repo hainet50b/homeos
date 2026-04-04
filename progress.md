@@ -769,3 +769,29 @@ Updated 6 existing tests that were missing `state.yml` setup — update and unin
 
 - The previous implementation used a flat if/else chain that didn't fully account for the state dimension. The new match-based approach maps directly to the behavior matrix, making each action's logic explicit and independent.
 - All 141 tests pass (129 existing + 12 new behavior matrix tests).
+
+## Task: Refactor action from `&str` to an `Action` enum
+
+**Timestamp:**
+
+2026-04-04T19:00:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. No dependencies on other unchecked tasks. Eliminates stringly-typed action parameters and default/fallback branches throughout the codebase.
+
+**What was done:**
+
+Created an `Action` enum with `Install`, `Update`, `Uninstall` variants in `confirm.rs`. Added methods: `as_str()` (for script filenames and override lookups), `past_tense()` (for plan display), `gerund()` (for progress messages), and a `Display` impl. Changed `Plan.action` from `String` to `Action`. Updated `Plan::build`, `run_action`, `update_state_per_package`, and `resolve_script_name` signatures from `action: &str` to `action: Action`. Replaced all string match arms with exhaustive enum matches — no more default/fallback branches. Updated all call sites in `install`, `update`, `uninstall_to`, and all ~60 test call sites. Added 5 new tests for the `Action` enum covering `as_str`, `past_tense`, `gerund`, `Display`, and equality.
+
+**What was changed:**
+
+- src/confirm.rs (added `Action` enum with methods and `Display` impl, changed `Plan.action` to `Action`, updated `Plan::build` signature, updated all test call sites, added 5 new Action tests)
+- src/commands/package.rs (updated `run_action`, `update_state_per_package`, `resolve_script_name` signatures, replaced string comparisons with enum matches, updated all test call sites)
+
+**Remarks:**
+
+- The `Action` enum is defined in `confirm.rs` alongside `Plan` since they are tightly coupled. Both `confirm.rs` and `commands/package.rs` use it.
+- `update_state_per_package` now uses a match with an explicit `Action::Update => {}` arm instead of an `else if` chain, making it clear that update is intentionally a no-op for state.
+- `fixture_with_script` still takes `action: &str` since it's used for constructing script filenames, not for the Action enum.
+- All 146 tests pass (141 existing + 5 new Action enum tests).

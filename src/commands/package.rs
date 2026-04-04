@@ -1,5 +1,5 @@
 use crate::config::{Config, PackageConfig};
-use crate::confirm::{confirm_plan, Plan};
+use crate::confirm::{confirm_plan, Action, Plan};
 use crate::context::Context;
 use crate::state::State;
 use std::io::{BufRead, Write};
@@ -138,7 +138,7 @@ pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::er
     run_action(
         ctx,
         packages,
-        "install",
+        Action::Install,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
@@ -148,7 +148,7 @@ pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
     run_action(
         ctx,
         packages,
-        "update",
+        Action::Update,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
@@ -182,7 +182,7 @@ fn uninstall_to<R: BufRead, W: Write>(
         packages.to_vec()
     };
 
-    run_action(ctx, &resolved_packages, "uninstall", reader, writer)
+    run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
 }
 
 /// Execute an action for the given packages, with confirmation prompt.
@@ -190,7 +190,7 @@ fn uninstall_to<R: BufRead, W: Write>(
 pub fn run_action<R: BufRead, W: Write>(
     ctx: &Context,
     packages: &[String],
-    action: &str,
+    action: Action,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -219,12 +219,7 @@ pub fn run_action<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    let verb = match action {
-        "install" => "Installing",
-        "update" => "Updating",
-        "uninstall" => "Uninstalling",
-        other => other,
-    };
+    let verb = action.gerund();
 
     let mut had_errors = false;
 
@@ -265,48 +260,53 @@ pub fn run_action<R: BufRead, W: Write>(
 /// Update state.yml for a single package after successful script execution.
 fn update_state_per_package(
     ctx: &Context,
-    action: &str,
+    action: Action,
     name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state_path = ctx.state_path();
 
-    if action == "install" {
-        let mut state = if state_path.exists() {
-            State::load(&state_path)?
-        } else {
-            State::default()
-        };
-        if !state.installed.contains(&name.to_string()) {
-            state.installed.push(name.to_string());
-        }
-        state.save(&state_path)?;
-    } else if action == "uninstall" {
-        if state_path.exists() {
-            let mut state = State::load(&state_path)?;
-            state.installed.retain(|n| n != name);
+    match action {
+        Action::Install => {
+            let mut state = if state_path.exists() {
+                State::load(&state_path)?
+            } else {
+                State::default()
+            };
+            if !state.installed.contains(&name.to_string()) {
+                state.installed.push(name.to_string());
+            }
             state.save(&state_path)?;
         }
+        Action::Uninstall => {
+            if state_path.exists() {
+                let mut state = State::load(&state_path)?;
+                state.installed.retain(|n| n != name);
+                state.save(&state_path)?;
+            }
 
-        let config_path = ctx.config_path();
-        let mut config = Config::load(&config_path)?;
-        if let Some(pkg) = config.packages.get_mut(name)
-            && pkg.enabled
-        {
-            pkg.enabled = false;
-            config.save(&config_path)?;
+            let config_path = ctx.config_path();
+            let mut config = Config::load(&config_path)?;
+            if let Some(pkg) = config.packages.get_mut(name)
+                && pkg.enabled
+            {
+                pkg.enabled = false;
+                config.save(&config_path)?;
+            }
         }
+        Action::Update => {}
     }
 
     Ok(())
 }
 
 /// Resolve the script filename for a given action, considering overrides.
-fn resolve_script_name(pkg_config: &PackageConfig, action: &str) -> String {
+fn resolve_script_name(pkg_config: &PackageConfig, action: Action) -> String {
+    let action_str = action.as_str();
     let resolved_action = pkg_config
         .actions_overrides
-        .get(action)
+        .get(action_str)
         .map(|s| s.as_str())
-        .unwrap_or(action);
+        .unwrap_or(action_str);
     let ext = if cfg!(windows) { "ps1" } else { "sh" };
     format!("{resolved_action}.{ext}")
 }
@@ -802,7 +802,7 @@ mod tests {
         let pkg_config = PackageConfig::default();
 
         // Act
-        let sut = resolve_script_name(&pkg_config, "install");
+        let sut = resolve_script_name(&pkg_config, Action::Install);
 
         // Assert
         let ext = if cfg!(windows) { "ps1" } else { "sh" };
@@ -820,7 +820,7 @@ mod tests {
         };
 
         // Act
-        let sut = resolve_script_name(&pkg_config, "update");
+        let sut = resolve_script_name(&pkg_config, Action::Update);
 
         // Assert
         let ext = if cfg!(windows) { "ps1" } else { "sh" };
@@ -855,7 +855,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -876,7 +876,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -899,7 +899,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -917,7 +917,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
 
         // Assert
         assert!(result.is_err());
@@ -945,7 +945,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -967,7 +967,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -988,7 +988,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1012,7 +1012,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1035,7 +1035,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1057,7 +1057,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1080,7 +1080,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1109,7 +1109,7 @@ mod tests {
         let result = run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "install",
+            Action::Install,
             &mut input,
             &mut output,
         );
@@ -1230,7 +1230,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1251,7 +1251,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
 
         // Assert
         assert!(ctx.state_path().exists());
@@ -1277,7 +1277,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1302,7 +1302,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1326,7 +1326,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1347,7 +1347,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -1378,7 +1378,7 @@ mod tests {
         run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "uninstall",
+            Action::Uninstall,
             &mut input,
             &mut output,
         ).unwrap();
@@ -1405,7 +1405,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1425,7 +1425,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
 
         // Assert
         assert!(!ctx.state_path().exists());
@@ -1448,7 +1448,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "install", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1486,7 +1486,7 @@ mod tests {
         run_action(
             &ctx,
             &["neovim".to_string(), "zed".to_string()],
-            "install",
+            Action::Install,
             &mut input,
             &mut output,
         )
@@ -1519,7 +1519,7 @@ mod tests {
         run_action(
             &ctx,
             &["neovim".to_string(), "zed".to_string()],
-            "install",
+            Action::Install,
             &mut input,
             &mut output,
         )
@@ -1553,7 +1553,7 @@ mod tests {
         let result = run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "install",
+            Action::Install,
             &mut input,
             &mut output,
         );
@@ -1591,7 +1591,7 @@ mod tests {
         let result = run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "install",
+            Action::Install,
             &mut input,
             &mut output,
         );
@@ -1629,7 +1629,7 @@ mod tests {
         run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "uninstall",
+            Action::Uninstall,
             &mut input,
             &mut output,
         ).unwrap();
@@ -1664,7 +1664,7 @@ mod tests {
         let result = run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "uninstall",
+            Action::Uninstall,
             &mut input,
             &mut output,
         );
@@ -1695,7 +1695,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
 
         // Assert
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1727,7 +1727,7 @@ mod tests {
         run_action(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
-            "uninstall",
+            Action::Uninstall,
             &mut input,
             &mut output,
         )
@@ -1752,7 +1752,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let _ = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let _ = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert: package should still be enabled since uninstall failed
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1776,7 +1776,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act — disabled packages are skipped by the plan, so uninstall is a no-op
-        run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
 
         // Assert: package remains disabled
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1800,7 +1800,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output).unwrap();
+        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1918,7 +1918,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
 
         // Assert — state is loaded but update still executes in-state packages
         assert!(result.is_ok());
@@ -1943,7 +1943,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
 
         // Assert — state is loaded but uninstall still executes in-state packages
         assert!(result.is_ok());
