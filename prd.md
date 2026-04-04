@@ -114,7 +114,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos package remove-dep <pkg> <dep>...` — remove dependencies from a package
 - [x] Enhance `homeos package remove` to reject packages that are depended on by other packages. Error with a message listing the dependents.
 - [x] Rename CLI argument name for add-dep and remove-dep from `dep` to `dependency` for clarity in help output.
-- [ ] Implement topological sort for package install order based on `depends_on`. Error on circular dependencies.
+- [x] Implement topological sort for package install order based on `depends_on`. Error on circular dependencies.
 - [ ] Integrate dependency ordering into `homeos package install` — install dependencies before the requested package
 - [ ] Implement `homeos apply` — install packages that are enabled + not in state, update packages that are enabled + in state
 - [ ] Integrate dependency ordering into `homeos apply` — respect `depends_on` when determining install order

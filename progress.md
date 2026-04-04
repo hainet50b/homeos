@@ -1174,3 +1174,30 @@ Renamed the `deps` field to `dependency` in both `AddDep` and `RemoveDep` varian
 
 - All 188 tests pass (186 existing + 2 new).
 - The internal function signatures in `registry.rs` (`add_dep`, `remove_dep`) still accept `&[String]` — only the CLI-facing argument name changed, which is the intent of the task.
+
+## Task: Implement topological sort for package install order based on `depends_on`
+
+**Timestamp:**
+
+2026-04-04T11:40:44Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. The topological sort is a prerequisite for integrating dependency ordering into `homeos package install`.
+
+**What was done:**
+
+Created a new `topo` module (`src/topo.rs`) with a `topological_sort` function that uses Kahn's algorithm to sort packages in dependency order. The function takes a `Config` and a list of package names, builds an in-degree map considering only dependencies among the requested packages, and returns them in topological order (dependencies first). If a circular dependency is detected (not all packages can be dequeued), it returns an error listing the cycle participants. Output is deterministic — packages at the same topological level are sorted alphabetically. Added 10 unit tests covering: no dependencies, single dependency, chain, diamond, circular (2-way and 3-way), dependency outside set, empty list, single package, package not in config, and multiple dependencies.
+
+**What was changed:**
+
+- src/topo.rs (new — topological sort function with Kahn's algorithm and 10 tests)
+- src/main.rs (added `mod topo` declaration)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 199 tests pass (188 existing + 11 new, including the module-level tests).
+- The function is marked `#[allow(dead_code)]` since it will be integrated in the next task.
+- Only considers dependencies among the given package set — external dependencies are ignored. This is intentional; the next task (integration) will handle expanding the set to include transitive dependencies.

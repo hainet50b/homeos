@@ -6,6 +6,7 @@ mod config;
 mod plan;
 mod context;
 mod state;
+mod topo;
 
 #[derive(Parser)]
 #[command(name = "homeos", about = "Manage application install scripts and configurations across environments")]
