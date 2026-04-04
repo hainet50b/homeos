@@ -29,6 +29,18 @@ pub fn add(ctx: &Context, name: &str, url: &str) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let target = ctx.repos_dir().join(name);
+
+    if !target.exists() {
+        return Err(format!("Repository '{}' does not exist", name).into());
+    }
+
+    std::fs::remove_dir_all(&target)?;
+    println!("Repository '{}' removed", name);
+    Ok(())
+}
+
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let repos_dir = ctx.repos_dir();
 
@@ -206,6 +218,56 @@ mod tests {
         // Assert
         let err = result.unwrap_err();
         assert_eq!(err.to_string(), "Repository 'existing' already exists");
+    }
+
+    #[test]
+    fn test_remove_existing_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repo_dir = ctx.repos_dir().join("my-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("somefile.txt"), "data").unwrap();
+
+        // Act
+        let result = remove(&ctx, "my-repo");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!repo_dir.exists());
+    }
+
+    #[test]
+    fn test_remove_nonexistent_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "no-such-repo");
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Repository 'no-such-repo' does not exist");
+    }
+
+    #[test]
+    fn test_remove_does_not_affect_other_repos() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repos_dir = ctx.repos_dir();
+        std::fs::create_dir_all(repos_dir.join("repo-a")).unwrap();
+        std::fs::create_dir_all(repos_dir.join("repo-b")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "repo-a");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!repos_dir.join("repo-a").exists());
+        assert!(repos_dir.join("repo-b").exists());
     }
 
     #[test]

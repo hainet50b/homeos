@@ -1373,3 +1373,29 @@ Implemented `homeos repo add <name> <url>` which clones a remote git repository 
 - All 236 tests pass (232 existing + 4 new).
 - Tests cover: successful clone, repos dir auto-creation, already-exists error, invalid URL error.
 - Uses `std::process::Command` to run `git clone` — no additional dependencies needed.
+
+## Task: Implement `homeos repo remove <name>`
+
+**Timestamp:**
+
+2026-04-04T12:46:48Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies (repo infrastructure, add/list) are complete.
+
+**What was done:**
+
+Implemented `homeos repo remove <name>` which removes the local repository directory at `repos/<name>/`. The command validates that the target directory exists, then removes it recursively with `std::fs::remove_dir_all`. Added `Remove` variant to `RepoCommands` with a `name` argument and wired it into the main match arm. Added 3 unit tests.
+
+**What was changed:**
+
+- src/commands/repo.rs (added `remove` function and 3 tests)
+- src/main.rs (added `Remove` variant to `RepoCommands`, added match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 239 tests pass (236 existing + 3 new).
+- Tests cover: successful removal, nonexistent repo error, removal doesn't affect other repos.

@@ -121,7 +121,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add `--repo` option to CLI — select which repository to operate on (defaults to `default`)
 - [x] Implement `homeos repo list` — list registered repositories
 - [x] Implement `homeos repo add <name> <url>` — clone a remote repository into `repos/<name>/`
-- [ ] Implement `homeos repo remove <name>` — remove the local repository directory
+- [x] Implement `homeos repo remove <name>` — remove the local repository directory
 
 ## Completion Criteria
 

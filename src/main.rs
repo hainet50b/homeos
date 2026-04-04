@@ -54,6 +54,11 @@ pub enum RepoCommands {
         /// Remote URL to clone
         url: String,
     },
+    /// Remove the local repository directory
+    Remove {
+        /// Repository name
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -161,6 +166,12 @@ fn main() {
             }
             RepoCommands::Add { name, url } => {
                 if let Err(e) = commands::repo::add(&ctx, &name, &url) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            RepoCommands::Remove { name } => {
+                if let Err(e) = commands::repo::remove(&ctx, &name) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
