@@ -14,7 +14,7 @@ Read the PRD at prd.md and progress.md, then follow these instructions:
 
 **Timestamp:**
 
-<current UTC time in ISO 8601 format>
+<run `date -u +%Y-%m-%dT%H:%M:%SZ` and paste the output here>
 
 **Why this task:**
 
