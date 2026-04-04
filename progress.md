@@ -711,3 +711,30 @@ Fixed `Plan::build` to skip the disabled check when the action is "uninstall". P
 
 - The fix is a single condition change: `if !pkg.enabled` → `if !pkg.enabled && action != "uninstall"` in `Plan::build`.
 - All 124 tests pass (122 existing + 2 new).
+
+## Task: Extend Plan with not_installed classification and refactor state loading
+
+**Timestamp:**
+
+2026-04-04T17:00:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. This is a prerequisite for the behavior matrix task which needs the not_installed classification to skip not-in-state packages for update/uninstall.
+
+**What was done:**
+
+Added `not_installed: Vec<String>` field to the `Plan` struct. Updated `Plan::display` to show "Skipping <pkg> (not installed)" messages for packages in this classification. Refactored `run_action` to load `state.yml` for all actions (install, update, uninstall) instead of only for install. Made `already_installed` classification action-specific — it only applies for the "install" action, so update/uninstall are unaffected by the installed list (preserving current behavior). Updated all `Plan` struct literals in tests to include the new `not_installed` field. Added 5 new tests: 3 in confirm.rs (not_installed empty by default, already_installed only for install, display shows not_installed) and 2 in package.rs (update and uninstall load state for plan).
+
+**What was changed:**
+
+- src/confirm.rs (added `not_installed` field to `Plan`, updated `build` and `display`, updated all test Plan literals, added 3 tests)
+- src/commands/package.rs (refactored `run_action` to load state for all actions, added 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `not_installed` field is structurally in place but not yet populated by `Plan::build`. The next task (behavior matrix) will add the classification logic to populate it for update/uninstall actions.
+- The `already_installed` check is now guarded by `action == "install"` to prevent in-state packages from being incorrectly skipped during update/uninstall.
+- All 129 tests pass (124 existing + 3 new confirm tests + 2 new package tests).

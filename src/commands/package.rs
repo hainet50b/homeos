@@ -196,13 +196,9 @@ pub fn run_action<R: BufRead, W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let installed = if action == "install" {
-        let state_path = ctx.state_path();
-        if state_path.exists() {
-            State::load(&state_path)?.installed
-        } else {
-            Vec::new()
-        }
+    let state_path = ctx.state_path();
+    let installed = if state_path.exists() {
+        State::load(&state_path)?.installed
     } else {
         Vec::new()
     };
@@ -1897,6 +1893,56 @@ mod tests {
         assert!(written.contains("neovim"));
         assert!(written.contains("Proceed? [y/N]"));
         assert!(written.contains("Aborted."));
+    }
+
+    #[test]
+    fn test_update_loads_state_for_plan() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "update",
+            "UPDATE_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "update", &mut input, &mut output);
+
+        // Assert — state is loaded but update still executes in-state packages
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating neovim... done"));
+    }
+
+    #[test]
+    fn test_uninstall_loads_state_for_plan() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["neovim".to_string()], "uninstall", &mut input, &mut output);
+
+        // Assert — state is loaded but uninstall still executes in-state packages
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
     }
 
     #[test]

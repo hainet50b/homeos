@@ -8,6 +8,7 @@ pub struct Plan {
     pub enabled: Vec<String>,
     pub disabled: Vec<String>,
     pub already_installed: Vec<String>,
+    pub not_installed: Vec<String>,
 }
 
 impl Plan {
@@ -24,6 +25,7 @@ impl Plan {
         let mut enabled = Vec::new();
         let mut disabled = Vec::new();
         let mut already_installed = Vec::new();
+        let not_installed = Vec::new();
 
         for name in packages {
             let pkg = config
@@ -33,7 +35,7 @@ impl Plan {
 
             if !pkg.enabled && action != "uninstall" {
                 disabled.push(name.clone());
-            } else if installed.contains(name) {
+            } else if action == "install" && installed.contains(name) {
                 already_installed.push(name.clone());
             } else {
                 enabled.push(name.clone());
@@ -45,6 +47,7 @@ impl Plan {
             enabled,
             disabled,
             already_installed,
+            not_installed,
         })
     }
 
@@ -72,6 +75,10 @@ impl Plan {
 
         for name in &self.already_installed {
             lines.push(format!("Skipping {name} (already installed)"));
+        }
+
+        for name in &self.not_installed {
+            lines.push(format!("Skipping {name} (not installed)"));
         }
 
         lines.join("\n")
@@ -205,6 +212,7 @@ mod tests {
             enabled: vec!["neovim".to_string(), "zed".to_string()],
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act
@@ -227,6 +235,7 @@ Skipping docker (disabled)";
             enabled: vec![],
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act
@@ -244,6 +253,7 @@ Skipping docker (disabled)";
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act
@@ -261,6 +271,7 @@ Skipping docker (disabled)";
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act
@@ -344,6 +355,7 @@ Skipping docker (disabled)";
             enabled: vec!["neovim".to_string()],
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
+            not_installed: vec![],
         };
         let mut input = Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -367,6 +379,7 @@ Skipping docker (disabled)";
             enabled: vec![],
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act & Assert
@@ -381,6 +394,7 @@ Skipping docker (disabled)";
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
             already_installed: vec![],
+            not_installed: vec![],
         };
 
         // Act & Assert
@@ -433,6 +447,7 @@ Skipping docker (disabled)";
             enabled: vec!["zed".to_string()],
             disabled: vec![],
             already_installed: vec!["neovim".to_string()],
+            not_installed: vec![],
         };
 
         // Act
@@ -476,5 +491,56 @@ Skipping docker (disabled)";
         // Assert
         assert_eq!(sut.enabled, vec!["zed"]);
         assert_eq!(sut.disabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_build_plan_has_empty_not_installed_by_default() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true), ("zed", true)]);
+        let packages: Vec<String> = vec!["neovim", "zed"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &[]).unwrap();
+
+        // Assert
+        assert!(sut.not_installed.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_already_installed_only_applies_to_install_action() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "update", &installed).unwrap();
+
+        // Assert — for update, being in state means execute (enabled), not already_installed
+        assert_eq!(sut.enabled, vec!["neovim"]);
+        assert!(sut.already_installed.is_empty());
+    }
+
+    #[test]
+    fn test_display_shows_not_installed() {
+        // Arrange
+        let plan = Plan {
+            action: "update".to_string(),
+            enabled: vec!["zed".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec!["neovim".to_string()],
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert!(sut.contains("Skipping neovim (not installed)"));
+        assert!(sut.contains("will be updated"));
+        assert!(sut.contains("zed"));
     }
 }
