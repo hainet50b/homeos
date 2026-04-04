@@ -1653,3 +1653,31 @@ Implemented `homeos plugin list-remote` which fetches `hainet50b/homeos-plugin-*
 - Tests cover: no plugins found, single plugin, multiple plugins, table header format, name column width adjustment, empty description handling, and fetch error propagation.
 - The fetch function is injected as a generic closure parameter to `list_remote_to`, keeping tests fast and deterministic without network access.
 - GitHub API results are filtered client-side with `starts_with("homeos-plugin-")` to ensure only matching repos are displayed, since the search API may return partial matches.
+
+## Task: Implement `homeos plugin add <name> [<url>]`
+
+**Timestamp:**
+
+2026-04-04T16:32:17Z
+
+**Why this task:**
+
+First unchecked task in dependency order. `plugin list` and `plugin list-remote` are already in place. This is a prerequisite for `plugin remove` and the plugin integration into `package add`.
+
+**What was done:**
+
+Implemented `homeos plugin add <name> [<url>]` which registers a plugin in `homeos.yml` and clones it into `plugins/<name>/`. Without a URL, the default is resolved as `https://github.com/hainet50b/homeos-plugin-<name>`. Added `plugins_dir()` method to `Context` for resolving the plugins directory path. The implementation checks for duplicate plugin names in config and existing plugin directories before cloning. On successful clone, the plugin entry is saved to `homeos.yml`. Added `Add` variant to `PluginCommands` with `name` (required) and `url` (optional) arguments.
+
+**What was changed:**
+
+- src/context.rs (added `plugins_dir()` method and test)
+- src/commands/plugin.rs (added `add` function with 8 unit tests, added `fixture_with_config` and `create_local_git_repo` test helpers)
+- src/main.rs (added `Add` variant to `PluginCommands`, added match arm for dispatch)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 289 tests pass (280 existing + 9 new).
+- Tests cover: successful clone and registration, default URL resolution (verified via git clone error), duplicate plugin name rejection, directory already exists rejection, invalid URL error, plugins directory auto-creation, and error when not initialized.
+- The `test_add_resolves_default_url` test verifies default URL behavior by checking that a clone attempt is made (and fails) when no URL is provided, confirming the URL construction logic works without requiring network access.

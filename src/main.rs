@@ -60,6 +60,13 @@ pub enum PluginCommands {
     List,
     /// List official plugins available from GitHub
     ListRemote,
+    /// Register a plugin and clone it into plugins/
+    Add {
+        /// Plugin name
+        name: String,
+        /// Remote URL to clone (defaults to official repository)
+        url: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -190,6 +197,12 @@ fn main() {
             }
             PluginCommands::ListRemote => {
                 if let Err(e) = commands::plugin::list_remote() {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Add { name, url } => {
+                if let Err(e) = commands::plugin::add(&ctx, &name, url.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

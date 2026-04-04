@@ -35,6 +35,10 @@ impl Context {
         self.repo_dir().join("state.yml")
     }
 
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.repo_dir().join("plugins")
+    }
+
     pub fn gitignore_path(&self) -> PathBuf {
         self.repo_dir().join(".gitignore")
     }
@@ -118,6 +122,18 @@ mod tests {
     }
 
     #[test]
+    fn test_plugins_dir() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+
+        // Act
+        let result = sut.plugins_dir();
+
+        // Assert
+        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/plugins"));
+    }
+
+    #[test]
     fn test_gitignore_path() {
         // Arrange
         let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
@@ -137,6 +153,7 @@ mod tests {
         // Act & Assert
         assert_eq!(sut.repo_dir(), Path::new("/tmp/test-homeos/repos/work"));
         assert_eq!(sut.packages_dir(), Path::new("/tmp/test-homeos/repos/work/packages"));
+        assert_eq!(sut.plugins_dir(), Path::new("/tmp/test-homeos/repos/work/plugins"));
         assert_eq!(sut.config_path(), Path::new("/tmp/test-homeos/repos/work/homeos.yml"));
         assert_eq!(sut.state_path(), Path::new("/tmp/test-homeos/repos/work/state.yml"));
         assert_eq!(sut.gitignore_path(), Path::new("/tmp/test-homeos/repos/work/.gitignore"));

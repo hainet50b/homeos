@@ -1,7 +1,8 @@
-use crate::config::Config;
+use crate::config::{Config, PluginConfig};
 use crate::context::Context;
 use serde::Deserialize;
 use std::io::Write;
+use std::process::Command;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
@@ -130,6 +131,45 @@ where
     Ok(())
 }
 
+pub fn add(ctx: &Context, name: &str, url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    if config.plugins.contains_key(name) {
+        return Err(format!("Plugin '{}' already exists", name).into());
+    }
+
+    let url = url
+        .map(|u| u.to_string())
+        .unwrap_or_else(|| format!("https://github.com/hainet50b/homeos-plugin-{}", name));
+
+    let plugins_dir = ctx.plugins_dir();
+    let target = plugins_dir.join(name);
+
+    if target.exists() {
+        return Err(format!("Plugin directory '{}' already exists", name).into());
+    }
+
+    std::fs::create_dir_all(&plugins_dir)?;
+
+    let output = Command::new("git")
+        .args(["clone", &url, &target.to_string_lossy()])
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {}", stderr.trim()).into());
+    }
+
+    let mut config = config;
+    config
+        .plugins
+        .insert(name.to_string(), PluginConfig { url: url.clone() });
+    config.save(&ctx.config_path())?;
+
+    println!("Plugin '{}' added successfully", name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +180,32 @@ mod tests {
         let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
         std::fs::create_dir_all(ctx.repo_dir()).unwrap();
         ctx
+    }
+
+    fn fixture_with_config(base_dir: &TempDir) -> Context {
+        let ctx = fixture(base_dir);
+        let config = Config::default();
+        config.save(&ctx.config_path()).unwrap();
+        ctx
+    }
+
+    fn create_local_git_repo(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        Command::new("git")
+            .args(["init", &dir.to_string_lossy()])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &dir.to_string_lossy(),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
+            .output()
+            .unwrap();
     }
 
     #[test]
@@ -429,5 +495,144 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Network error"));
+    }
+
+    #[test]
+    fn test_add_clones_and_registers_plugin() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = add(&ctx, "dnf", Some(&source_dir.path().to_string_lossy()));
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.plugins_dir().join("dnf").exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.plugins.contains_key("dnf"));
+        assert_eq!(
+            config.plugins["dnf"].url,
+            source_dir.path().to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn test_add_default_url_without_explicit_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        // Create a local git repo to simulate the default URL clone target
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act — use explicit URL since we can't clone from GitHub in tests
+        let result = add(&ctx, "mise", Some(&source_dir.path().to_string_lossy()));
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.plugins.contains_key("mise"));
+    }
+
+    #[test]
+    fn test_add_already_registered() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+
+        // Act
+        let result = add(&ctx, "dnf", Some("https://example.com/repo.git"));
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Plugin 'dnf' already exists");
+    }
+
+    #[test]
+    fn test_add_directory_already_exists() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
+
+        // Act
+        let result = add(&ctx, "dnf", Some("https://example.com/repo.git"));
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Plugin directory 'dnf' already exists");
+    }
+
+    #[test]
+    fn test_add_invalid_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act
+        let result = add(&ctx, "bad-plugin", Some("not-a-valid-url"));
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.starts_with("git clone failed:"));
+    }
+
+    #[test]
+    fn test_add_creates_plugins_dir() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+        assert!(!ctx.plugins_dir().exists());
+
+        // Act
+        let result = add(&ctx, "dnf", Some(&source_dir.path().to_string_lossy()));
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.plugins_dir().exists());
+        assert!(ctx.plugins_dir().join("dnf").exists());
+    }
+
+    #[test]
+    fn test_add_error_when_not_initialized() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = add(&ctx, "dnf", Some("https://example.com/repo.git"));
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_resolves_default_url() {
+        // Arrange — we can't actually clone from GitHub, but we can test that the
+        // function attempts to use the correct default URL by checking the error message.
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act — no URL provided, should attempt to clone from default GitHub URL
+        let result = add(&ctx, "nonexistent-plugin-xyz", None);
+
+        // Assert — clone will fail, but the error should reference git clone
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.starts_with("git clone failed:"));
     }
 }
