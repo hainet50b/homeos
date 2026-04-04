@@ -42,3 +42,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-04T10:54:04Z,a27e27f,"Implement homeos package add-dep <pkg> <dep>...",113,2938,5477,0.7975247500000001
 2026-04-04T10:56:42Z,9947b60,"Implement homeos package remove-dep <pkg> <dep>...",153,30,5753,0.6982352500000003
 2026-04-04T10:58:34Z,4dc272e,"Enhance homeos package remove to reject packages depended on by others",109,2939,4152,0.5502225
+2026-04-04T11:31:53Z,097de20,"Rename dep argument to dependency in add-dep and remove-dep CLI help",122,24,4073,0.5164577499999999
