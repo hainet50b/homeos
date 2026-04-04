@@ -36,6 +36,17 @@ pub enum Commands {
         #[command(subcommand)]
         command: PackageCommands,
     },
+    /// Manage repositories
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommands,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum RepoCommands {
+    /// List registered repositories
+    List,
 }
 
 #[derive(Subcommand)]
@@ -134,6 +145,14 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Repo { command } => match command {
+            RepoCommands::List => {
+                if let Err(e) = commands::repo::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        },
         Commands::Package { command } => match command {
             PackageCommands::List => {
                 if let Err(e) = commands::package::list(&ctx) {

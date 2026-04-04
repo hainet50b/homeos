@@ -1318,3 +1318,31 @@ Added a `--repo` / `-r` global CLI option (defaults to `"default"`) that selects
 - All 227 tests pass (222 existing + 5 new).
 - The `cd.rs` error message was updated from "Default repository not found" to "Repository not found" since it may now refer to a non-default repo.
 - All existing test fixtures pass `"default"` as the repo name, preserving existing behavior.
+
+## Task: Implement `homeos repo list`
+
+**Timestamp:**
+
+2026-04-04T12:42:08Z
+
+**Why this task:**
+
+First unchecked task remaining. No dependencies on the other two repo tasks (`repo add`, `repo remove`). This is the simplest of the three and establishes the `commands/repo` module structure.
+
+**What was done:**
+
+Implemented `homeos repo list` which lists all registered repositories by reading directory entries under `<base_dir>/repos/`. Output is sorted alphabetically, one repository name per line. Only directories are listed (files are ignored). If the repos directory doesn't exist, nothing is printed. Added a `Repo` subcommand with `RepoCommands::List` variant to the CLI. Created `commands/repo.rs` with a testable `list_to` pattern (writer injection) matching the existing package list pattern.
+
+**What was changed:**
+
+- src/commands/repo.rs (new — repo list implementation with 5 unit tests)
+- src/commands.rs (added `pub mod repo`)
+- src/main.rs (added `Repo` variant to `Commands` enum, `RepoCommands` enum, match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 232 tests pass (227 existing + 5 new).
+- Tests cover: no repos dir, empty repos dir, single repo, multiple repos sorted, files ignored.
+- The implementation follows the same `list`/`list_to` pattern used by `package list` for testability.
