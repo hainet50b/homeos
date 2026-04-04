@@ -103,7 +103,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Enhance `homeos package disable` to accept multiple packages (`<pkg>...`).
 - [x] Enhance `homeos package remove` to reject packages that are in `state.yml`. Error with a message to uninstall first.
 - [x] Enhance `homeos package list` to show a table with Enabled and Installed columns, referencing both `homeos.yml` and `state.yml`.
-- [ ] Split `commands/package.rs` into `commands/package/mod.rs`, `commands/package/registry.rs` (list, add, remove, enable, disable, cat), and `commands/package/action.rs` (run_action, execute_script, resolve_script_name, update_state_per_package). Each module keeps its own tests and fixtures.
+- [x] Split `commands/package.rs` into `commands/package/mod.rs`, `commands/package/registry.rs` (list, add, remove, enable, disable, cat), and `commands/package/action.rs` (run_action, execute_script, resolve_script_name, update_state_per_package). Each module keeps its own tests and fixtures.
 - [ ] Extract `script_extension() -> &'static str` into `commands/package/mod.rs` to eliminate scattered `cfg!(windows)` checks.
 - [ ] Rename `confirm.rs` to `plan.rs` to better reflect its responsibility (Plan, Action, confirmation prompt).
 - [ ] Reorder functions and methods to match the command definition order in README (list, add, remove, enable, disable, cat, cd, install, update, uninstall).

@@ -873,3 +873,37 @@ Refactored `list` to use the `list_to` pattern (generic writer) for testability.
 - Followed the same `_to` writer pattern used by `cat_to` for consistent testability across output-producing functions.
 - Fixed 2 clippy warnings about `write_literal` by inlining string literals into the format string.
 - All 158 tests pass (155 existing + 4 new list tests - 1 removed obsolete test).
+
+## Task: Split `commands/package.rs` into submodules
+
+**Timestamp:**
+
+2026-04-04T23:30:00Z
+
+**Why this task:**
+
+First unchecked task in the Post Tasks (refactoring) section. All feature tasks are complete; this is the first refactoring step with no dependencies on other unchecked tasks.
+
+**What was done:**
+
+Split the monolithic `commands/package.rs` (2255 lines) into three files following the PRD specification:
+- `commands/package/mod.rs` — module declarations, re-exports, and thin wrappers for `install`, `update`, `uninstall` (including `uninstall_to` which resolves `--all` flag before delegating to `run_action`).
+- `commands/package/registry.rs` — registry operations: `list`, `list_to`, `add`, `remove`, `enable`, `disable`, `cat`, `cat_to`, plus `skeleton_scripts` and `skeleton_script_content` helpers. Includes all registry-related tests and the `fixture` helper.
+- `commands/package/action.rs` — action execution: `run_action`, `execute_script`, `resolve_script_name`, `update_state_per_package`. Includes all action-related tests with both `fixture` and `fixture_with_script` helpers.
+
+No behavioral changes — purely a structural refactoring.
+
+**What was changed:**
+
+- src/commands/package.rs (deleted)
+- src/commands/package/mod.rs (new — module glue and uninstall wrappers)
+- src/commands/package/registry.rs (new — registry functions and tests)
+- src/commands/package/action.rs (new — action functions and tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Tests that called `uninstall_to` in the action module needed to reference `crate::commands::package::uninstall_to` since it lives in `mod.rs`, not `action.rs`. Made `uninstall_to` `pub(crate)` to support this.
+- `commands.rs` required no changes — `pub mod package;` resolves to `package/mod.rs` automatically.
+- All 158 tests pass with no changes to test logic, only import path adjustments.
