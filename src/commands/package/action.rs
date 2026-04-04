@@ -1,5 +1,5 @@
 use crate::config::{Config, PackageConfig};
-use crate::confirm::{confirm_plan, Action, Plan};
+use crate::plan::{confirm_plan, Action, Plan};
 use crate::context::Context;
 use crate::state::State;
 use std::io::{BufRead, Write};

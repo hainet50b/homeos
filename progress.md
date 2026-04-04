@@ -935,3 +935,30 @@ Extracted `script_extension() -> &'static str` and `shell_command() -> &'static 
 - Also extracted `shell_command() -> &'static str` alongside `script_extension()` since `execute_script` had the same pattern for resolving the shell binary.
 - Test modules import via `use crate::commands::package::script_extension;` for cleaner references instead of `super::super::`.
 - All 160 tests pass (158 existing + 2 new).
+
+## Task: Rename `confirm.rs` to `plan.rs`
+
+**Timestamp:**
+
+2026-04-04T24:30:00Z
+
+**Why this task:**
+
+Next unchecked task in PRD. No dependencies on other unchecked tasks. Pure rename to better reflect module responsibility.
+
+**What was done:**
+
+Renamed `src/confirm.rs` to `src/plan.rs` and updated all three import sites: `mod confirm` in `main.rs`, `use crate::confirm::Action` in `commands/package/mod.rs`, and `use crate::confirm::{confirm_plan, Action, Plan}` in `commands/package/action.rs`.
+
+**What was changed:**
+
+- src/confirm.rs (renamed to src/plan.rs)
+- src/main.rs (mod confirm -> mod plan)
+- src/commands/package/mod.rs (use crate::confirm -> use crate::plan)
+- src/commands/package/action.rs (use crate::confirm -> use crate::plan)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- No new tests needed — this is a pure file rename with import path updates. All 160 existing tests pass unchanged.

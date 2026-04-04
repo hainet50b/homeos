@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 mod commands;
 mod config;
-mod confirm;
+mod plan;
 mod context;
 mod state;
 

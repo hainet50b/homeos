@@ -3,7 +3,7 @@ mod registry;
 
 pub use registry::{add, cat, disable, enable, list, remove};
 
-use crate::confirm::Action;
+use crate::plan::Action;
 use crate::context::Context;
 use crate::state::State;
 use std::io::BufRead;
