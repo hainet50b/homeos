@@ -24,21 +24,7 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
 
 ## Quick Start
 
-### Using a starter repository
-
-`homeos` itself does not provide built-in templates.  
-Instead, you can initialize your workspace from an external starter repository.
-
-If you want to use a boilerplate repository without inheriting its Git history, use the `--strip-git` option with the `init` subcommand.  
-This option removes the `.git` directory after cloning the remote repository, allowing you to start with a clean repository.
-
-**Example**
-
-```sh
-homeos init default https://github.com/hainet50b/homeos-starter --strip-git
-homeos cd
-git init
-```
+> TODO
 
 ## Commands
 
