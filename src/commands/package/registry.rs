@@ -58,31 +58,6 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = Config::load(&ctx.config_path())?;
-
-    if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
-    }
-
-    let state_path = ctx.state_path();
-    if state_path.exists() {
-        let state = State::load(&state_path)?;
-        if state.installed.contains(&package.to_string()) {
-            return Err(format!(
-                "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
-            )
-            .into());
-        }
-    }
-
-    config.packages.remove(package);
-    config.save(&ctx.config_path())?;
-
-    println!("Removed package '{package}'");
-    Ok(())
-}
-
 pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
@@ -108,6 +83,31 @@ pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error
     }
 
     println!("Added package '{package}'");
+    Ok(())
+}
+
+pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let state_path = ctx.state_path();
+    if state_path.exists() {
+        let state = State::load(&state_path)?;
+        if state.installed.contains(&package.to_string()) {
+            return Err(format!(
+                "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+            )
+            .into());
+        }
+    }
+
+    config.packages.remove(package);
+    config.save(&ctx.config_path())?;
+
+    println!("Removed package '{package}'");
     Ok(())
 }
 
@@ -340,6 +340,27 @@ mod tests {
     }
 
     #[test]
+    fn test_list_table_header_and_separator() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains("Package"));
+        assert!(lines[0].contains("Enabled"));
+        assert!(lines[0].contains("Installed"));
+        // Second line is separator
+        assert!(lines[1].contains("-------"));
+    }
+
+    #[test]
     fn test_add_creates_package_dir_and_config_entry() {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
@@ -508,27 +529,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_table_header_and_separator() {
-        // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n",
-        );
-        let mut output = Vec::new();
-
-        // Act
-        list_to(&ctx, &mut output).unwrap();
-
-        // Assert
-        let text = String::from_utf8(output).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert!(lines[0].contains("Package"));
-        assert!(lines[0].contains("Enabled"));
-        assert!(lines[0].contains("Installed"));
-        // Second line is separator
-        assert!(lines[1].contains("-------"));
-    }
-
-    #[test]
     fn test_remove_deletes_config_entry() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
@@ -622,6 +622,20 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_last_package_leaves_empty_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.is_empty());
     }
 
     #[test]
@@ -858,20 +872,6 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[test]
-    fn test_remove_last_package_leaves_empty_packages() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(config.packages.is_empty());
     }
 
     #[test]

@@ -106,7 +106,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Split `commands/package.rs` into `commands/package/mod.rs`, `commands/package/registry.rs` (list, add, remove, enable, disable, cat), and `commands/package/action.rs` (run_action, execute_script, resolve_script_name, update_state_per_package). Each module keeps its own tests and fixtures.
 - [x] Extract `script_extension() -> &'static str` into `commands/package/mod.rs` to eliminate scattered `cfg!(windows)` checks.
 - [x] Rename `confirm.rs` to `plan.rs` to better reflect its responsibility (Plan, Action, confirmation prompt).
-- [ ] Reorder functions and methods to match the command definition order in README (list, add, remove, enable, disable, cat, cd, install, update, uninstall).
+- [x] Reorder functions and methods to match the command definition order in README (list, add, remove, enable, disable, cat, cd, install, update, uninstall).
 
 ## Completion Criteria
 

@@ -1,7 +1,7 @@
 mod action;
 mod registry;
 
-pub use registry::{add, cat, disable, enable, list, remove};
+pub use registry::{list, add, remove, enable, disable, cat};
 
 use crate::plan::Action;
 use crate::context::Context;

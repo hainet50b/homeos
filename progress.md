@@ -962,3 +962,34 @@ Renamed `src/confirm.rs` to `src/plan.rs` and updated all three import sites: `m
 **Remarks:**
 
 - No new tests needed — this is a pure file rename with import path updates. All 160 existing tests pass unchanged.
+
+## Task: Reorder functions and methods to match README command order
+
+**Timestamp:**
+
+2026-04-04T25:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All feature and refactoring tasks are complete. This is a code organization task to align source code ordering with the README command definition order.
+
+**What was done:**
+
+Reordered functions and tests across the package module to match the README command definition order: list, add, remove, enable, disable, cat, cd, install, update, uninstall. Specific changes:
+- `commands/package/mod.rs`: Reordered `pub use` exports from alphabetical (`add, cat, disable, enable, list, remove`) to README order (`list, add, remove, enable, disable, cat`).
+- `commands/package/registry.rs`: Swapped `remove` and `add` function definitions so `add` comes before `remove`. Moved `test_list_table_header_and_separator` from between add and remove test groups to the list test group. Moved `test_remove_last_package_leaves_empty_packages` from after the disable test group to the remove test group.
+
+No behavioral changes — purely ordering adjustments.
+
+**What was changed:**
+
+- src/commands/package/mod.rs (reordered pub use exports)
+- src/commands/package/registry.rs (reordered add/remove functions, relocated 2 misplaced tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- `main.rs` already had correct ordering for both `PackageCommands` enum variants and match arms — no changes needed.
+- `action.rs` functions (run_action, execute_script, resolve_script_name, update_state_per_package) are internal helpers, not command-level functions, so their order was not adjusted.
+- All 160 tests pass with no changes to test logic.
