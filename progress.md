@@ -907,3 +907,31 @@ No behavioral changes — purely a structural refactoring.
 - Tests that called `uninstall_to` in the action module needed to reference `crate::commands::package::uninstall_to` since it lives in `mod.rs`, not `action.rs`. Made `uninstall_to` `pub(crate)` to support this.
 - `commands.rs` required no changes — `pub mod package;` resolves to `package/mod.rs` automatically.
 - All 158 tests pass with no changes to test logic, only import path adjustments.
+
+## Task: Extract `script_extension()` into `commands/package/mod.rs`
+
+**Timestamp:**
+
+2026-04-04T23:55:00Z
+
+**Why this task:**
+
+Next unchecked task in PRD. No dependencies on other unchecked tasks. Reduces code duplication across the package module.
+
+**What was done:**
+
+Extracted `script_extension() -> &'static str` and `shell_command() -> &'static str` into `commands/package/mod.rs` to centralize OS-specific logic. Replaced 25 scattered `cfg!(windows)` checks across `action.rs` (14 occurrences) and `registry.rs` (10 occurrences) with calls to these functions. Added 2 unit tests in `mod.rs` verifying both functions return OS-appropriate values.
+
+**What was changed:**
+
+- src/commands/package/mod.rs (added `script_extension()`, `shell_command()`, and tests)
+- src/commands/package/action.rs (replaced all `cfg!(windows)` with `script_extension()` / `shell_command()`)
+- src/commands/package/registry.rs (replaced all `cfg!(windows)` with `script_extension()`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Also extracted `shell_command() -> &'static str` alongside `script_extension()` since `execute_script` had the same pattern for resolving the shell binary.
+- Test modules import via `use crate::commands::package::script_extension;` for cleaner references instead of `super::super::`.
+- All 160 tests pass (158 existing + 2 new).

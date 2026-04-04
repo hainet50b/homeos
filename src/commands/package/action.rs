@@ -127,14 +127,13 @@ fn resolve_script_name(pkg_config: &PackageConfig, action: Action) -> String {
         .get(action_str)
         .map(|s| s.as_str())
         .unwrap_or(action_str);
-    let ext = if cfg!(windows) { "ps1" } else { "sh" };
+    let ext = super::script_extension();
     format!("{resolved_action}.{ext}")
 }
 
 /// Execute a script file via the OS-appropriate shell. Returns the output.
 fn execute_script(script_path: &Path) -> Result<std::process::Output, Box<dyn std::error::Error>> {
-    let shell = if cfg!(windows) { "powershell" } else { "sh" };
-    let output = std::process::Command::new(shell)
+    let output = std::process::Command::new(super::shell_command())
         .arg(script_path)
         .output()?;
     if !output.status.success() {
@@ -147,6 +146,7 @@ fn execute_script(script_path: &Path) -> Result<std::process::Output, Box<dyn st
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::package::script_extension;
     use tempfile::TempDir;
 
     fn fixture(yaml: &str) -> (TempDir, Context) {
@@ -164,7 +164,7 @@ mod tests {
         let (tmp, ctx) = fixture(yaml);
         let pkg_dir = ctx.packages_dir().join(pkg);
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         let script_path = pkg_dir.join(format!("{action}.{ext}"));
         std::fs::write(&script_path, format!("#!/usr/bin/env sh\necho '{marker}'\n")).unwrap();
         (tmp, ctx)
@@ -179,7 +179,7 @@ mod tests {
         let sut = resolve_script_name(&pkg_config, Action::Install);
 
         // Assert
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         assert_eq!(sut, format!("install.{ext}"));
     }
 
@@ -197,7 +197,7 @@ mod tests {
         let sut = resolve_script_name(&pkg_config, Action::Update);
 
         // Assert
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         assert_eq!(sut, format!("install.{ext}"));
     }
 
@@ -309,7 +309,7 @@ mod tests {
         State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         // Only create install script (update is overridden to install)
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
@@ -470,7 +470,7 @@ mod tests {
         for pkg in &["neovim", "ripgrep"] {
             let pkg_dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&pkg_dir).unwrap();
-            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("install.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_MARKER'\n"),
@@ -639,7 +639,7 @@ mod tests {
         for pkg in &["neovim", "ripgrep"] {
             let pkg_dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&pkg_dir).unwrap();
-            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
@@ -747,7 +747,7 @@ mod tests {
         // Also create install script for zed
         let zed_dir = ctx.packages_dir().join("zed");
         std::fs::create_dir_all(&zed_dir).unwrap();
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         std::fs::write(
             zed_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\necho 'ZED_MARKER'\n",
@@ -816,7 +816,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         std::fs::write(
             neovim_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\necho 'NEOVIM_MARKER'\n",
@@ -849,7 +849,7 @@ mod tests {
     fn test_install_continues_after_script_failure() {
         // Arrange: neovim has a failing script, ripgrep has a valid script
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
@@ -887,7 +887,7 @@ mod tests {
     fn test_uninstall_records_state_per_package() {
         // Arrange: two packages with valid uninstall scripts
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         for pkg in &["neovim", "ripgrep"] {
             let pkg_dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&pkg_dir).unwrap();
@@ -921,7 +921,7 @@ mod tests {
     fn test_uninstall_records_state_per_package_on_partial_failure() {
         // Arrange: neovim has a valid script, ripgrep has no script
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
-        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let ext = script_extension();
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
@@ -987,7 +987,7 @@ mod tests {
         for pkg in &["neovim", "ripgrep"] {
             let pkg_dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&pkg_dir).unwrap();
-            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
@@ -1093,7 +1093,7 @@ mod tests {
         for pkg in &["neovim", "ripgrep"] {
             let pkg_dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&pkg_dir).unwrap();
-            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),

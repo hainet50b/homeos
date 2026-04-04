@@ -9,6 +9,24 @@ use crate::state::State;
 use std::io::BufRead;
 use std::io::Write;
 
+/// Returns the OS-appropriate script file extension.
+pub(crate) fn script_extension() -> &'static str {
+    if cfg!(windows) {
+        "ps1"
+    } else {
+        "sh"
+    }
+}
+
+/// Returns the OS-appropriate shell command for executing scripts.
+pub(crate) fn shell_command() -> &'static str {
+    if cfg!(windows) {
+        "powershell"
+    } else {
+        "sh"
+    }
+}
+
 pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     action::run_action(
         ctx,
@@ -58,4 +76,39 @@ pub(crate) fn uninstall_to<R: BufRead, W: Write>(
     };
 
     action::run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_script_extension_returns_os_appropriate_value() {
+        // Arrange — no setup needed, function depends only on compile-time cfg
+
+        // Act
+        let ext = script_extension();
+
+        // Assert
+        if cfg!(windows) {
+            assert_eq!(ext, "ps1");
+        } else {
+            assert_eq!(ext, "sh");
+        }
+    }
+
+    #[test]
+    fn test_shell_command_returns_os_appropriate_value() {
+        // Arrange — no setup needed, function depends only on compile-time cfg
+
+        // Act
+        let cmd = shell_command();
+
+        // Assert
+        if cfg!(windows) {
+            assert_eq!(cmd, "powershell");
+        } else {
+            assert_eq!(cmd, "sh");
+        }
+    }
 }
