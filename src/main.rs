@@ -75,8 +75,11 @@ pub enum PackageCommands {
     /// Execute uninstall action scripts
     Uninstall {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required_unless_present = "all")]
         packages: Vec<String>,
+        /// Uninstall all installed packages (from state.yml)
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -146,8 +149,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Uninstall { packages } => {
-                if let Err(e) = commands::package::uninstall(&ctx, &packages) {
+            PackageCommands::Uninstall { packages, all } => {
+                if let Err(e) = commands::package::uninstall(&ctx, &packages, all) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

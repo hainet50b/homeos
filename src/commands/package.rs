@@ -154,14 +154,35 @@ pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
     )
 }
 
-pub fn uninstall(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    run_action(
+pub fn uninstall(ctx: &Context, packages: &[String], all: bool) -> Result<(), Box<dyn std::error::Error>> {
+    uninstall_to(
         ctx,
         packages,
-        "uninstall",
+        all,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
+}
+
+fn uninstall_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    all: bool,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let resolved_packages = if all {
+        let state_path = ctx.state_path();
+        if state_path.exists() {
+            State::load(&state_path)?.installed
+        } else {
+            Vec::new()
+        }
+    } else {
+        packages.to_vec()
+    };
+
+    run_action(ctx, &resolved_packages, "uninstall", reader, writer)
 }
 
 /// Execute an action for the given packages, with confirmation prompt.
@@ -1784,5 +1805,122 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Updating neovim... done"));
         assert!(!written.contains("already installed"));
+    }
+
+    #[test]
+    fn test_uninstall_all_uninstalls_all_installed_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        for pkg in &["neovim", "ripgrep"] {
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            let ext = if cfg!(windows) { "ps1" } else { "sh" };
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling ripgrep... done"));
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.is_empty());
+    }
+
+    #[test]
+    fn test_uninstall_all_with_no_state_file() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("No packages to uninstall."));
+    }
+
+    #[test]
+    fn test_uninstall_all_with_empty_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let state = State {
+            installed: vec![],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("No packages to uninstall."));
+    }
+
+    #[test]
+    fn test_uninstall_all_shows_confirmation_prompt() {
+        // Arrange
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("will be uninstalled"));
+        assert!(written.contains("neovim"));
+        assert!(written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Aborted."));
+    }
+
+    #[test]
+    fn test_uninstall_all_ignores_packages_arg() {
+        // Arrange: --all flag set, packages arg is empty, state has packages
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            "UNINSTALL_MARKER",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
     }
 }

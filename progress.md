@@ -658,3 +658,30 @@ Fixed the `add` function to check if each skeleton script file already exists be
 - The fix is a single `if !path.exists()` guard around the write call — minimal and targeted.
 - Added 3 tests: preserving one existing script while generating others, preserving two existing scripts, and preserving all three existing scripts.
 - All 117 tests pass (114 existing + 3 new).
+
+## Task: Add `--all` flag to `homeos package uninstall`
+
+**Timestamp:**
+
+2026-04-04T15:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies (state.yml parsing, uninstall execution, per-package state updates) were already in place.
+
+**What was done:**
+
+Added `--all` flag to the `Uninstall` CLI variant using clap's `required_unless_present` to make packages optional when `--all` is set. Created an `uninstall_to` function that resolves packages from `state.yml` when `--all` is true, then delegates to `run_action`. When `--all` is used with no installed packages (missing or empty `state.yml`), it shows "No packages to uninstall." The confirmation prompt displays the full list of installed packages before execution.
+
+**What was changed:**
+
+- src/main.rs (added `all: bool` field to `Uninstall` variant with `required_unless_present`, updated match arm)
+- src/commands/package.rs (added `uninstall_to` function, updated `uninstall` signature, added 5 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Used clap's `required_unless_present = "all"` attribute so that either package names or `--all` must be provided, but not neither.
+- When `--all` is set and `state.yml` is missing or empty, the resolved packages list is empty, which triggers the existing "No packages to uninstall" path in `run_action`.
+- All 122 tests pass (117 existing + 5 new).
