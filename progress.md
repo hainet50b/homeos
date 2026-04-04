@@ -822,3 +822,28 @@ Changed both `enable` and `disable` CLI subcommands from accepting a single `pac
 - Config is loaded once and saved once per invocation, not per package — this is more efficient and ensures atomicity.
 - If any package is not found, the function returns an error immediately without saving partial changes. This is consistent with how other multi-package commands (install/update/uninstall) handle unknown packages via `Plan::build`.
 - All 152 tests pass (146 existing + 6 new multi-package enable/disable tests).
+
+## Task: Enhance `homeos package remove` to reject installed packages
+
+**Timestamp:**
+
+2026-04-04T22:00:00Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Enhanced `remove` to check `state.yml` before removing a package. If the package is listed in `state.yml`'s `installed` list, the function returns an error telling the user to uninstall first (with the exact command). If `state.yml` does not exist, removal proceeds normally (no packages can be installed without a state file). Added 3 new tests: rejecting an installed package (verifying config is unchanged), allowing removal of an uninstalled package when other packages are installed, and allowing removal when no state file exists.
+
+**What was changed:**
+
+- src/commands/package.rs (added state.yml check in `remove`, added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The state check happens after the "not found" check but before the actual removal, so both error paths are clean.
+- All 155 tests pass (152 existing + 3 new remove-rejection tests).

@@ -101,7 +101,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Refactor action from `&str` to an `Action` enum (`Install`, `Update`, `Uninstall`). Eliminate string comparisons and default branches.
 - [x] Enhance `homeos package enable` to accept multiple packages (`<pkg>...`).
 - [x] Enhance `homeos package disable` to accept multiple packages (`<pkg>...`).
-- [ ] Enhance `homeos package remove` to reject packages that are in `state.yml`. Error with a message to uninstall first.
+- [x] Enhance `homeos package remove` to reject packages that are in `state.yml`. Error with a message to uninstall first.
 - [ ] Enhance `homeos package list` to show a table with Enabled and Installed columns, referencing both `homeos.yml` and `state.yml`.
 
 ## Completion Criteria

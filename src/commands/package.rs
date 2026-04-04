@@ -26,6 +26,17 @@ pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Er
         return Err(format!("Package '{package}' not found").into());
     }
 
+    let state_path = ctx.state_path();
+    if state_path.exists() {
+        let state = State::load(&state_path)?;
+        if state.installed.contains(&package.to_string()) {
+            return Err(format!(
+                "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+            )
+            .into());
+        }
+    }
+
     config.packages.remove(package);
     config.save(&ctx.config_path())?;
 
@@ -632,6 +643,61 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_rejects_installed_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("currently installed"));
+        assert!(err.contains("Uninstall it first"));
+        // Config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_allows_uninstalled_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let state = State {
+            installed: vec!["ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_works_without_state_file() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        // No state.yml exists
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
     }
 
     #[test]
