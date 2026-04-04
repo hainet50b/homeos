@@ -2,7 +2,7 @@ mod action;
 mod registry;
 
 pub use registry::{list, add, add_dep, remove_dep, remove, enable, disable, cat};
-pub use action::{install, update, uninstall};
+pub use action::{apply, install, update, uninstall};
 
 /// Returns the OS-appropriate script file extension.
 pub(crate) fn script_extension() -> &'static str {

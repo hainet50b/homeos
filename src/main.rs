@@ -25,6 +25,8 @@ pub enum Commands {
     Init,
     /// Launch a shell in the default repository directory
     Cd,
+    /// Install missing packages and update installed ones
+    Apply,
     /// Manage packages
     Package {
         #[command(subcommand)]
@@ -118,6 +120,12 @@ fn main() {
         }
         Commands::Cd => {
             if let Err(e) = commands::cd::run(&ctx) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Apply => {
+            if let Err(e) = commands::package::apply(&ctx) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }

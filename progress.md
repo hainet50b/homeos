@@ -1230,3 +1230,33 @@ Added an `expand_dependencies` function to `action.rs` that traverses `depends_o
 - Dependencies not found in `config.packages` are still included in the expanded set — `Plan::build` will error on them with "Package not found".
 - Circular dependencies are caught by `topological_sort` and surfaced as errors before any scripts execute.
 - Only `Install` expands dependencies; `Update` and `Uninstall` operate on exactly the packages specified by the user.
+
+## Task: Implement `homeos apply`
+
+**Timestamp:**
+
+2026-04-04T12:31:10Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. No remaining dependencies — all prerequisite tasks (install, update, state management, dependency ordering) are complete.
+
+**What was done:**
+
+Added `homeos apply` as a top-level CLI command. The implementation loads `homeos.yml` and `state.yml`, classifies enabled packages into two groups: install (enabled + not in state) and update (enabled + in state). Disabled packages are silently skipped. Install packages go through dependency expansion and topological sort before execution. A combined plan showing both install and update targets is displayed with a single confirmation prompt. Scripts execute in order: installs first, then updates. State is updated per package after successful execution. Added `apply` and `apply_to` functions in `action.rs` (the latter with injectable I/O for testability), re-exported through `mod.rs`.
+
+**What was changed:**
+
+- src/main.rs (added `Apply` variant to `Commands` enum and dispatch)
+- src/commands/package/action.rs (added `apply`, `apply_to`, `write_script` test helper, and 9 tests)
+- src/commands/package/mod.rs (added `apply` to re-exports)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 217 tests pass (208 existing + 9 new).
+- `apply` is a top-level command (not under `package`) matching the README command structure.
+- The combined plan shows install and update sections separately so the user can see exactly what will happen.
+- When there are no enabled packages to process, a "Nothing to do." message is shown without prompting.
+- Dependency expansion only applies to the install portion; updates operate on the exact set of enabled+in-state packages.

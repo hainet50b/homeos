@@ -1,34 +1,205 @@
 use crate::config::{Config, PackageConfig};
-use crate::plan::{confirm_plan, Action, Plan};
 use crate::context::Context;
+use crate::plan::{Action, Plan, confirm_plan};
 use crate::state::State;
 use crate::topo::topological_sort;
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-/// Expand a list of packages to include all transitive dependencies.
-/// Returns the expanded set as a Vec in no particular order.
-fn expand_dependencies(config: &Config, packages: &[String]) -> Vec<String> {
-    let mut result: Vec<String> = Vec::new();
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = packages.to_vec();
+pub fn apply(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
+    apply_to(ctx, &mut std::io::stdin().lock(), &mut std::io::stdout())
+}
 
-    while let Some(name) = stack.pop() {
-        if !visited.insert(name.clone()) {
+pub(crate) fn apply_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+    let state_path = ctx.state_path();
+    let installed = if state_path.exists() {
+        State::load(&state_path)?.installed
+    } else {
+        Vec::new()
+    };
+
+    let mut to_install = Vec::new();
+    let mut to_update = Vec::new();
+
+    for (name, pkg) in &config.packages {
+        if !pkg.enabled {
             continue;
         }
-        result.push(name.clone());
-        if let Some(pkg_config) = config.packages.get(&name) {
-            for dep in &pkg_config.depends_on {
-                if !visited.contains(dep) {
-                    stack.push(dep.clone());
+        if installed.contains(name) {
+            to_update.push(name.clone());
+        } else {
+            to_install.push(name.clone());
+        }
+    }
+
+    if to_install.is_empty() && to_update.is_empty() {
+        writeln!(writer, "Nothing to do.")?;
+        return Ok(());
+    }
+
+    // Build plans for display
+    let install_plan = if !to_install.is_empty() {
+        let expanded = expand_dependencies(&config, &to_install);
+        let ordered = topological_sort(&config, &expanded)?;
+        Some(Plan::build(&config, &ordered, Action::Install, &installed)?)
+    } else {
+        None
+    };
+
+    let update_plan = if !to_update.is_empty() {
+        Some(Plan::build(&config, &to_update, Action::Update, &installed)?)
+    } else {
+        None
+    };
+
+    // Display combined plan
+    if let Some(ref plan) = install_plan {
+        let display = plan.display();
+        if !display.is_empty() {
+            writeln!(writer, "{display}")?;
+        }
+    }
+    if let Some(ref plan) = update_plan {
+        let display = plan.display();
+        if !display.is_empty() {
+            writeln!(writer, "{display}")?;
+        }
+    }
+
+    writeln!(writer)?;
+    if !crate::plan::prompt_confirm(reader, writer) {
+        writeln!(writer, "Aborted.")?;
+        return Ok(());
+    }
+
+    let mut had_errors = false;
+
+    // Execute installs
+    if let Some(plan) = install_plan {
+        for name in &plan.enabled {
+            let pkg_config = &config.packages[name];
+            let script_name = resolve_script_name(pkg_config, Action::Install);
+            let script_path = ctx.packages_dir().join(name).join(&script_name);
+
+            if !script_path.exists() {
+                writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+                had_errors = true;
+                continue;
+            }
+
+            write!(writer, "Installing {name}... ")?;
+            writer.flush()?;
+
+            match execute_script(&script_path) {
+                Ok(_) => {
+                    writeln!(writer, "done")?;
+                    update_state_per_package(ctx, Action::Install, name)?;
+                }
+                Err(e) => {
+                    writeln!(writer, "FAILED")?;
+                    writeln!(writer, "Error: {e}")?;
+                    had_errors = true;
                 }
             }
         }
     }
 
-    result
+    // Execute updates
+    if let Some(plan) = update_plan {
+        for name in &plan.enabled {
+            let pkg_config = &config.packages[name];
+            let script_name = resolve_script_name(pkg_config, Action::Update);
+            let script_path = ctx.packages_dir().join(name).join(&script_name);
+
+            if !script_path.exists() {
+                writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+                had_errors = true;
+                continue;
+            }
+
+            write!(writer, "Updating {name}... ")?;
+            writer.flush()?;
+
+            match execute_script(&script_path) {
+                Ok(_) => {
+                    writeln!(writer, "done")?;
+                    update_state_per_package(ctx, Action::Update, name)?;
+                }
+                Err(e) => {
+                    writeln!(writer, "FAILED")?;
+                    writeln!(writer, "Error: {e}")?;
+                    had_errors = true;
+                }
+            }
+        }
+    }
+
+    if had_errors {
+        Err("Some packages failed".into())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    run_action(
+        ctx,
+        packages,
+        Action::Install,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
+}
+
+pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    run_action(
+        ctx,
+        packages,
+        Action::Update,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
+}
+
+pub fn uninstall(
+    ctx: &Context,
+    packages: &[String],
+    all: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    uninstall_to(
+        ctx,
+        packages,
+        all,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
+}
+
+pub(crate) fn uninstall_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    all: bool,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let resolved_packages = if all {
+        let state_path = ctx.state_path();
+        if state_path.exists() {
+            State::load(&state_path)?.installed
+        } else {
+            Vec::new()
+        }
+    } else {
+        packages.to_vec()
+    };
+
+    run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
 }
 
 /// Execute an action for the given packages, with confirmation prompt.
@@ -177,55 +348,28 @@ fn execute_script(script_path: &Path) -> Result<std::process::Output, Box<dyn st
     Ok(output)
 }
 
-pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    run_action(
-        ctx,
-        packages,
-        Action::Install,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
+/// Expand a list of packages to include all transitive dependencies.
+/// Returns the expanded set as a Vec in no particular order.
+fn expand_dependencies(config: &Config, packages: &[String]) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = packages.to_vec();
 
-pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    run_action(
-        ctx,
-        packages,
-        Action::Update,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
-
-pub fn uninstall(ctx: &Context, packages: &[String], all: bool) -> Result<(), Box<dyn std::error::Error>> {
-    uninstall_to(
-        ctx,
-        packages,
-        all,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
-
-pub(crate) fn uninstall_to<R: BufRead, W: Write>(
-    ctx: &Context,
-    packages: &[String],
-    all: bool,
-    reader: &mut R,
-    writer: &mut W,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let resolved_packages = if all {
-        let state_path = ctx.state_path();
-        if state_path.exists() {
-            State::load(&state_path)?.installed
-        } else {
-            Vec::new()
+    while let Some(name) = stack.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
         }
-    } else {
-        packages.to_vec()
-    };
+        result.push(name.clone());
+        if let Some(pkg_config) = config.packages.get(&name) {
+            for dep in &pkg_config.depends_on {
+                if !visited.contains(dep) {
+                    stack.push(dep.clone());
+                }
+            }
+        }
+    }
 
-    run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
+    result
 }
 
 #[cfg(test)]
@@ -245,13 +389,22 @@ mod tests {
         (tmp, ctx)
     }
 
-    fn fixture_with_script(yaml: &str, pkg: &str, action: &str, marker: &str) -> (TempDir, Context) {
+    fn fixture_with_script(
+        yaml: &str,
+        pkg: &str,
+        action: &str,
+        marker: &str,
+    ) -> (TempDir, Context) {
         let (tmp, ctx) = fixture(yaml);
         let pkg_dir = ctx.packages_dir().join(pkg);
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
         let script_path = pkg_dir.join(format!("{action}.{ext}"));
-        std::fs::write(&script_path, format!("#!/usr/bin/env sh\necho '{marker}'\n")).unwrap();
+        std::fs::write(
+            &script_path,
+            format!("#!/usr/bin/env sh\necho '{marker}'\n"),
+        )
+        .unwrap();
         (tmp, ctx)
     }
 
@@ -272,9 +425,10 @@ mod tests {
     fn test_resolve_script_name_with_override() {
         // Arrange
         let pkg_config = PackageConfig {
-            actions_overrides: std::collections::BTreeMap::from([
-                ("update".to_string(), "install".to_string()),
-            ]),
+            actions_overrides: std::collections::BTreeMap::from([(
+                "update".to_string(),
+                "install".to_string(),
+            )]),
             ..Default::default()
         };
 
@@ -314,7 +468,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -335,7 +495,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -358,7 +524,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -376,11 +548,22 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Some packages failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Some packages failed")
+        );
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Script not found"));
     }
@@ -388,10 +571,13 @@ mod tests {
     #[test]
     fn test_run_action_respects_action_overrides() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n",
-        );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    actions_overrides:\n      update: install\n");
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
@@ -399,12 +585,19 @@ mod tests {
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\necho 'OVERRIDE_MARKER'\n",
-        ).unwrap();
+        )
+        .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -421,12 +614,22 @@ mod tests {
             "update",
             "UPDATE_MARKER",
         );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -447,7 +650,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -466,12 +675,22 @@ mod tests {
             "update",
             "SHOULD_NOT_RUN",
         );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let mut input = std::io::Cursor::new(b"n\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -489,12 +708,22 @@ mod tests {
             "uninstall",
             "UNINSTALL_MARKER",
         );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -511,12 +740,22 @@ mod tests {
             "uninstall",
             "echo UNINSTALL_MARKER",
         );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -534,12 +773,22 @@ mod tests {
             "uninstall",
             "SHOULD_NOT_RUN",
         );
-        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
         let mut input = std::io::Cursor::new(b"n\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -559,7 +808,8 @@ mod tests {
             std::fs::write(
                 pkg_dir.join(format!("install.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_MARKER'\n"),
-            ).unwrap();
+            )
+            .unwrap();
         }
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -593,7 +843,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -614,7 +871,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         assert!(ctx.state_path().exists());
@@ -640,7 +904,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -665,7 +936,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -689,7 +967,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -710,7 +995,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -728,10 +1019,15 @@ mod tests {
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
-            ).unwrap();
+            )
+            .unwrap();
         }
         let state = State {
-            installed: vec!["neovim".to_string(), "ripgrep".to_string(), "zed".to_string()],
+            installed: vec![
+                "neovim".to_string(),
+                "ripgrep".to_string(),
+                "zed".to_string(),
+            ],
         };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -744,7 +1040,8 @@ mod tests {
             Action::Uninstall,
             &mut input,
             &mut output,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -768,7 +1065,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -788,7 +1092,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         assert!(!ctx.state_path().exists());
@@ -811,7 +1122,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -905,7 +1223,8 @@ mod tests {
         std::fs::write(
             neovim_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\necho 'NEOVIM_MARKER'\n",
-        ).unwrap();
+        )
+        .unwrap();
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
         std::fs::create_dir_all(&ripgrep_dir).unwrap();
         // No install script for ripgrep
@@ -940,13 +1259,15 @@ mod tests {
         std::fs::write(
             neovim_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\nexit 1\n",
-        ).unwrap();
+        )
+        .unwrap();
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
         std::fs::create_dir_all(&ripgrep_dir).unwrap();
         std::fs::write(
             ripgrep_dir.join(format!("install.{ext}")),
             "#!/usr/bin/env sh\necho 'RIPGREP_MARKER'\n",
-        ).unwrap();
+        )
+        .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -979,7 +1300,8 @@ mod tests {
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
                 format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
-            ).unwrap();
+            )
+            .unwrap();
         }
         let state = State {
             installed: vec!["neovim".to_string(), "ripgrep".to_string()],
@@ -995,7 +1317,8 @@ mod tests {
             Action::Uninstall,
             &mut input,
             &mut output,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1012,7 +1335,8 @@ mod tests {
         std::fs::write(
             neovim_dir.join(format!("uninstall.{ext}")),
             "#!/usr/bin/env sh\necho 'NEOVIM_UNINSTALL'\n",
-        ).unwrap();
+        )
+        .unwrap();
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
         std::fs::create_dir_all(&ripgrep_dir).unwrap();
         // No uninstall script for ripgrep
@@ -1058,7 +1382,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1115,7 +1446,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let _ = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let _ = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert: package should still be enabled since uninstall failed
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1139,7 +1476,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act — disabled packages are skipped by the plan, so uninstall is a no-op
-        run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert: package remains disabled
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -1163,7 +1507,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1222,9 +1573,7 @@ mod tests {
     fn test_uninstall_all_with_empty_state() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-        let state = State {
-            installed: vec![],
-        };
+        let state = State { installed: vec![] };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -1281,7 +1630,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        );
 
         // Assert — state is loaded but update still executes in-state packages
         assert!(result.is_ok());
@@ -1306,7 +1661,13 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["neovim".to_string()], Action::Uninstall, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
 
         // Assert — state is loaded but uninstall still executes in-state packages
         assert!(result.is_ok());
@@ -1344,9 +1705,10 @@ mod tests {
     fn test_expand_dependencies_no_deps() {
         // Arrange
         let config = Config {
-            packages: std::collections::BTreeMap::from([
-                ("neovim".to_string(), PackageConfig::default()),
-            ]),
+            packages: std::collections::BTreeMap::from([(
+                "neovim".to_string(),
+                PackageConfig::default(),
+            )]),
         };
 
         // Act
@@ -1361,14 +1723,20 @@ mod tests {
         // Arrange — neovim depends on git, git depends on curl
         let config = Config {
             packages: std::collections::BTreeMap::from([
-                ("neovim".to_string(), PackageConfig {
-                    depends_on: vec!["git".to_string()],
-                    ..Default::default()
-                }),
-                ("git".to_string(), PackageConfig {
-                    depends_on: vec!["curl".to_string()],
-                    ..Default::default()
-                }),
+                (
+                    "neovim".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "git".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["curl".to_string()],
+                        ..Default::default()
+                    },
+                ),
                 ("curl".to_string(), PackageConfig::default()),
             ]),
         };
@@ -1387,14 +1755,20 @@ mod tests {
         // Arrange — both neovim and zed depend on git
         let config = Config {
             packages: std::collections::BTreeMap::from([
-                ("neovim".to_string(), PackageConfig {
-                    depends_on: vec!["git".to_string()],
-                    ..Default::default()
-                }),
-                ("zed".to_string(), PackageConfig {
-                    depends_on: vec!["git".to_string()],
-                    ..Default::default()
-                }),
+                (
+                    "neovim".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "zed".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
                 ("git".to_string(), PackageConfig::default()),
             ]),
         };
@@ -1412,12 +1786,13 @@ mod tests {
     fn test_expand_dependencies_unknown_dep_included_as_is() {
         // Arrange — neovim depends on unknown_pkg which is not in config
         let config = Config {
-            packages: std::collections::BTreeMap::from([
-                ("neovim".to_string(), PackageConfig {
+            packages: std::collections::BTreeMap::from([(
+                "neovim".to_string(),
+                PackageConfig {
                     depends_on: vec!["unknown_pkg".to_string()],
                     ..Default::default()
-                }),
-            ]),
+                },
+            )]),
         };
 
         // Act
@@ -1441,22 +1816,41 @@ mod tests {
         let ext = script_extension();
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
-        std::fs::write(neovim_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'NEOVIM_INSTALL'\n").unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'NEOVIM_INSTALL'\n",
+        )
+        .unwrap();
 
         let git_dir = ctx.packages_dir().join("git");
         std::fs::create_dir_all(&git_dir).unwrap();
-        std::fs::write(git_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'GIT_INSTALL'\n").unwrap();
+        std::fs::write(
+            git_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'GIT_INSTALL'\n",
+        )
+        .unwrap();
 
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act — only request neovim, git should be pulled in as dependency
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert — git installed before neovim
         let written = String::from_utf8(output).unwrap();
-        let git_pos = written.find("Installing git").expect("git should be installed");
-        let neovim_pos = written.find("Installing neovim").expect("neovim should be installed");
+        let git_pos = written
+            .find("Installing git")
+            .expect("git should be installed");
+        let neovim_pos = written
+            .find("Installing neovim")
+            .expect("neovim should be installed");
         assert!(git_pos < neovim_pos, "git must be installed before neovim");
     }
 
@@ -1470,14 +1864,25 @@ mod tests {
         for pkg in ["neovim", "git"] {
             let dir = ctx.packages_dir().join(pkg);
             std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join(format!("install.{ext}")), format!("#!/usr/bin/env sh\necho '{pkg}'\n")).unwrap();
+            std::fs::write(
+                dir.join(format!("install.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}'\n"),
+            )
+            .unwrap();
         }
 
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert — both packages recorded in state
         let state = State::load(&ctx.state_path()).unwrap();
@@ -1494,7 +1899,11 @@ mod tests {
         let ext = script_extension();
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
-        std::fs::write(neovim_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'NEOVIM'\n").unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'NEOVIM'\n",
+        )
+        .unwrap();
 
         // git is already installed
         let state = State {
@@ -1506,7 +1915,14 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert — git skipped as already installed, neovim installed
         let written = String::from_utf8(output).unwrap();
@@ -1517,17 +1933,29 @@ mod tests {
     #[test]
     fn test_install_circular_dependency_errors() {
         // Arrange — a depends on b, b depends on a
-        let yaml = "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
+        let yaml =
+            "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
         let (_tmp, ctx) = fixture(yaml);
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(&ctx, &["a".to_string()], Action::Install, &mut input, &mut output);
+        let result = run_action(
+            &ctx,
+            &["a".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
     }
 
     #[test]
@@ -1539,7 +1967,11 @@ mod tests {
         let ext = script_extension();
         let neovim_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&neovim_dir).unwrap();
-        std::fs::write(neovim_dir.join(format!("update.{ext}")), "#!/usr/bin/env sh\necho 'UPDATE'\n").unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("update.{ext}")),
+            "#!/usr/bin/env sh\necho 'UPDATE'\n",
+        )
+        .unwrap();
 
         // neovim is installed (required for update)
         let state = State {
@@ -1551,11 +1983,207 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
 
         // Assert — only neovim updated, git not mentioned
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Updating neovim... done"));
         assert!(!written.contains("git"));
+    }
+
+    // --- apply_to tests ---
+
+    fn write_script(ctx: &Context, pkg: &str, action: &str, marker: &str) {
+        let pkg_dir = ctx.packages_dir().join(pkg);
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        let script_path = pkg_dir.join(format!("{action}.{ext}"));
+        std::fs::write(
+            &script_path,
+            format!("#!/usr/bin/env sh\necho '{marker}'\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_apply_installs_enabled_not_in_state_and_updates_enabled_in_state() {
+        // Arrange: neovim is enabled+not-in-state (install), zed is enabled+in-state (update)
+        let yaml = "packages:\n  neovim: {}\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "neovim", "install", "NEO_INSTALL");
+        write_script(&ctx, "zed", "update", "ZED_UPDATE");
+        let state = State { installed: vec!["zed".to_string()] };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Updating zed... done"));
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.contains(&"neovim".to_string()));
+        assert!(state.installed.contains(&"zed".to_string()));
+    }
+
+    #[test]
+    fn test_apply_skips_disabled_packages() {
+        // Arrange: neovim is disabled, zed is enabled+not-in-state
+        let yaml = "packages:\n  neovim:\n    enabled: false\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", "ZED_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing zed... done"));
+        assert!(!written.contains("neovim"));
+    }
+
+    #[test]
+    fn test_apply_nothing_to_do_when_all_disabled() {
+        // Arrange: all packages disabled
+        let yaml = "packages:\n  neovim:\n    enabled: false\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_apply_nothing_to_do_when_no_packages() {
+        // Arrange: empty config
+        let yaml = "packages: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_apply_aborts_on_no_confirmation() {
+        // Arrange
+        let yaml = "packages:\n  neovim: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "neovim", "install", "SHOULD_NOT_RUN");
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        assert!(!written.contains("Installing"));
+    }
+
+    #[test]
+    fn test_apply_only_installs_when_nothing_in_state() {
+        // Arrange: two enabled packages, no state
+        let yaml = "packages:\n  git: {}\n  neovim: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "install", "GIT_INSTALL");
+        write_script(&ctx, "neovim", "install", "NEO_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing git... done"));
+        assert!(written.contains("Installing neovim... done"));
+        assert!(!written.contains("Updating"));
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed.len(), 2);
+    }
+
+    #[test]
+    fn test_apply_only_updates_when_all_in_state() {
+        // Arrange: two enabled packages, both in state
+        let yaml = "packages:\n  git: {}\n  neovim: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "update", "GIT_UPDATE");
+        write_script(&ctx, "neovim", "update", "NEO_UPDATE");
+        let state = State { installed: vec!["git".to_string(), "neovim".to_string()] };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating git... done"));
+        assert!(written.contains("Updating neovim... done"));
+        assert!(!written.contains("Installing"));
+    }
+
+    #[test]
+    fn test_apply_records_installed_in_state() {
+        // Arrange: neovim enabled+not-in-state
+        let yaml = "packages:\n  neovim: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "neovim", "install", "INSTALL_NEO");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_apply_shows_combined_plan() {
+        // Arrange: neovim to install, zed to update
+        let yaml = "packages:\n  neovim: {}\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "neovim", "install", "NEO_INSTALL");
+        write_script(&ctx, "zed", "update", "ZED_UPDATE");
+        let state = State { installed: vec!["zed".to_string()] };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("will be installed"));
+        assert!(written.contains("will be updated"));
+        assert!(written.contains("Proceed? [y/N]"));
     }
 }
