@@ -52,3 +52,15 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-04T12:45:08Z,a7f7c4b,"Implement homeos repo add command",131,24,5282,0.6022345
 2026-04-04T12:47:24Z,23c4cb4,"Implement homeos repo remove command",132,22,4077,0.6051516499999999
 2026-04-04T14:38:43Z,00505d8,"Show disabled packages in apply plan instead of silently filtering",241,35,7236,1.1035007
+2026-04-04T16:08:11Z,17ffb3e,"Guard repo remove against installed packages",92,19,3992,0.514085
+2026-04-04T16:10:41Z,dd25cc5,"Implement homeos package cd [<package>]",146,30,6145,0.8510610000000001
+2026-04-04T16:14:04Z,09a5c13,"Enhance homeos init to accept optional <url> argument for cloning",199,1299,6889,1.1649450000000001
+2026-04-04T16:17:06Z,42d101b,"Add --strip-git flag to homeos init for removing .git after clone",179,34,6417,1.2513487500000002
+2026-04-04T16:20:44Z,d17fffc,"Add plugins section to Config with PluginConfig struct",214,40,8416,1.49232075
+2026-04-04T16:22:49Z,d467d38,"Add plugin and params fields to PackageConfig",121,27,5143,0.96045325
+2026-04-04T16:25:38Z,a805ca9,"Implement homeos plugin list command",165,29,6104,1.03340975
+2026-04-04T16:29:53Z,a295e45,"Implement homeos plugin list-remote command",251,32,8531,1.2760594500000002
+2026-04-04T16:33:01Z,3299af7,"Implement homeos plugin add command",184,1786,7824,1.10721775
+2026-04-04T16:35:00Z,80ed78c,"Implement homeos plugin remove command",115,24,5552,0.9422799999999999
+2026-04-04T16:38:33Z,3a145ca,"Add --plugin and --params options to homeos package add CLI definition",209,43,9525,1.5858537499999998
+2026-04-04T16:43:04Z,3036786,"Integrate plugin template rendering into homeos package add",268,41,11679,1.62994495
