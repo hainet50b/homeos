@@ -108,7 +108,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Rename `confirm.rs` to `plan.rs` to better reflect its responsibility (Plan, Action, confirmation prompt).
 - [x] Reorder functions and methods to match the command definition order in README (list, add, remove, enable, disable, cat, cd, install, update, uninstall).
 - [x] Move `install`, `update`, `uninstall`, and `uninstall_to` from `commands/package/mod.rs` to `commands/package/action.rs`. Keep `mod.rs` limited to re-exports and shared helpers (`script_extension`, `shell_command`).
-- [ ] Add `depends_on` field to `PackageConfig` in config.rs (optional `Vec<String>`, skipped when empty in serialization)
+- [x] Add `depends_on` field to `PackageConfig` in config.rs (optional `Vec<String>`, skipped when empty in serialization)
 - [ ] Add `--depends-on` option to `homeos package add` to specify dependencies at creation time
 - [ ] Implement `homeos package add-dep <pkg> <dep>...` — add dependencies to an existing package
 - [ ] Implement `homeos package remove-dep <pkg> <dep>...` — remove dependencies from a package

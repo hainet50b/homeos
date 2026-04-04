@@ -1019,3 +1019,28 @@ Moved `install`, `update`, `uninstall`, and `uninstall_to` from `commands/packag
 
 - The `uninstall_to` function remains `pub(crate)` but no longer needs a re-export from `mod.rs` since all callers are now within `action.rs` or its test submodule.
 - All 161 tests pass (160 existing + 1 new).
+
+## Task: Add `depends_on` field to `PackageConfig`
+
+**Timestamp:**
+
+2026-04-04T10:49:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order — the `depends_on` field is a prerequisite for all subsequent dependency-related tasks (`--depends-on` flag, `add-dep`, `remove-dep`, topological sort, etc.).
+
+**What was done:**
+
+Added a `depends_on: Vec<String>` field to `PackageConfig` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]` so it defaults to empty and is omitted from YAML when empty. Updated two existing test constructions that used explicit field initialization to include the new field. Added 5 new tests: parsing depends_on from YAML, default to empty, skip empty on serialize, include non-empty on serialize, and save/reload round-trip with depends_on.
+
+**What was changed:**
+
+- src/config.rs (added `depends_on` field, updated 2 existing test constructions, added 5 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 166 tests pass (161 existing + 5 new).
+- No changes needed in plan.rs or action.rs since those use `..Default::default()` which automatically sets `depends_on` to `Vec::new()`.

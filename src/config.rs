@@ -14,6 +14,8 @@ pub struct PackageConfig {
     pub actions_overrides: BTreeMap<String, String>,
     #[serde(default = "default_enabled", skip_serializing_if = "is_true")]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
 }
 
 fn default_enabled() -> bool {
@@ -140,6 +142,7 @@ packages:
             PackageConfig {
                 actions_overrides: BTreeMap::from([("update".to_string(), "install".to_string())]),
                 enabled: true,
+                depends_on: Vec::new(),
             },
         );
         let tmp = NamedTempFile::new().unwrap();
@@ -161,6 +164,7 @@ packages:
                 PackageConfig {
                     actions_overrides: BTreeMap::new(),
                     enabled: true,
+                    depends_on: Vec::new(),
                 },
             )]),
         };
@@ -171,6 +175,100 @@ packages:
         // Assert
         assert!(!sut.contains("actions_overrides"));
         assert!(!sut.contains("enabled"));
+    }
+
+    #[test]
+    fn test_parse_depends_on() {
+        // Arrange
+        let yaml = r#"
+packages:
+  neovim:
+    depends_on:
+      - git
+      - curl
+"#;
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        let neovim = &sut.packages["neovim"];
+        assert_eq!(neovim.depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_depends_on_defaults_to_empty() {
+        // Arrange
+        let yaml = "packages:\n  git: {}\n";
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert!(sut.packages["git"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_serialize_skips_empty_depends_on() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::from([(
+                "git".to_string(),
+                PackageConfig {
+                    depends_on: Vec::new(),
+                    ..Default::default()
+                },
+            )]),
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(!sut.contains("depends_on"));
+    }
+
+    #[test]
+    fn test_serialize_includes_nonempty_depends_on() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::from([(
+                "neovim".to_string(),
+                PackageConfig {
+                    depends_on: vec!["git".to_string(), "curl".to_string()],
+                    ..Default::default()
+                },
+            )]),
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(sut.contains("depends_on"));
+        assert!(sut.contains("git"));
+        assert!(sut.contains("curl"));
+    }
+
+    #[test]
+    fn test_save_and_reload_with_depends_on() {
+        // Arrange
+        let mut config = Config::default();
+        config.packages.insert(
+            "neovim".to_string(),
+            PackageConfig {
+                depends_on: vec!["git".to_string(), "curl".to_string()],
+                ..Default::default()
+            },
+        );
+        let tmp = NamedTempFile::new().unwrap();
+
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(sut.packages["neovim"].depends_on, vec!["git", "curl"]);
     }
 
     #[test]
