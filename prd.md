@@ -95,7 +95,10 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Enhance `homeos package uninstall` to disable uninstalled packages in `homeos.yml` after successful execution.
 - [x] Fix `homeos package add` to preserve existing scripts when the package directory already exists. Only generate skeleton scripts for files that are missing.
 - [x] Add `--all` flag to `homeos package uninstall` to uninstall all installed packages (from `state.yml`). Show confirmation prompt with the full list before execution.
+- [ ] Fix `homeos package uninstall` to ignore disabled status. Uninstall should always execute regardless of whether the package is enabled or disabled.
 
 ## Completion Criteria
 
-All tasks are checked off and `cargo test` passes with no failures.
+- All tasks are checked off.
+- `cargo clippy` produces no warnings.
+- `cargo test` passes with no failures.
