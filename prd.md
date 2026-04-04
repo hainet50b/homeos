@@ -107,6 +107,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Extract `script_extension() -> &'static str` into `commands/package/mod.rs` to eliminate scattered `cfg!(windows)` checks.
 - [x] Rename `confirm.rs` to `plan.rs` to better reflect its responsibility (Plan, Action, confirmation prompt).
 - [x] Reorder functions and methods to match the command definition order in README (list, add, remove, enable, disable, cat, cd, install, update, uninstall).
+- [ ] Move `install`, `update`, `uninstall`, and `uninstall_to` from `commands/package/mod.rs` to `commands/package/action.rs`. Keep `mod.rs` limited to re-exports and shared helpers (`script_extension`, `shell_command`).
 
 ## Completion Criteria
 
