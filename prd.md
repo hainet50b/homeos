@@ -124,7 +124,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos repo add <name> <url>` — clone a remote repository into `repos/<name>/`
 - [x] Implement `homeos repo remove <name>` — remove the local repository directory
 - [x] Enhance `homeos apply` to include disabled packages in the plan display as `Skipping <pkg> (disabled)` instead of silently filtering them out.
-- [ ] Enhance `homeos repo remove` to reject removal if the repository's `state.yml` contains installed packages. Error with a message to uninstall first.
+- [x] Enhance `homeos repo remove` to reject removal if the repository's `state.yml` contains installed packages. Error with a message to uninstall first.
 - [ ] Implement `homeos package cd [<package>]` — launch a shell in the package root or specific package directory
 - [ ] Enhance `homeos init` to accept an optional `<url>` argument to clone a remote repository as the default repo
 - [ ] Implement `--strip-git` flag for `homeos init` — remove `.git` directory after cloning

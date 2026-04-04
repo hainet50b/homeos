@@ -1431,3 +1431,28 @@ Updated two existing tests (`test_apply_skips_disabled_packages` and `test_apply
 
 - All 242 tests pass (239 existing + 3 new).
 - The disabled messages are displayed at the `apply_to` level rather than injected into `Plan::build`, since `apply` handles disabled filtering before plan construction. This keeps `Plan::build` unchanged and avoids passing disabled packages through the plan machinery.
+
+## Task: Enhance `homeos repo remove` to guard against installed packages
+
+**Timestamp:**
+
+2026-04-04T16:07:46Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Enhanced `homeos repo remove` to check the target repository's `state.yml` before deletion. If the file exists and contains installed packages, the command now returns an error: "Repository '<name>' has installed packages. Uninstall them first." If `state.yml` is absent or has an empty installed list, removal proceeds as before. Added 3 tests covering: rejection when installed packages exist, allowing removal with empty state, and allowing removal without a state file.
+
+**What was changed:**
+
+- src/commands/repo.rs (added `State` import, added state.yml check in `remove`, added 3 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 245 tests pass (242 existing + 3 new).
+- The state.yml path is constructed directly from the target repo directory (`repos_dir().join(name).join("state.yml")`) rather than using `ctx.state_path()`, since the context is configured for the current repo, not the repo being removed.

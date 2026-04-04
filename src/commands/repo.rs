@@ -1,4 +1,5 @@
 use crate::context::Context;
+use crate::state::State;
 use std::io::Write;
 use std::process::Command;
 
@@ -34,6 +35,18 @@ pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error
 
     if !target.exists() {
         return Err(format!("Repository '{}' does not exist", name).into());
+    }
+
+    let state_path = target.join("state.yml");
+    if state_path.exists() {
+        let state = State::load(&state_path)?;
+        if !state.installed.is_empty() {
+            return Err(format!(
+                "Repository '{}' has installed packages. Uninstall them first.",
+                name
+            )
+            .into());
+        }
     }
 
     std::fs::remove_dir_all(&target)?;
@@ -268,6 +281,66 @@ mod tests {
         assert!(result.is_ok());
         assert!(!repos_dir.join("repo-a").exists());
         assert!(repos_dir.join("repo-b").exists());
+    }
+
+    #[test]
+    fn test_remove_rejects_repo_with_installed_packages() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repo_dir = ctx.repos_dir().join("my-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        let state = crate::state::State {
+            installed: vec!["neovim".to_string(), "zed".to_string()],
+        };
+        state.save(&repo_dir.join("state.yml")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "my-repo");
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Repository 'my-repo' has installed packages. Uninstall them first."
+        );
+        assert!(repo_dir.exists());
+    }
+
+    #[test]
+    fn test_remove_allows_repo_with_empty_state() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repo_dir = ctx.repos_dir().join("my-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        let state = crate::state::State {
+            installed: vec![],
+        };
+        state.save(&repo_dir.join("state.yml")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "my-repo");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!repo_dir.exists());
+    }
+
+    #[test]
+    fn test_remove_allows_repo_without_state_file() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repo_dir = ctx.repos_dir().join("my-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+
+        // Act
+        let result = remove(&ctx, "my-repo");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!repo_dir.exists());
     }
 
     #[test]
