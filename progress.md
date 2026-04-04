@@ -581,3 +581,28 @@ Enhanced `Plan::build` to accept an `installed` slice parameter. When a package 
 - The `installed` parameter is passed as `&[]` for non-install actions, so update/uninstall behavior is unchanged.
 - Disabled packages take precedence over already-installed in the classification logic (checked first).
 - All 106 tests pass (99 existing + 3 new confirm tests + 4 new package tests).
+
+## Task: Refactor install/update/uninstall to update state.yml per package
+
+**Timestamp:**
+
+2026-04-04T12:00:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. Per-package state updates are a prerequisite for correctness — if a later package fails, earlier successful packages must already be recorded in state.yml.
+
+**What was done:**
+
+Refactored `run_action` to update `state.yml` after each successful script execution instead of in bulk at the end. Extracted an `update_state_per_package` helper that handles both install (add to state) and uninstall (remove from state) per package. Changed error handling so that script failures (missing script or execution failure) are reported to the user and the loop continues to the next package. The function returns `Err("Some packages failed")` if any package failed, ensuring callers know about partial failures. Updated the existing `test_run_action_errors_on_missing_script` test to match new behavior. Added 4 new tests covering: install state recorded on partial failure (first succeeds, second missing script), install continues after script execution failure, uninstall per-package state recording, and uninstall state on partial failure.
+
+**What was changed:**
+
+- src/commands/package.rs (refactored `run_action` loop, added `update_state_per_package` helper, updated 1 test, added 4 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `update_state_per_package` function loads and saves state.yml on each call. This is correct for ensuring durability but involves repeated file I/O. Acceptable for the expected small number of packages.
+- All 110 tests pass (106 existing + 4 new).

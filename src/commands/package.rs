@@ -206,39 +206,64 @@ pub fn run_action<R: BufRead, W: Write>(
         other => other,
     };
 
+    let mut had_errors = false;
+
     for name in &plan.enabled {
         let pkg_config = &config.packages[name];
         let script_name = resolve_script_name(pkg_config, action);
         let script_path = ctx.packages_dir().join(name).join(&script_name);
 
         if !script_path.exists() {
-            return Err(format!("Script not found: {}", script_path.display()).into());
+            writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+            had_errors = true;
+            continue;
         }
 
         write!(writer, "{verb} {name}... ")?;
         writer.flush()?;
-        execute_script(&script_path)?;
-        writeln!(writer, "done")?;
+
+        match execute_script(&script_path) {
+            Ok(_) => {
+                writeln!(writer, "done")?;
+                update_state_per_package(ctx, action, name)?;
+            }
+            Err(e) => {
+                writeln!(writer, "FAILED")?;
+                writeln!(writer, "Error: {e}")?;
+                had_errors = true;
+            }
+        }
     }
 
+    if had_errors {
+        Err("Some packages failed".into())
+    } else {
+        Ok(())
+    }
+}
+
+/// Update state.yml for a single package after successful script execution.
+fn update_state_per_package(
+    ctx: &Context,
+    action: &str,
+    name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let state_path = ctx.state_path();
+
     if action == "install" {
-        let state_path = ctx.state_path();
         let mut state = if state_path.exists() {
             State::load(&state_path)?
         } else {
             State::default()
         };
-        for name in &plan.enabled {
-            if !state.installed.contains(name) {
-                state.installed.push(name.clone());
-            }
+        if !state.installed.contains(&name.to_string()) {
+            state.installed.push(name.to_string());
         }
         state.save(&state_path)?;
     } else if action == "uninstall" {
-        let state_path = ctx.state_path();
         if state_path.exists() {
             let mut state = State::load(&state_path)?;
-            state.installed.retain(|name| !plan.enabled.contains(name));
+            state.installed.retain(|n| n != name);
             state.save(&state_path)?;
         }
     }
@@ -781,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_action_errors_on_missing_script() {
+    fn test_run_action_reports_missing_script_and_continues() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
@@ -793,7 +818,9 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Script not found"));
+        assert!(result.unwrap_err().to_string().contains("Some packages failed"));
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Script not found"));
     }
 
     #[test]
@@ -1395,6 +1422,152 @@ mod tests {
         assert!(written.contains("Skipping neovim (already installed)"));
         assert!(written.contains("Skipping zed (already installed)"));
         assert!(written.contains("No packages to install."));
+    }
+
+    #[test]
+    fn test_install_records_state_per_package_on_partial_failure() {
+        // Arrange: neovim has a valid script, ripgrep has no script (will fail)
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        std::fs::write(
+            neovim_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'NEOVIM_MARKER'\n",
+        ).unwrap();
+        let ripgrep_dir = ctx.packages_dir().join("ripgrep");
+        std::fs::create_dir_all(&ripgrep_dir).unwrap();
+        // No install script for ripgrep
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "install",
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_err());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["neovim"]);
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Script not found"));
+    }
+
+    #[test]
+    fn test_install_continues_after_script_failure() {
+        // Arrange: neovim has a failing script, ripgrep has a valid script
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\nexit 1\n",
+        ).unwrap();
+        let ripgrep_dir = ctx.packages_dir().join("ripgrep");
+        std::fs::create_dir_all(&ripgrep_dir).unwrap();
+        std::fs::write(
+            ripgrep_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho 'RIPGREP_MARKER'\n",
+        ).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "install",
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_err());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ripgrep"]);
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing neovim... FAILED"));
+        assert!(written.contains("Installing ripgrep... done"));
+    }
+
+    #[test]
+    fn test_uninstall_records_state_per_package() {
+        // Arrange: two packages with valid uninstall scripts
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        for pkg in &["neovim", "ripgrep"] {
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            ).unwrap();
+        }
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "uninstall",
+            &mut input,
+            &mut output,
+        ).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.is_empty());
+    }
+
+    #[test]
+    fn test_uninstall_records_state_per_package_on_partial_failure() {
+        // Arrange: neovim has a valid script, ripgrep has no script
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ext = if cfg!(windows) { "ps1" } else { "sh" };
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("uninstall.{ext}")),
+            "#!/usr/bin/env sh\necho 'NEOVIM_UNINSTALL'\n",
+        ).unwrap();
+        let ripgrep_dir = ctx.packages_dir().join("ripgrep");
+        std::fs::create_dir_all(&ripgrep_dir).unwrap();
+        // No uninstall script for ripgrep
+        let state = State {
+            installed: vec!["neovim".to_string(), "ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            "uninstall",
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_err());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ripgrep"]);
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Script not found"));
     }
 
     #[test]
