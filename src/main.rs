@@ -58,6 +58,8 @@ pub enum Commands {
 pub enum PluginCommands {
     /// List registered plugins
     List,
+    /// List official plugins available from GitHub
+    ListRemote,
 }
 
 #[derive(Subcommand)]
@@ -182,6 +184,12 @@ fn main() {
         Commands::Plugin { command } => match command {
             PluginCommands::List => {
                 if let Err(e) = commands::plugin::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::ListRemote => {
+                if let Err(e) = commands::plugin::list_remote() {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

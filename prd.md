@@ -131,7 +131,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add `plugins` section to Config (serde: `BTreeMap<String, PluginConfig>` with `url` field)
 - [x] Add `plugin` (optional `String`) and `params` (optional `BTreeMap<String, String>`) fields to PackageConfig
 - [x] Implement `homeos plugin list` — list registered plugins in the current repository
-- [ ] Implement `homeos plugin list-remote` — fetch `hainet50b/homeos-plugin-*` repositories from GitHub API, display name, description, and URL in a table. Show error message on network failure.
+- [x] Implement `homeos plugin list-remote` — fetch `hainet50b/homeos-plugin-*` repositories from GitHub API, display name, description, and URL in a table. Show error message on network failure.
 - [ ] Implement `homeos plugin add <name> [<url>]` — register plugin in `homeos.yml` and clone into `plugins/<name>/`. Without URL, resolve as `https://github.com/hainet50b/homeos-plugin-<name>`.
 - [ ] Implement `homeos plugin remove <name>` — remove `plugins/<name>/` directory and entry from `homeos.yml`. Warn (but do not block) if packages reference this plugin.
 - [ ] Add `--plugin <name>` and `--params <key=value>...` options to `homeos package add` CLI definition

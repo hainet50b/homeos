@@ -1624,3 +1624,32 @@ Implemented `homeos plugin list` which lists registered plugins from the current
 - All 273 tests pass (267 existing + 6 new).
 - Tests cover: no plugins, single plugin, multiple plugins sorted, table header format, name column width adjustment, and error when not initialized.
 - The `PluginCommands` enum currently has only `List` — subsequent tasks will add `ListRemote`, `Add`, and `Remove` variants.
+
+## Task: Implement `homeos plugin list-remote`
+
+**Timestamp:**
+
+2026-04-04T16:29:15Z
+
+**Why this task:**
+
+First unchecked task in dependency order. The `plugins` section in Config and `plugin list` are already in place. This is a prerequisite for `plugin add` which needs to resolve plugin URLs from GitHub.
+
+**What was done:**
+
+Implemented `homeos plugin list-remote` which fetches `hainet50b/homeos-plugin-*` repositories from the GitHub Search API and displays them in a table with Name, Description, and URL columns. Added `reqwest` (with `blocking` and `json` features) and `serde_json` as dependencies. The implementation uses a testable architecture: `list_remote_to` accepts a generic fetch function, allowing tests to inject mock data without network calls. The real `fetch_remote_plugins` function calls the GitHub API with a `User-Agent` header, filters results to only `homeos-plugin-` prefixed repos, and strips the prefix for display names. Network errors propagate as `Err` and are displayed to the user. Added `ListRemote` variant to `PluginCommands` and wired the dispatch in `main.rs`.
+
+**What was changed:**
+
+- Cargo.toml (added `reqwest` with blocking+json features, added `serde_json`)
+- src/commands/plugin.rs (added `GitHubSearchResponse`, `GitHubRepo`, `RemotePlugin` structs, `fetch_remote_plugins`, `list_remote`, `list_remote_to` functions, 7 new tests)
+- src/main.rs (added `ListRemote` variant to `PluginCommands`, added match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 280 tests pass (273 existing + 7 new).
+- Tests cover: no plugins found, single plugin, multiple plugins, table header format, name column width adjustment, empty description handling, and fetch error propagation.
+- The fetch function is injected as a generic closure parameter to `list_remote_to`, keeping tests fast and deterministic without network access.
+- GitHub API results are filtered client-side with `starts_with("homeos-plugin-")` to ensure only matching repos are displayed, since the search API may return partial matches.
