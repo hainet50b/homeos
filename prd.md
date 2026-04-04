@@ -98,6 +98,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Fix `homeos package uninstall` to ignore disabled status. Uninstall should always execute regardless of whether the package is enabled or disabled.
 - [x] Extend `Plan` with a `not_installed` classification. Refactor `run_action` to pass `state.yml` to `Plan::build` for all actions (not just install).
 - [x] Implement the full behavior matrix (see README Behavior section). `update` skips not-in-state packages. `uninstall` skips not-in-state packages but ignores disabled status.
+- [ ] Refactor action from `&str` to an `Action` enum (`Install`, `Update`, `Uninstall`). Eliminate string comparisons and default branches.
 - [ ] Enhance `homeos package enable` to accept multiple packages (`<pkg>...`).
 - [ ] Enhance `homeos package disable` to accept multiple packages (`<pkg>...`).
 - [ ] Enhance `homeos package remove` to reject packages that are in `state.yml`. Error with a message to uninstall first.
