@@ -111,6 +111,11 @@ pub enum PackageCommands {
         /// Package name
         package: String,
     },
+    /// Launch a shell in the package root or specific package directory
+    Cd {
+        /// Package name (optional — defaults to packages root)
+        package: Option<String>,
+    },
     /// Execute install action scripts
     Install {
         /// Package names
@@ -222,6 +227,12 @@ fn main() {
             }
             PackageCommands::Cat { package } => {
                 if let Err(e) = commands::package::cat(&ctx, &package) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Cd { package } => {
+                if let Err(e) = commands::package::cd(&ctx, package.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

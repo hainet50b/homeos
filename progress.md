@@ -1456,3 +1456,31 @@ Enhanced `homeos repo remove` to check the target repository's `state.yml` befor
 
 - All 245 tests pass (242 existing + 3 new).
 - The state.yml path is constructed directly from the target repo directory (`repos_dir().join(name).join("state.yml")`) rather than using `ctx.state_path()`, since the context is configured for the current repo, not the repo being removed.
+
+## Task: Implement `homeos package cd [<package>]`
+
+**Timestamp:**
+
+2026-04-04T16:10:11Z
+
+**Why this task:**
+
+First unchecked task in dependency order. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Implemented `homeos package cd [<package>]` which launches a shell in the package root directory (without argument) or a specific package directory (with argument). Added `cd` and `resolve_cd_target` functions in `registry.rs`, following the same `resolve_target` pattern as `commands/cd.rs`. The `resolve_cd_target` function validates config exists, checks the package is defined (when specified), and verifies the target directory exists. Added `Cd` variant to `PackageCommands` with an optional `package` argument and wired it in `main.rs`. Added 5 tests covering: packages root resolution, specific package resolution, unknown package error, missing directory error, and not-initialized error.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added `cd`, `resolve_cd_target` functions and 5 tests)
+- src/commands/package/mod.rs (added `cd` to re-exports)
+- src/main.rs (added `Cd` variant to `PackageCommands`, added match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 250 tests pass (245 existing + 5 new).
+- The `package` argument is `Option<String>` in the CLI definition, making it optional per the README spec `cd [<package>]`.
+- Reused the same shell-launch pattern from `commands/cd.rs` (`$SHELL` with fallback to `/bin/sh`).

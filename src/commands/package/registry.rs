@@ -255,6 +255,38 @@ fn cat_to<W: Write>(ctx: &Context, package: &str, writer: &mut W) -> Result<(), 
     Ok(())
 }
 
+pub fn cd(ctx: &Context, package: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = resolve_cd_target(ctx, package)?;
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+    let status = std::process::Command::new(&shell).current_dir(&dir).status()?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+fn resolve_cd_target(ctx: &Context, package: Option<&str>) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    let dir = match package {
+        Some(pkg) => {
+            if !config.packages.contains_key(pkg) {
+                return Err(format!("Package '{pkg}' not found").into());
+            }
+            ctx.packages_dir().join(pkg)
+        }
+        None => ctx.packages_dir(),
+    };
+
+    if !dir.exists() {
+        return Err(format!("Directory not found at {}", dir.display()).into());
+    }
+
+    Ok(dir)
+}
+
 fn skeleton_scripts() -> Vec<(&'static str, &'static str)> {
     let actions = ["install", "update", "uninstall"];
     let ext = super::script_extension();
@@ -1335,6 +1367,74 @@ mod tests {
 
         // Act
         let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    // --- cd tests ---
+
+    #[test]
+    fn test_cd_resolve_target_returns_packages_dir_without_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, None).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.packages_dir());
+    }
+
+    #[test]
+    fn test_cd_resolve_target_returns_package_dir_with_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("neovim")).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.packages_dir().join("neovim"));
+    }
+
+    #[test]
+    fn test_cd_resolve_target_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("nonexistent"));
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_cd_resolve_target_errors_when_package_dir_missing() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        // Package is in config but directory doesn't exist
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("neovim"));
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Directory not found"));
+    }
+
+    #[test]
+    fn test_cd_resolve_target_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = resolve_cd_target(&ctx, None);
 
         // Assert
         assert!(result.is_err());
