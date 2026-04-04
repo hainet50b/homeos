@@ -1044,3 +1044,29 @@ Added a `depends_on: Vec<String>` field to `PackageConfig` with `#[serde(default
 
 - All 166 tests pass (161 existing + 5 new).
 - No changes needed in plan.rs or action.rs since those use `..Default::default()` which automatically sets `depends_on` to `Vec::new()`.
+
+## Task: Add `--depends-on` option to `homeos package add`
+
+**Timestamp:**
+
+2026-04-04T10:51:36Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The `depends_on` field was added to `PackageConfig` in the previous task; this task exposes it via the CLI.
+
+**What was done:**
+
+Added `--depends-on` option to the `Add` variant in `PackageCommands` using `#[arg(long = "depends-on", num_args = 1..)]` to accept one or more dependency names. Updated the `add` function signature in `registry.rs` to accept `depends_on: &[String]` and construct a `PackageConfig` with the provided dependencies. Updated all existing `add` call sites (9 in tests) to pass `&[]` for the new parameter. Added 3 new tests: add with depends_on stores dependencies, add without depends_on has empty dependencies, and add with depends_on persists after reload.
+
+**What was changed:**
+
+- src/main.rs (added `depends_on` field to `Add` variant, updated match arm)
+- src/commands/package/registry.rs (updated `add` signature, construct `PackageConfig` with depends_on, updated 9 existing test calls, added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 169 tests pass (166 existing + 3 new).
+- The `num_args = 1..` attribute means `--depends-on` requires at least one value when specified, but the option itself is optional (defaults to empty Vec when omitted).

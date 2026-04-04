@@ -39,6 +39,9 @@ pub enum PackageCommands {
     Add {
         /// Package name
         package: String,
+        /// Dependencies for this package
+        #[arg(long = "depends-on", num_args = 1..)]
+        depends_on: Vec<String>,
     },
     /// Remove a package
     Remove {
@@ -109,8 +112,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Add { package } => {
-                if let Err(e) = commands::package::add(&ctx, &package) {
+            PackageCommands::Add { package, depends_on } => {
+                if let Err(e) = commands::package::add(&ctx, &package, &depends_on) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

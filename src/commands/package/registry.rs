@@ -58,16 +58,20 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(ctx: &Context, package: &str, depends_on: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
         return Err(format!("Package '{package}' already exists").into());
     }
 
+    let pkg_config = PackageConfig {
+        depends_on: depends_on.to_vec(),
+        ..Default::default()
+    };
     config
         .packages
-        .insert(package.to_string(), PackageConfig::default());
+        .insert(package.to_string(), pkg_config);
     config.save(&ctx.config_path())?;
 
     let pkg_dir = ctx.packages_dir().join(package);
@@ -367,7 +371,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim");
+        let result = add(&ctx, "neovim", &[]);
 
         // Assert
         assert!(result.is_ok());
@@ -383,7 +387,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim").unwrap();
+        add(&ctx, "neovim", &[]).unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -401,7 +405,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim").unwrap();
+        add(&ctx, "neovim", &[]).unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -418,7 +422,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = add(&ctx, "neovim");
+        let result = add(&ctx, "neovim", &[]);
 
         // Assert
         assert!(result.is_err());
@@ -432,7 +436,7 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
-        let result = add(&ctx, "neovim");
+        let result = add(&ctx, "neovim", &[]);
 
         // Assert
         assert!(result.is_err());
@@ -445,7 +449,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim");
+        let result = add(&ctx, "neovim", &[]);
 
         // Assert
         assert!(result.is_ok());
@@ -465,7 +469,7 @@ mod tests {
         std::fs::write(pkg_dir.join(format!("install.{ext}")), custom_content).unwrap();
 
         // Act
-        add(&ctx, "neovim").unwrap();
+        add(&ctx, "neovim", &[]).unwrap();
 
         // Assert
         let install_content =
@@ -488,7 +492,7 @@ mod tests {
         std::fs::write(pkg_dir.join(format!("uninstall.{ext}")), custom_uninstall).unwrap();
 
         // Act
-        add(&ctx, "neovim").unwrap();
+        add(&ctx, "neovim", &[]).unwrap();
 
         // Assert
         let install_content =
@@ -518,7 +522,7 @@ mod tests {
         }
 
         // Act
-        add(&ctx, "neovim").unwrap();
+        add(&ctx, "neovim", &[]).unwrap();
 
         // Assert
         for action in &["install", "update", "uninstall"] {
@@ -526,6 +530,51 @@ mod tests {
                 std::fs::read_to_string(pkg_dir.join(format!("{action}.{ext}"))).unwrap();
             assert_eq!(content, format!("# custom {action}\n"));
         }
+    }
+
+    #[test]
+    fn test_add_with_depends_on_stores_dependencies() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim", &["git".to_string(), "curl".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_add_without_depends_on_has_empty_dependencies() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim", &[]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_with_depends_on_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let deps = vec!["git".to_string(), "curl".to_string()];
+
+        // Act
+        add(&ctx, "neovim", &deps).unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
     }
 
     #[test]
