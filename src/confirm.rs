@@ -80,11 +80,13 @@ impl Plan {
             let in_state = installed.contains(name);
 
             match action {
-                Action::Uninstall => {
-                    if in_state {
-                        enabled.push(name.clone());
+                Action::Install => {
+                    if !pkg.enabled {
+                        disabled.push(name.clone());
+                    } else if in_state {
+                        already_installed.push(name.clone());
                     } else {
-                        not_installed.push(name.clone());
+                        enabled.push(name.clone());
                     }
                 }
                 Action::Update => {
@@ -96,13 +98,11 @@ impl Plan {
                         not_installed.push(name.clone());
                     }
                 }
-                Action::Install => {
-                    if !pkg.enabled {
-                        disabled.push(name.clone());
-                    } else if in_state {
-                        already_installed.push(name.clone());
-                    } else {
+                Action::Uninstall => {
+                    if in_state {
                         enabled.push(name.clone());
+                    } else {
+                        not_installed.push(name.clone());
                     }
                 }
             }
@@ -166,11 +166,7 @@ pub fn prompt_confirm<R: BufRead, W: Write>(reader: &mut R, writer: &mut W) -> b
 }
 
 /// Show the plan and prompt for confirmation. Returns true if the user confirms.
-pub fn confirm_plan<R: BufRead, W: Write>(
-    plan: &Plan,
-    reader: &mut R,
-    writer: &mut W,
-) -> bool {
+pub fn confirm_plan<R: BufRead, W: Write>(plan: &Plan, reader: &mut R, writer: &mut W) -> bool {
     let display = plan.display();
     writeln!(writer, "{display}").ok();
     writeln!(writer).ok();
