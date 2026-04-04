@@ -1,8 +1,32 @@
 use crate::context::Context;
 use std::io::Write;
+use std::process::Command;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
+}
+
+pub fn add(ctx: &Context, name: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repos_dir = ctx.repos_dir();
+    let target = repos_dir.join(name);
+
+    if target.exists() {
+        return Err(format!("Repository '{}' already exists", name).into());
+    }
+
+    std::fs::create_dir_all(&repos_dir)?;
+
+    let output = Command::new("git")
+        .args(["clone", url, &target.to_string_lossy()])
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git clone failed: {}", stderr.trim()).into());
+    }
+
+    println!("Repository '{}' cloned successfully", name);
+    Ok(())
 }
 
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
@@ -35,11 +59,22 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn setup_context(base_dir: &TempDir) -> Context {
         Context::new(Some(base_dir.path().to_path_buf()), "default".to_string())
+    }
+
+    fn create_local_git_repo(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        Command::new("git")
+            .args(["init", &dir.to_string_lossy()])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", &dir.to_string_lossy(), "commit", "--allow-empty", "-m", "init"])
+            .output()
+            .unwrap();
     }
 
     #[test]
@@ -122,5 +157,69 @@ mod tests {
 
         // Assert
         assert_eq!(String::from_utf8(output).unwrap(), "default\n");
+    }
+
+    #[test]
+    fn test_add_clones_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = add(&ctx, "my-repo", &source_dir.path().to_string_lossy());
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.repos_dir().join("my-repo").exists());
+        assert!(ctx.repos_dir().join("my-repo").join(".git").exists());
+    }
+
+    #[test]
+    fn test_add_creates_repos_dir() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+        assert!(!ctx.repos_dir().exists());
+
+        // Act
+        let result = add(&ctx, "new-repo", &source_dir.path().to_string_lossy());
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.repos_dir().join("new-repo").exists());
+    }
+
+    #[test]
+    fn test_add_already_exists() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir().join("existing")).unwrap();
+
+        // Act
+        let result = add(&ctx, "existing", "https://example.com/repo.git");
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Repository 'existing' already exists");
+    }
+
+    #[test]
+    fn test_add_invalid_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+
+        // Act
+        let result = add(&ctx, "bad-repo", "not-a-valid-url");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.starts_with("git clone failed:"));
     }
 }

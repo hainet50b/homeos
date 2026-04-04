@@ -120,7 +120,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Integrate dependency ordering into `homeos apply` — respect `depends_on` when determining install order
 - [x] Add `--repo` option to CLI — select which repository to operate on (defaults to `default`)
 - [x] Implement `homeos repo list` — list registered repositories
-- [ ] Implement `homeos repo add <name> <url>` — clone a remote repository into `repos/<name>/`
+- [x] Implement `homeos repo add <name> <url>` — clone a remote repository into `repos/<name>/`
 - [ ] Implement `homeos repo remove <name>` — remove the local repository directory
 
 ## Completion Criteria

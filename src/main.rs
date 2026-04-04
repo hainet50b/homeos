@@ -47,6 +47,13 @@ pub enum Commands {
 pub enum RepoCommands {
     /// List registered repositories
     List,
+    /// Clone a remote repository
+    Add {
+        /// Repository name
+        name: String,
+        /// Remote URL to clone
+        url: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -148,6 +155,12 @@ fn main() {
         Commands::Repo { command } => match command {
             RepoCommands::List => {
                 if let Err(e) = commands::repo::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            RepoCommands::Add { name, url } => {
+                if let Err(e) = commands::repo::add(&ctx, &name, &url) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

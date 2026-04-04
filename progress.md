@@ -1346,3 +1346,30 @@ Implemented `homeos repo list` which lists all registered repositories by readin
 - All 232 tests pass (227 existing + 5 new).
 - Tests cover: no repos dir, empty repos dir, single repo, multiple repos sorted, files ignored.
 - The implementation follows the same `list`/`list_to` pattern used by `package list` for testability.
+
+## Task: Implement `homeos repo add <name> <url>`
+
+**Timestamp:**
+
+2026-04-04T12:44:36Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. `repo list` is complete; `repo add` is a prerequisite for `repo remove` (need repos to remove).
+
+**What was done:**
+
+Implemented `homeos repo add <name> <url>` which clones a remote git repository into `repos/<name>/`. The command validates that the target directory doesn't already exist, creates the `repos/` directory if needed, then runs `git clone`. Added `Add` variant to `RepoCommands` with `name` and `url` arguments, and wired it into the main match arm. Added 4 unit tests using local git repos as clone sources.
+
+**What was changed:**
+
+- src/commands/repo.rs (added `add` function and 4 tests; added `create_local_git_repo` test helper)
+- src/main.rs (added `Add` variant to `RepoCommands`, added match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 236 tests pass (232 existing + 4 new).
+- Tests cover: successful clone, repos dir auto-creation, already-exists error, invalid URL error.
+- Uses `std::process::Command` to run `git clone` — no additional dependencies needed.
