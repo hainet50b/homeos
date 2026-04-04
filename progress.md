@@ -1070,3 +1070,30 @@ Added `--depends-on` option to the `Add` variant in `PackageCommands` using `#[a
 
 - All 169 tests pass (166 existing + 3 new).
 - The `num_args = 1..` attribute means `--depends-on` requires at least one value when specified, but the option itself is optional (defaults to empty Vec when omitted).
+
+## Task: Implement `homeos package add-dep <pkg> <dep>...`
+
+**Timestamp:**
+
+2026-04-04T10:53:37Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. The `depends_on` field and `--depends-on` flag are already in place; this task adds the ability to add dependencies to existing packages.
+
+**What was done:**
+
+Added `AddDep` variant to `PackageCommands` in `main.rs` with `package` and `deps` arguments. Implemented `add_dep` function in `registry.rs` that loads the config, validates the package exists, appends each dependency to `depends_on` (skipping duplicates with a message), and saves the config. Added 7 new tests: add single dep, add multiple deps, skip duplicate dep, error on package not found, error when not initialized, persistence after reload, and appending to existing dependencies.
+
+**What was changed:**
+
+- src/main.rs (added `AddDep` variant and match arm)
+- src/commands/package/mod.rs (added `add_dep` to re-exports)
+- src/commands/package/registry.rs (added `add_dep` function and 7 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 176 tests pass (169 existing + 7 new).
+- Duplicate dependencies are skipped with an informational message rather than returning an error, consistent with how `enable` handles already-enabled packages.

@@ -1,7 +1,7 @@
 mod action;
 mod registry;
 
-pub use registry::{list, add, remove, enable, disable, cat};
+pub use registry::{list, add, add_dep, remove, enable, disable, cat};
 pub use action::{install, update, uninstall};
 
 /// Returns the OS-appropriate script file extension.
