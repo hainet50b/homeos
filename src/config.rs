@@ -23,6 +23,10 @@ pub struct PackageConfig {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
 }
 
 fn default_enabled() -> bool {
@@ -150,6 +154,8 @@ packages:
                 actions_overrides: BTreeMap::from([("update".to_string(), "install".to_string())]),
                 enabled: true,
                 depends_on: Vec::new(),
+                plugin: None,
+                params: BTreeMap::new(),
             },
         );
         let tmp = NamedTempFile::new().unwrap();
@@ -172,6 +178,8 @@ packages:
                     actions_overrides: BTreeMap::new(),
                     enabled: true,
                     depends_on: Vec::new(),
+                    plugin: None,
+                    params: BTreeMap::new(),
                 },
             )]),
             ..Default::default()
@@ -291,6 +299,110 @@ packages:
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_package_plugin() {
+        // Arrange
+        let yaml = r#"
+packages:
+  neovim:
+    plugin: dnf
+    params:
+      name: neovim.x86_64
+"#;
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        let neovim = &sut.packages["neovim"];
+        assert_eq!(neovim.plugin, Some("dnf".to_string()));
+        assert_eq!(neovim.params["name"], "neovim.x86_64");
+    }
+
+    #[test]
+    fn test_package_plugin_defaults_to_none() {
+        // Arrange
+        let yaml = "packages:\n  git: {}\n";
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert_eq!(sut.packages["git"].plugin, None);
+        assert!(sut.packages["git"].params.is_empty());
+    }
+
+    #[test]
+    fn test_serialize_skips_none_plugin_and_empty_params() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::from([(
+                "git".to_string(),
+                PackageConfig {
+                    plugin: None,
+                    params: BTreeMap::new(),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(!sut.contains("plugin"));
+        assert!(!sut.contains("params"));
+    }
+
+    #[test]
+    fn test_serialize_includes_plugin_and_params() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::from([(
+                "neovim".to_string(),
+                PackageConfig {
+                    plugin: Some("dnf".to_string()),
+                    params: BTreeMap::from([("name".to_string(), "neovim.x86_64".to_string())]),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(sut.contains("plugin"));
+        assert!(sut.contains("dnf"));
+        assert!(sut.contains("params"));
+        assert!(sut.contains("neovim.x86_64"));
+    }
+
+    #[test]
+    fn test_save_and_reload_with_plugin_and_params() {
+        // Arrange
+        let mut config = Config::default();
+        config.packages.insert(
+            "neovim".to_string(),
+            PackageConfig {
+                plugin: Some("dnf".to_string()),
+                params: BTreeMap::from([("name".to_string(), "neovim.x86_64".to_string())]),
+                ..Default::default()
+            },
+        );
+        let tmp = NamedTempFile::new().unwrap();
+
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(sut.packages["neovim"].plugin, Some("dnf".to_string()));
+        assert_eq!(sut.packages["neovim"].params["name"], "neovim.x86_64");
     }
 
     #[test]

@@ -1570,3 +1570,29 @@ Added a `PluginConfig` struct with a `url: String` field. Added a `plugins: BTre
 - All 262 tests pass (257 existing + 5 new).
 - The `PluginConfig` struct uses `Default` derive with an empty string for `url`, consistent with how other config structs use defaults.
 - Existing code that uses `Config::default()` or `..Default::default()` required no changes — only explicit struct literals needed updating.
+
+## Task: Add `plugin` and `params` fields to PackageConfig
+
+**Timestamp:**
+
+2026-04-04T16:22:20Z
+
+**Why this task:**
+
+First unchecked task in dependency order — `plugin` and `params` fields on `PackageConfig` are prerequisites for the `--plugin` and `--params` CLI options and the plugin integration into `homeos package add`.
+
+**What was done:**
+
+Added two new fields to `PackageConfig`: `plugin: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` and `params: BTreeMap<String, String>` with `#[serde(default, skip_serializing_if = "BTreeMap::is_empty")]`. Both default to None/empty and are omitted from YAML when at their defaults. Updated 2 existing test struct literals that used explicit field initialization (without `..Default::default()`) to include the new fields. Added 5 new tests: parse plugin and params from YAML, defaults to None/empty, skip on serialize when empty, include on serialize when present, and save/reload round-trip.
+
+**What was changed:**
+
+- src/config.rs (added `plugin` and `params` fields to `PackageConfig`, updated 2 existing test struct literals, added 5 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 267 tests pass (262 existing + 5 new).
+- Only 2 explicit `PackageConfig` struct literals needed updating — all others already used `..Default::default()` which handles the new fields automatically.
+- The `params` field uses `BTreeMap<String, String>` (not `Option<BTreeMap>`) for consistency with `actions_overrides`, which uses the same pattern.
