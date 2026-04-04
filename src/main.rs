@@ -67,6 +67,11 @@ pub enum PluginCommands {
         /// Remote URL to clone (defaults to official repository)
         url: Option<String>,
     },
+    /// Remove a plugin and its directory
+    Remove {
+        /// Plugin name
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -203,6 +208,12 @@ fn main() {
             }
             PluginCommands::Add { name, url } => {
                 if let Err(e) = commands::plugin::add(&ctx, &name, url.as_deref()) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Remove { name } => {
+                if let Err(e) = commands::plugin::remove(&ctx, &name) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

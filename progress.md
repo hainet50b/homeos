@@ -1681,3 +1681,30 @@ Implemented `homeos plugin add <name> [<url>]` which registers a plugin in `home
 - All 289 tests pass (280 existing + 9 new).
 - Tests cover: successful clone and registration, default URL resolution (verified via git clone error), duplicate plugin name rejection, directory already exists rejection, invalid URL error, plugins directory auto-creation, and error when not initialized.
 - The `test_add_resolves_default_url` test verifies default URL behavior by checking that a clone attempt is made (and fails) when no URL is provided, confirming the URL construction logic works without requiring network access.
+
+## Task: Implement `homeos plugin remove <name>`
+
+**Timestamp:**
+
+2026-04-04T16:34:35Z
+
+**Why this task:**
+
+First unchecked task in the PRD. The `plugin add` and `plugin list` commands are already in place; `plugin remove` is the natural counterpart.
+
+**What was done:**
+
+Implemented `homeos plugin remove <name>` which removes the plugin directory at `plugins/<name>/` and its entry from `homeos.yml`. Before removal, the function scans all packages' `plugin` fields to find references to the plugin being removed. If any packages reference it, a warning is printed to stderr listing them, but removal proceeds (warn, not block). If the plugin directory doesn't exist (e.g., manually deleted), removal still succeeds by cleaning up the config entry. Added `Remove` variant to `PluginCommands` with a `name` argument and wired the dispatch in `main.rs`.
+
+**What was changed:**
+
+- src/commands/plugin.rs (added `remove` function and 6 tests)
+- src/main.rs (added `Remove` variant to `PluginCommands`, added match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 295 tests pass (289 existing + 6 new).
+- Tests cover: successful removal (directory + config), plugin not found error, removal without directory, warning when packages reference plugin (still succeeds), does not affect other plugins, and error when not initialized.
+- Referencing packages are listed in sorted order (BTreeMap iteration) for deterministic warning messages.

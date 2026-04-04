@@ -170,6 +170,47 @@ pub fn add(ctx: &Context, name: &str, url: Option<&str>) -> Result<(), Box<dyn s
     Ok(())
 }
 
+pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.plugins.contains_key(name) {
+        return Err(format!("Plugin '{}' not found", name).into());
+    }
+
+    // Warn if packages reference this plugin
+    let referencing: Vec<&String> = config
+        .packages
+        .iter()
+        .filter(|(_, pkg)| pkg.plugin.as_deref() == Some(name))
+        .map(|(pkg_name, _)| pkg_name)
+        .collect();
+
+    if !referencing.is_empty() {
+        let names = referencing
+            .iter()
+            .map(|n| n.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "Warning: the following packages reference plugin '{}': {}",
+            name, names
+        );
+    }
+
+    // Remove plugin directory
+    let plugin_dir = ctx.plugins_dir().join(name);
+    if plugin_dir.exists() {
+        std::fs::remove_dir_all(&plugin_dir)?;
+    }
+
+    // Remove from config
+    config.plugins.remove(name);
+    config.save(&ctx.config_path())?;
+
+    println!("Plugin '{}' removed successfully", name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -634,5 +675,145 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.starts_with("git clone failed:"));
+    }
+
+    #[test]
+    fn test_remove_deletes_directory_and_config_entry() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!plugin_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_plugin_not_found() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act
+        let result = remove(&ctx, "nonexistent");
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Plugin 'nonexistent' not found");
+    }
+
+    #[test]
+    fn test_remove_without_directory() {
+        // Arrange — plugin registered in config but directory is missing
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_warns_when_packages_reference_plugin() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.packages.insert(
+            "neovim".to_string(),
+            crate::config::PackageConfig {
+                plugin: Some("dnf".to_string()),
+                ..Default::default()
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+
+        // Act — should succeed (warn but not block)
+        let result = remove(&ctx, "dnf");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_does_not_affect_other_plugins() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.plugins.insert(
+            "mise".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-mise".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("mise")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf");
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!ctx.plugins_dir().join("dnf").exists());
+        assert!(ctx.plugins_dir().join("mise").exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+        assert!(config.plugins.contains_key("mise"));
+    }
+
+    #[test]
+    fn test_remove_error_when_not_initialized() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = remove(&ctx, "dnf");
+
+        // Assert
+        assert!(result.is_err());
     }
 }
