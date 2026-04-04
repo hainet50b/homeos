@@ -36,3 +36,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-04T08:55:01Z,32253a6,"Extract script_extension() and shell_command() into commands/package/mod.rs",204,152,6952,0.930823
 2026-04-04T08:56:42Z,0a73dba,"Rename confirm.rs to plan.rs to better reflect module responsibility",97,20,3029,0.49413175
 2026-04-04T08:59:25Z,eec0b7d,"Reorder functions and methods to match README command definition order",159,28,7363,1.12987525
+2026-04-04T10:16:30Z,66d7646,"Move install/update/uninstall/uninstall_to from mod.rs to action.rs",207,35,6652,0.93549125
