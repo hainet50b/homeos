@@ -90,7 +90,7 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String]) -> Result<(), Bo
     Ok(())
 }
 
-pub fn add_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -99,12 +99,12 @@ pub fn add_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<
 
     let pkg = config.packages.get_mut(package).unwrap();
 
-    for dep in deps {
-        if pkg.depends_on.contains(dep) {
-            println!("Package '{package}' already depends on '{dep}'");
+    for dependency in dependencies {
+        if pkg.depends_on.contains(dependency) {
+            println!("Package '{package}' already depends on '{dependency}'");
         } else {
-            pkg.depends_on.push(dep.clone());
-            println!("Added dependency '{dep}' to package '{package}'");
+            pkg.depends_on.push(dependency.clone());
+            println!("Added dependency '{dependency}' to package '{package}'");
         }
     }
 
@@ -112,7 +112,7 @@ pub fn add_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<
     Ok(())
 }
 
-pub fn remove_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -121,12 +121,12 @@ pub fn remove_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), B
 
     let pkg = config.packages.get_mut(package).unwrap();
 
-    for dep in deps {
-        if let Some(pos) = pkg.depends_on.iter().position(|d| d == dep) {
+    for dependency in dependencies {
+        if let Some(pos) = pkg.depends_on.iter().position(|d| d == dependency) {
             pkg.depends_on.remove(pos);
-            println!("Removed dependency '{dep}' from package '{package}'");
+            println!("Removed dependency '{dependency}' from package '{package}'");
         } else {
-            println!("Package '{package}' does not depend on '{dep}'");
+            println!("Package '{package}' does not depend on '{dependency}'");
         }
     }
 
@@ -630,10 +630,10 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
-        let deps = vec!["git".to_string(), "curl".to_string()];
+        let dependencies = vec!["git".to_string(), "curl".to_string()];
 
         // Act
-        add(&ctx, "neovim", &deps).unwrap();
+        add(&ctx, "neovim", &dependencies).unwrap();
         let config = Config::load(&ctx.config_path()).unwrap();
 
         // Assert
