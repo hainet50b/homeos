@@ -2,8 +2,34 @@ use crate::config::{Config, PackageConfig};
 use crate::plan::{confirm_plan, Action, Plan};
 use crate::context::Context;
 use crate::state::State;
+use crate::topo::topological_sort;
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::path::Path;
+
+/// Expand a list of packages to include all transitive dependencies.
+/// Returns the expanded set as a Vec in no particular order.
+fn expand_dependencies(config: &Config, packages: &[String]) -> Vec<String> {
+    let mut result: Vec<String> = Vec::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = packages.to_vec();
+
+    while let Some(name) = stack.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        result.push(name.clone());
+        if let Some(pkg_config) = config.packages.get(&name) {
+            for dep in &pkg_config.depends_on {
+                if !visited.contains(dep) {
+                    stack.push(dep.clone());
+                }
+            }
+        }
+    }
+
+    result
+}
 
 /// Execute an action for the given packages, with confirmation prompt.
 /// I/O is injectable for testability. Reusable for install/update/uninstall.
@@ -16,6 +42,14 @@ pub fn run_action<R: BufRead, W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
+    // For install, expand to include transitive dependencies and sort topologically
+    let ordered_packages = if action == Action::Install {
+        let expanded = expand_dependencies(&config, packages);
+        topological_sort(&config, &expanded)?
+    } else {
+        packages.to_vec()
+    };
+
     let state_path = ctx.state_path();
     let installed = if state_path.exists() {
         State::load(&state_path)?.installed
@@ -23,7 +57,7 @@ pub fn run_action<R: BufRead, W: Write>(
         Vec::new()
     };
 
-    let plan = Plan::build(&config, packages, action, &installed)?;
+    let plan = Plan::build(&config, &ordered_packages, action, &installed)?;
 
     if plan.is_empty() {
         let display = plan.display();
@@ -1302,5 +1336,226 @@ mod tests {
         // Assert
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Uninstalling neovim... done"));
+    }
+
+    // --- expand_dependencies tests ---
+
+    #[test]
+    fn test_expand_dependencies_no_deps() {
+        // Arrange
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                ("neovim".to_string(), PackageConfig::default()),
+            ]),
+        };
+
+        // Act
+        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+
+        // Assert
+        assert_eq!(sut, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_expand_dependencies_includes_transitive() {
+        // Arrange — neovim depends on git, git depends on curl
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                ("neovim".to_string(), PackageConfig {
+                    depends_on: vec!["git".to_string()],
+                    ..Default::default()
+                }),
+                ("git".to_string(), PackageConfig {
+                    depends_on: vec!["curl".to_string()],
+                    ..Default::default()
+                }),
+                ("curl".to_string(), PackageConfig::default()),
+            ]),
+        };
+
+        // Act
+        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+
+        // Assert — all three packages included
+        let mut sorted = sut.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec!["curl", "git", "neovim"]);
+    }
+
+    #[test]
+    fn test_expand_dependencies_no_duplicates() {
+        // Arrange — both neovim and zed depend on git
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                ("neovim".to_string(), PackageConfig {
+                    depends_on: vec!["git".to_string()],
+                    ..Default::default()
+                }),
+                ("zed".to_string(), PackageConfig {
+                    depends_on: vec!["git".to_string()],
+                    ..Default::default()
+                }),
+                ("git".to_string(), PackageConfig::default()),
+            ]),
+        };
+
+        // Act
+        let sut = expand_dependencies(&config, &["neovim".to_string(), "zed".to_string()]);
+
+        // Assert — git appears only once
+        let git_count = sut.iter().filter(|s| s.as_str() == "git").count();
+        assert_eq!(git_count, 1);
+        assert_eq!(sut.len(), 3);
+    }
+
+    #[test]
+    fn test_expand_dependencies_unknown_dep_included_as_is() {
+        // Arrange — neovim depends on unknown_pkg which is not in config
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                ("neovim".to_string(), PackageConfig {
+                    depends_on: vec!["unknown_pkg".to_string()],
+                    ..Default::default()
+                }),
+            ]),
+        };
+
+        // Act
+        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+
+        // Assert — unknown_pkg is included (Plan::build will error on it)
+        let mut sorted = sut.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec!["neovim", "unknown_pkg"]);
+    }
+
+    // --- Dependency ordering integration tests ---
+
+    #[test]
+    fn test_install_includes_dependencies_in_order() {
+        // Arrange — neovim depends on git; only request neovim
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+
+        // Create install scripts for both packages
+        let ext = script_extension();
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(neovim_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'NEOVIM_INSTALL'\n").unwrap();
+
+        let git_dir = ctx.packages_dir().join("git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(git_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'GIT_INSTALL'\n").unwrap();
+
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — only request neovim, git should be pulled in as dependency
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+
+        // Assert — git installed before neovim
+        let written = String::from_utf8(output).unwrap();
+        let git_pos = written.find("Installing git").expect("git should be installed");
+        let neovim_pos = written.find("Installing neovim").expect("neovim should be installed");
+        assert!(git_pos < neovim_pos, "git must be installed before neovim");
+    }
+
+    #[test]
+    fn test_install_dependencies_recorded_in_state() {
+        // Arrange — neovim depends on git; only request neovim
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+
+        let ext = script_extension();
+        for pkg in ["neovim", "git"] {
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(format!("install.{ext}")), format!("#!/usr/bin/env sh\necho '{pkg}'\n")).unwrap();
+        }
+
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+
+        // Assert — both packages recorded in state
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.contains(&"git".to_string()));
+        assert!(state.installed.contains(&"neovim".to_string()));
+    }
+
+    #[test]
+    fn test_install_skips_already_installed_dependency() {
+        // Arrange — neovim depends on git; git already installed
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+
+        let ext = script_extension();
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(neovim_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho 'NEOVIM'\n").unwrap();
+
+        // git is already installed
+        let state = State {
+            installed: vec!["git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], Action::Install, &mut input, &mut output).unwrap();
+
+        // Assert — git skipped as already installed, neovim installed
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Skipping git (already installed)"));
+        assert!(written.contains("Installing neovim... done"));
+    }
+
+    #[test]
+    fn test_install_circular_dependency_errors() {
+        // Arrange — a depends on b, b depends on a
+        let yaml = "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(&ctx, &["a".to_string()], Action::Install, &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
+    }
+
+    #[test]
+    fn test_update_does_not_expand_dependencies() {
+        // Arrange — neovim depends on git; only request neovim for update
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+
+        let ext = script_extension();
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(neovim_dir.join(format!("update.{ext}")), "#!/usr/bin/env sh\necho 'UPDATE'\n").unwrap();
+
+        // neovim is installed (required for update)
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(&ctx, &["neovim".to_string()], Action::Update, &mut input, &mut output).unwrap();
+
+        // Assert — only neovim updated, git not mentioned
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating neovim... done"));
+        assert!(!written.contains("git"));
     }
 }

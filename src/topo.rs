@@ -5,7 +5,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// Dependencies come before the packages that depend on them.
 /// Only considers dependencies among the given packages.
 /// Returns an error if a circular dependency is detected.
-#[allow(dead_code)]
 pub fn topological_sort(
     config: &Config,
     packages: &[String],

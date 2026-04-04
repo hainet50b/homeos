@@ -1201,3 +1201,32 @@ Created a new `topo` module (`src/topo.rs`) with a `topological_sort` function t
 - All 199 tests pass (188 existing + 11 new, including the module-level tests).
 - The function is marked `#[allow(dead_code)]` since it will be integrated in the next task.
 - Only considers dependencies among the given package set — external dependencies are ignored. This is intentional; the next task (integration) will handle expanding the set to include transitive dependencies.
+
+## Task: Integrate dependency ordering into `homeos package install`
+
+**Timestamp:**
+
+2026-04-04T11:44:44Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. Depends on the topological sort implementation completed in the previous task.
+
+**What was done:**
+
+Added an `expand_dependencies` function to `action.rs` that traverses `depends_on` fields transitively to collect all dependency packages. Integrated it into `run_action`: when the action is `Install`, the requested package list is expanded to include transitive dependencies, then sorted topologically via `topological_sort` before being passed to `Plan::build`. This ensures dependencies are installed before the packages that depend on them. Update and uninstall actions are unaffected — they use the original package list as-is. Removed `#[allow(dead_code)]` from `topological_sort` since it is now used.
+
+**What was changed:**
+
+- src/commands/package/action.rs (added `expand_dependencies` function, integrated topo sort into `run_action` for Install, added 9 tests)
+- src/topo.rs (removed `#[allow(dead_code)]`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 208 tests pass (199 existing + 9 new).
+- `expand_dependencies` uses a stack-based DFS to collect transitive dependencies, with a visited set to avoid duplicates.
+- Dependencies not found in `config.packages` are still included in the expanded set — `Plan::build` will error on them with "Package not found".
+- Circular dependencies are caught by `topological_sort` and surfaced as errors before any scripts execute.
+- Only `Install` expands dependencies; `Update` and `Uninstall` operate on exactly the packages specified by the user.
