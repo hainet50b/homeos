@@ -45,15 +45,17 @@ pub enum PackageCommands {
         /// Package name
         package: String,
     },
-    /// Enable a package
+    /// Enable packages
     Enable {
-        /// Package name
-        package: String,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
-    /// Disable a package
+    /// Disable packages
     Disable {
-        /// Package name
-        package: String,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
     /// Display all action scripts for a package
     Cat {
@@ -119,14 +121,14 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Enable { package } => {
-                if let Err(e) = commands::package::enable(&ctx, &package) {
+            PackageCommands::Enable { packages } => {
+                if let Err(e) = commands::package::enable(&ctx, &packages) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Disable { package } => {
-                if let Err(e) = commands::package::disable(&ctx, &package) {
+            PackageCommands::Disable { packages } => {
+                if let Err(e) = commands::package::disable(&ctx, &packages) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

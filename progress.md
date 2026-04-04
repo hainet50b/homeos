@@ -795,3 +795,30 @@ Created an `Action` enum with `Install`, `Update`, `Uninstall` variants in `conf
 - `update_state_per_package` now uses a match with an explicit `Action::Update => {}` arm instead of an `else if` chain, making it clear that update is intentionally a no-op for state.
 - `fixture_with_script` still takes `action: &str` since it's used for constructing script filenames, not for the Action enum.
 - All 146 tests pass (141 existing + 5 new Action enum tests).
+
+## Task: Enhance `homeos package enable` and `homeos package disable` to accept multiple packages
+
+**Timestamp:**
+
+2026-04-04T21:00:00Z
+
+**Why this task:**
+
+Next unchecked tasks in dependency order. Enable and disable are identical in structure (same signature change, same loop pattern), so they were implemented together as a single cohesive change.
+
+**What was done:**
+
+Changed both `enable` and `disable` CLI subcommands from accepting a single `package: String` to `packages: Vec<String>` with `#[arg(required = true)]`. Updated handler functions to accept `&[String]` and iterate over all packages, loading/saving config once (not per package). Already-enabled/disabled packages print a message and `continue` rather than returning early. Updated CLI dispatch in `main.rs`. Updated all existing test call sites to pass `&["name".to_string()]`. Added 6 new tests: 3 for enable (multiple packages, mixed already-enabled, error on not found) and 3 for disable (same pattern).
+
+**What was changed:**
+
+- src/main.rs (changed Enable/Disable args from `package: String` to `packages: Vec<String>`, updated dispatch)
+- src/commands/package.rs (changed `enable`/`disable` signatures to `&[String]`, added loop, updated all test call sites, added 6 new tests)
+- prd.md (checked off both tasks)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Config is loaded once and saved once per invocation, not per package — this is more efficient and ensures atomicity.
+- If any package is not found, the function returns an error immediately without saving partial changes. This is consistent with how other multi-package commands (install/update/uninstall) handle unknown packages via `Plan::build`.
+- All 152 tests pass (146 existing + 6 new multi-package enable/disable tests).

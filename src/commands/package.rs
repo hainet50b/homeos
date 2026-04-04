@@ -61,43 +61,47 @@ pub fn add(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-pub fn enable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn enable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
-    let pkg = config
-        .packages
-        .get_mut(package)
-        .ok_or_else(|| format!("Package '{package}' not found"))?;
+    for package in packages {
+        let pkg = config
+            .packages
+            .get_mut(package.as_str())
+            .ok_or_else(|| format!("Package '{package}' not found"))?;
 
-    if pkg.enabled {
-        println!("Package '{package}' is already enabled");
-        return Ok(());
+        if pkg.enabled {
+            println!("Package '{package}' is already enabled");
+            continue;
+        }
+
+        pkg.enabled = true;
+        println!("Enabled package '{package}'");
     }
 
-    pkg.enabled = true;
     config.save(&ctx.config_path())?;
-
-    println!("Enabled package '{package}'");
     Ok(())
 }
 
-pub fn disable(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn disable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
-    let pkg = config
-        .packages
-        .get_mut(package)
-        .ok_or_else(|| format!("Package '{package}' not found"))?;
+    for package in packages {
+        let pkg = config
+            .packages
+            .get_mut(package.as_str())
+            .ok_or_else(|| format!("Package '{package}' not found"))?;
 
-    if !pkg.enabled {
-        println!("Package '{package}' is already disabled");
-        return Ok(());
+        if !pkg.enabled {
+            println!("Package '{package}' is already disabled");
+            continue;
+        }
+
+        pkg.enabled = false;
+        println!("Disabled package '{package}'");
     }
 
-    pkg.enabled = false;
     config.save(&ctx.config_path())?;
-
-    println!("Disabled package '{package}'");
     Ok(())
 }
 
@@ -636,7 +640,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n");
 
         // Act
-        let result = enable(&ctx, "neovim");
+        let result = enable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
@@ -650,7 +654,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = enable(&ctx, "neovim");
+        let result = enable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
@@ -664,7 +668,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = enable(&ctx, "nonexistent");
+        let result = enable(&ctx, &["nonexistent".to_string()]);
 
         // Assert
         assert!(result.is_err());
@@ -678,7 +682,7 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
-        let result = enable(&ctx, "neovim");
+        let result = enable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_err());
@@ -692,7 +696,7 @@ mod tests {
         );
 
         // Act
-        let result = enable(&ctx, "neovim");
+        let result = enable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
@@ -702,12 +706,61 @@ mod tests {
     }
 
     #[test]
+    fn test_enable_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    enabled: false\n  ripgrep:\n    enabled: false\n",
+        );
+
+        // Act
+        let result = enable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].enabled);
+        assert!(config.packages["ripgrep"].enabled);
+    }
+
+    #[test]
+    fn test_enable_multiple_with_already_enabled() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim: {}\n  ripgrep:\n    enabled: false\n",
+        );
+
+        // Act
+        let result = enable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].enabled);
+        assert!(config.packages["ripgrep"].enabled);
+    }
+
+    #[test]
+    fn test_enable_multiple_errors_on_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    enabled: false\n",
+        );
+
+        // Act
+        let result = enable(&ctx, &["neovim".to_string(), "nonexistent".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
     fn test_disable_sets_enabled_false() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = disable(&ctx, "neovim");
+        let result = disable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
@@ -721,7 +774,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n");
 
         // Act
-        let result = disable(&ctx, "neovim");
+        let result = disable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
@@ -735,7 +788,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = disable(&ctx, "nonexistent");
+        let result = disable(&ctx, &["nonexistent".to_string()]);
 
         // Assert
         assert!(result.is_err());
@@ -749,7 +802,7 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
-        let result = disable(&ctx, "neovim");
+        let result = disable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_err());
@@ -763,13 +816,58 @@ mod tests {
         );
 
         // Act
-        let result = disable(&ctx, "neovim");
+        let result = disable(&ctx, &["neovim".to_string()]);
 
         // Assert
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages["neovim"].enabled);
         assert_eq!(config.packages["neovim"].actions_overrides["update"], "install");
+    }
+
+    #[test]
+    fn test_disable_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+
+        // Act
+        let result = disable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+        assert!(!config.packages["ripgrep"].enabled);
+    }
+
+    #[test]
+    fn test_disable_multiple_with_already_disabled() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n",
+        );
+
+        // Act
+        let result = disable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["neovim"].enabled);
+        assert!(!config.packages["ripgrep"].enabled);
+    }
+
+    #[test]
+    fn test_disable_multiple_errors_on_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = disable(&ctx, &["neovim".to_string(), "nonexistent".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]
