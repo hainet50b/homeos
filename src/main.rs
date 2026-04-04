@@ -54,7 +54,7 @@ pub enum PackageCommands {
         package: String,
         /// Dependencies to add
         #[arg(required = true)]
-        deps: Vec<String>,
+        dependency: Vec<String>,
     },
     /// Remove dependencies from an existing package
     RemoveDep {
@@ -62,7 +62,7 @@ pub enum PackageCommands {
         package: String,
         /// Dependencies to remove
         #[arg(required = true)]
-        deps: Vec<String>,
+        dependency: Vec<String>,
     },
     /// Enable packages
     Enable {
@@ -134,14 +134,14 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::AddDep { package, deps } => {
-                if let Err(e) = commands::package::add_dep(&ctx, &package, &deps) {
+            PackageCommands::AddDep { package, dependency } => {
+                if let Err(e) = commands::package::add_dep(&ctx, &package, &dependency) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::RemoveDep { package, deps } => {
-                if let Err(e) = commands::package::remove_dep(&ctx, &package, &deps) {
+            PackageCommands::RemoveDep { package, dependency } => {
+                if let Err(e) = commands::package::remove_dep(&ctx, &package, &dependency) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -189,5 +189,47 @@ fn main() {
                 }
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn test_add_dep_help_shows_dependency_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let package_cmd = cmd.find_subcommand("package").unwrap();
+        let add_dep_cmd = package_cmd.find_subcommand("add-dep").unwrap();
+
+        // Act
+        let args: Vec<&str> = add_dep_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "dependency")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_remove_dep_help_shows_dependency_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let package_cmd = cmd.find_subcommand("package").unwrap();
+        let remove_dep_cmd = package_cmd.find_subcommand("remove-dep").unwrap();
+
+        // Act
+        let args: Vec<&str> = remove_dep_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "dependency")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["dependency"]);
     }
 }

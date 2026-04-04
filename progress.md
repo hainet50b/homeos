@@ -1149,3 +1149,28 @@ Added a dependency check to the `remove` function in `registry.rs`. Before remov
 
 - All 186 tests pass (183 existing + 3 new).
 - Dependents are listed in sorted order (BTreeMap iteration) for deterministic error messages.
+
+## Task: Rename CLI argument name for add-dep and remove-dep from `dep` to `dependency`
+
+**Timestamp:**
+
+2026-04-04T11:31:11Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. Simple rename with no dependencies on other unchecked tasks.
+
+**What was done:**
+
+Renamed the `deps` field to `dependency` in both `AddDep` and `RemoveDep` variants of `PackageCommands` in `main.rs`. Updated the corresponding match arms to use the new field name. Added 2 unit tests verifying that the clap-generated help for `add-dep` and `remove-dep` shows `dependency` as the positional argument name.
+
+**What was changed:**
+
+- src/main.rs (renamed `deps` to `dependency` in struct fields and match arms, added 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 188 tests pass (186 existing + 2 new).
+- The internal function signatures in `registry.rs` (`add_dep`, `remove_dep`) still accept `&[String]` — only the CLI-facing argument name changed, which is the intent of the task.
