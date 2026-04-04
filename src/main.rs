@@ -51,6 +51,14 @@ pub enum PackageCommands {
         #[arg(required = true)]
         deps: Vec<String>,
     },
+    /// Remove dependencies from an existing package
+    RemoveDep {
+        /// Package name
+        package: String,
+        /// Dependencies to remove
+        #[arg(required = true)]
+        deps: Vec<String>,
+    },
     /// Remove a package
     Remove {
         /// Package name
@@ -128,6 +136,12 @@ fn main() {
             }
             PackageCommands::AddDep { package, deps } => {
                 if let Err(e) = commands::package::add_dep(&ctx, &package, &deps) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::RemoveDep { package, deps } => {
+                if let Err(e) = commands::package::remove_dep(&ctx, &package, &deps) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

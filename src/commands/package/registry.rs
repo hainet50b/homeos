@@ -112,6 +112,28 @@ pub fn add_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<
     Ok(())
 }
 
+pub fn remove_dep(ctx: &Context, package: &str, deps: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let pkg = config.packages.get_mut(package).unwrap();
+
+    for dep in deps {
+        if let Some(pos) = pkg.depends_on.iter().position(|d| d == dep) {
+            pkg.depends_on.remove(pos);
+            println!("Removed dependency '{dep}' from package '{package}'");
+        } else {
+            println!("Package '{package}' does not depend on '{dep}'");
+        }
+    }
+
+    config.save(&ctx.config_path())?;
+    Ok(())
+}
+
 pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
@@ -696,6 +718,111 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_remove_dep_removes_dependency_from_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on:\n      - git\n      - curl\n  git: {}\n  curl: {}\n",
+        );
+
+        // Act
+        let result = remove_dep(&ctx, "neovim", &["git".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].depends_on, vec!["curl"]);
+    }
+
+    #[test]
+    fn test_remove_dep_removes_multiple_dependencies() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on:\n      - git\n      - curl\n      - wget\n  git: {}\n  curl: {}\n  wget: {}\n",
+        );
+
+        // Act
+        let result = remove_dep(&ctx, "neovim", &["git".to_string(), "wget".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].depends_on, vec!["curl"]);
+    }
+
+    #[test]
+    fn test_remove_dep_skips_nonexistent_dependency() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n",
+        );
+
+        // Act
+        let result = remove_dep(&ctx, "neovim", &["curl".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].depends_on, vec!["git"]);
+    }
+
+    #[test]
+    fn test_remove_dep_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n");
+
+        // Act
+        let result = remove_dep(&ctx, "nonexistent", &["git".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_remove_dep_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+
+        // Act
+        let result = remove_dep(&ctx, "neovim", &["git".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_dep_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on:\n      - git\n      - curl\n  git: {}\n  curl: {}\n",
+        );
+
+        // Act
+        remove_dep(&ctx, "neovim", &["git".to_string()]).unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(config.packages["neovim"].depends_on, vec!["curl"]);
+    }
+
+    #[test]
+    fn test_remove_dep_removes_all_dependencies_clears_list() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n",
+        );
+
+        // Act
+        let result = remove_dep(&ctx, "neovim", &["git".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].depends_on.is_empty());
     }
 
     #[test]

@@ -1097,3 +1097,30 @@ Added `AddDep` variant to `PackageCommands` in `main.rs` with `package` and `dep
 
 - All 176 tests pass (169 existing + 7 new).
 - Duplicate dependencies are skipped with an informational message rather than returning an error, consistent with how `enable` handles already-enabled packages.
+
+## Task: Implement `homeos package remove-dep <pkg> <dep>...`
+
+**Timestamp:**
+
+2026-04-04T10:56:10Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Mirrors `add-dep` — both must exist before dependency validation can be built in later tasks.
+
+**What was done:**
+
+Added `RemoveDep` variant to `PackageCommands` in `main.rs` with `package` and `deps` arguments. Implemented `remove_dep` function in `registry.rs` that loads the config, validates the package exists, removes each dependency from `depends_on` (skipping with a message if not present), and saves the config. Added 7 new tests: remove single dep, remove multiple deps, skip nonexistent dep, error on package not found, error when not initialized, persistence after reload, and removing all dependencies clears the list.
+
+**What was changed:**
+
+- src/main.rs (added `RemoveDep` variant and match arm)
+- src/commands/package/mod.rs (added `remove_dep` to re-exports)
+- src/commands/package/registry.rs (added `remove_dep` function and 7 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 183 tests pass (176 existing + 7 new).
+- Non-existent dependencies are skipped with an informational message rather than returning an error, consistent with how `add_dep` handles duplicate dependencies.
