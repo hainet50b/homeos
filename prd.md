@@ -102,7 +102,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Enhance `homeos package enable` to accept multiple packages (`<pkg>...`).
 - [x] Enhance `homeos package disable` to accept multiple packages (`<pkg>...`).
 - [x] Enhance `homeos package remove` to reject packages that are in `state.yml`. Error with a message to uninstall first.
-- [ ] Enhance `homeos package list` to show a table with Enabled and Installed columns, referencing both `homeos.yml` and `state.yml`.
+- [x] Enhance `homeos package list` to show a table with Enabled and Installed columns, referencing both `homeos.yml` and `state.yml`.
 
 ## Completion Criteria
 

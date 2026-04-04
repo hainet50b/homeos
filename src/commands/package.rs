@@ -6,14 +6,55 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
+    list_to(ctx, &mut std::io::stdout())
+}
+
+fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
+    let state_path = ctx.state_path();
+    let installed_packages: Vec<String> = if state_path.exists() {
+        State::load(&state_path)?.installed
+    } else {
+        Vec::new()
+    };
+
+    if config.packages.is_empty() {
+        return Ok(());
+    }
+
+    let name_width = config
+        .packages
+        .keys()
+        .map(|n| n.len())
+        .max()
+        .unwrap_or(0)
+        .max(7); // "Package" header length
+
+    writeln!(
+        writer,
+        "{:<name_width$}  {:<7}  Installed",
+        "Package", "Enabled"
+    )?;
+    writeln!(
+        writer,
+        "{:<name_width$}  {:<7}  ---------",
+        "-".repeat(name_width),
+        "-------"
+    )?;
+
     for (name, pkg) in &config.packages {
-        if pkg.enabled {
-            println!("{name}");
+        let enabled = if pkg.enabled { "yes" } else { "no" };
+        let installed = if installed_packages.contains(&name.to_string()) {
+            "yes"
         } else {
-            println!("{name} (disabled)");
-        }
+            "no"
+        };
+        writeln!(
+            writer,
+            "{:<name_width$}  {:<7}  {}",
+            name, enabled, installed
+        )?;
     }
 
     Ok(())
@@ -373,29 +414,40 @@ mod tests {
     }
 
     #[test]
-    fn test_list_shows_all_packages() {
+    fn test_list_shows_table_with_all_packages() {
         // Arrange
         let (_tmp, ctx) = fixture(
             "packages:\n  neovim: {}\n  ripgrep: {}\n  starship: {}\n",
         );
+        let mut output = Vec::new();
 
         // Act
-        let result = list(&ctx);
+        let result = list_to(&ctx, &mut output);
 
         // Assert
         assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Package"));
+        assert!(text.contains("Enabled"));
+        assert!(text.contains("Installed"));
+        assert!(text.contains("neovim"));
+        assert!(text.contains("ripgrep"));
+        assert!(text.contains("starship"));
     }
 
     #[test]
     fn test_list_empty_packages() {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = list(&ctx);
+        let result = list_to(&ctx, &mut output);
 
         // Assert
         assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.is_empty());
     }
 
     #[test]
@@ -403,12 +455,78 @@ mod tests {
         // Arrange
         let tmp = TempDir::new().unwrap();
         let ctx = Context::new(Some(tmp.path().to_path_buf()));
+        let mut output = Vec::new();
 
         // Act
-        let result = list(&ctx);
+        let result = list_to(&ctx, &mut output);
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_shows_enabled_and_disabled_status() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // neovim is disabled, ripgrep is enabled
+        assert!(lines[2].contains("neovim") && lines[2].contains("no"));
+        assert!(lines[3].contains("ripgrep") && lines[3].contains("yes"));
+    }
+
+    #[test]
+    fn test_list_shows_installed_status() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim: {}\n  ripgrep: {}\n",
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // neovim: enabled=yes, installed=yes
+        assert!(lines[2].contains("neovim"));
+        assert!(lines[2].ends_with("yes"));
+        // ripgrep: enabled=yes, installed=no
+        assert!(lines[3].contains("ripgrep"));
+        assert!(lines[3].ends_with("no"));
+    }
+
+    #[test]
+    fn test_list_without_state_file() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim: {}\n",
+        );
+        // No state.yml created
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // neovim: enabled=yes, installed=no (no state file means not installed)
+        assert!(lines[2].contains("neovim"));
+        assert!(lines[2].ends_with("no"));
     }
 
     #[test]
@@ -580,28 +698,24 @@ mod tests {
     }
 
     #[test]
-    fn test_list_formats_enabled_and_disabled() {
+    fn test_list_table_header_and_separator() {
         // Arrange
         let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n",
+            "packages:\n  neovim: {}\n",
         );
-        let config = Config::load(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
 
         // Act
-        let output: Vec<String> = config
-            .packages
-            .iter()
-            .map(|(name, pkg)| {
-                if pkg.enabled {
-                    name.clone()
-                } else {
-                    format!("{name} (disabled)")
-                }
-            })
-            .collect();
+        list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(output, vec!["neovim (disabled)", "ripgrep"]);
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains("Package"));
+        assert!(lines[0].contains("Enabled"));
+        assert!(lines[0].contains("Installed"));
+        // Second line is separator
+        assert!(lines[1].contains("-------"));
     }
 
     #[test]

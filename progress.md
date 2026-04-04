@@ -847,3 +847,29 @@ Enhanced `remove` to check `state.yml` before removing a package. If the package
 
 - The state check happens after the "not found" check but before the actual removal, so both error paths are clean.
 - All 155 tests pass (152 existing + 3 new remove-rejection tests).
+
+## Task: Enhance `homeos package list` to show a table with Enabled and Installed columns
+
+**Timestamp:**
+
+2026-04-04T23:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All dependencies (homeos.yml parsing, state.yml parsing) were already in place.
+
+**What was done:**
+
+Refactored `list` to use the `list_to` pattern (generic writer) for testability. The function now loads both `homeos.yml` and `state.yml` (gracefully handling missing state file), then outputs a formatted table with Package, Enabled, and Installed columns. Column width dynamically adjusts to the longest package name. Empty config produces no output. Rewrote 3 existing list tests to verify table output via `list_to` and added 4 new tests: enabled/disabled status, installed status with state file, missing state file defaults to "no", and table header/separator format.
+
+**What was changed:**
+
+- src/commands/package.rs (refactored `list` into `list`/`list_to`, added table formatting with state.yml loading, rewrote 3 existing tests, added 4 new tests, removed 1 obsolete test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Followed the same `_to` writer pattern used by `cat_to` for consistent testability across output-producing functions.
+- Fixed 2 clippy warnings about `write_literal` by inlining string literals into the format string.
+- All 158 tests pass (155 existing + 4 new list tests - 1 removed obsolete test).
