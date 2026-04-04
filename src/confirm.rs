@@ -1,5 +1,4 @@
 use crate::config::Config;
-use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
 /// A plan describing which packages will be acted on and which are skipped.
@@ -32,7 +31,7 @@ impl Plan {
                 .get(name)
                 .ok_or_else(|| format!("Package '{name}' not found"))?;
 
-            if !pkg.enabled {
+            if !pkg.enabled && action != "uninstall" {
                 disabled.push(name.clone());
             } else if installed.contains(name) {
                 already_installed.push(name.clone());
@@ -114,6 +113,7 @@ pub fn confirm_plan<R: BufRead, W: Write>(
 mod tests {
     use super::*;
     use crate::config::PackageConfig;
+    use std::collections::BTreeMap;
     use std::io::Cursor;
 
     fn fixture_config(packages: Vec<(&str, bool)>) -> Config {
@@ -442,5 +442,39 @@ Skipping docker (disabled)";
         assert!(sut.contains("Skipping neovim (already installed)"));
         assert!(sut.contains("will be installed"));
         assert!(sut.contains("zed"));
+    }
+
+    #[test]
+    fn test_build_plan_uninstall_ignores_disabled_status() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false), ("zed", true)]);
+        let packages: Vec<String> = vec!["neovim", "zed"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "uninstall", &[]).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim", "zed"]);
+        assert!(sut.disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_install_still_skips_disabled() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false), ("zed", true)]);
+        let packages: Vec<String> = vec!["neovim", "zed"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &[]).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["zed"]);
+        assert_eq!(sut.disabled, vec!["neovim"]);
     }
 }

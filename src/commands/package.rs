@@ -293,11 +293,11 @@ fn update_state_per_package(
 
         let config_path = ctx.config_path();
         let mut config = Config::load(&config_path)?;
-        if let Some(pkg) = config.packages.get_mut(name) {
-            if pkg.enabled {
-                pkg.enabled = false;
-                config.save(&config_path)?;
-            }
+        if let Some(pkg) = config.packages.get_mut(name)
+            && pkg.enabled
+        {
+            pkg.enabled = false;
+            config.save(&config_path)?;
         }
     }
 
@@ -1044,15 +1044,15 @@ mod tests {
     }
 
     #[test]
-    fn test_run_action_skips_disabled_packages_for_uninstall() {
+    fn test_run_action_executes_disabled_packages_for_uninstall() {
         // Arrange
         let (_tmp, ctx) = fixture_with_script(
             "packages:\n  neovim:\n    enabled: false\n",
             "neovim",
             "uninstall",
-            "SHOULD_NOT_RUN",
+            "echo UNINSTALL_MARKER",
         );
-        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
         // Act
@@ -1061,9 +1061,8 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (disabled)"));
-        assert!(written.contains("No packages to uninstall."));
-        assert!(!written.contains("Uninstalling"));
+        assert!(!written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("Uninstalling neovim"));
     }
 
     #[test]

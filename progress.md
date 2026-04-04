@@ -685,3 +685,29 @@ Added `--all` flag to the `Uninstall` CLI variant using clap's `required_unless_
 - Used clap's `required_unless_present = "all"` attribute so that either package names or `--all` must be provided, but not neither.
 - When `--all` is set and `state.yml` is missing or empty, the resolved packages list is empty, which triggers the existing "No packages to uninstall" path in `run_action`.
 - All 122 tests pass (117 existing + 5 new).
+
+## Task: Fix `homeos package uninstall` to ignore disabled status
+
+**Timestamp:**
+
+2026-04-04T16:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. No dependencies on other tasks.
+
+**What was done:**
+
+Fixed `Plan::build` to skip the disabled check when the action is "uninstall". Previously, disabled packages were classified into the `disabled` list and skipped during uninstall — now they are classified as `enabled` and executed normally. Updated the existing `test_run_action_skips_disabled_packages_for_uninstall` test (renamed to `test_run_action_executes_disabled_packages_for_uninstall`) to verify that disabled packages are executed for uninstall. Added 2 new tests in `confirm.rs`: one verifying uninstall ignores disabled status, and one verifying install still skips disabled packages. Also fixed 2 pre-existing clippy warnings (unused `BTreeMap` import in `confirm.rs`, collapsible if in `package.rs`).
+
+**What was changed:**
+
+- src/confirm.rs (changed `Plan::build` to skip disabled check for uninstall, moved `BTreeMap` import to test module, added 2 tests)
+- src/commands/package.rs (updated 1 test to match new behavior, fixed collapsible if clippy warning)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The fix is a single condition change: `if !pkg.enabled` → `if !pkg.enabled && action != "uninstall"` in `Plan::build`.
+- All 124 tests pass (122 existing + 2 new).
