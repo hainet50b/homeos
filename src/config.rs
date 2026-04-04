@@ -6,6 +6,13 @@ use std::path::Path;
 pub struct Config {
     #[serde(default)]
     pub packages: BTreeMap<String, PackageConfig>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub plugins: BTreeMap<String, PluginConfig>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PluginConfig {
+    pub url: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -167,6 +174,7 @@ packages:
                     depends_on: Vec::new(),
                 },
             )]),
+            ..Default::default()
         };
 
         // Act
@@ -219,6 +227,7 @@ packages:
                     ..Default::default()
                 },
             )]),
+            ..Default::default()
         };
 
         // Act
@@ -239,6 +248,7 @@ packages:
                     ..Default::default()
                 },
             )]),
+            ..Default::default()
         };
 
         // Act
@@ -281,5 +291,98 @@ packages:
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_plugins() {
+        // Arrange
+        let yaml = r#"
+packages: {}
+plugins:
+  dnf:
+    url: https://github.com/hainet50b/homeos-plugin-dnf
+"#;
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins.len(), 1);
+        assert_eq!(
+            sut.plugins["dnf"].url,
+            "https://github.com/hainet50b/homeos-plugin-dnf"
+        );
+    }
+
+    #[test]
+    fn test_plugins_defaults_to_empty() {
+        // Arrange
+        let yaml = "packages: {}\n";
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert!(sut.plugins.is_empty());
+    }
+
+    #[test]
+    fn test_serialize_skips_empty_plugins() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(!sut.contains("plugins"));
+    }
+
+    #[test]
+    fn test_serialize_includes_nonempty_plugins() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::new(),
+            plugins: BTreeMap::from([(
+                "dnf".to_string(),
+                PluginConfig {
+                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                },
+            )]),
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(sut.contains("plugins"));
+        assert!(sut.contains("dnf"));
+        assert!(sut.contains("https://github.com/hainet50b/homeos-plugin-dnf"));
+    }
+
+    #[test]
+    fn test_save_and_reload_with_plugins() {
+        // Arrange
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        let tmp = NamedTempFile::new().unwrap();
+
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(
+            sut.plugins["dnf"].url,
+            "https://github.com/hainet50b/homeos-plugin-dnf"
+        );
     }
 }

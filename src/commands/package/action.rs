@@ -1741,6 +1741,7 @@ mod tests {
                 "neovim".to_string(),
                 PackageConfig::default(),
             )]),
+            ..Default::default()
         };
 
         // Act
@@ -1771,6 +1772,7 @@ mod tests {
                 ),
                 ("curl".to_string(), PackageConfig::default()),
             ]),
+            ..Default::default()
         };
 
         // Act
@@ -1803,6 +1805,7 @@ mod tests {
                 ),
                 ("git".to_string(), PackageConfig::default()),
             ]),
+            ..Default::default()
         };
 
         // Act
@@ -1825,6 +1828,7 @@ mod tests {
                     ..Default::default()
                 },
             )]),
+            ..Default::default()
         };
 
         // Act

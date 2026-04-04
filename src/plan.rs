@@ -191,7 +191,10 @@ mod tests {
                 },
             );
         }
-        Config { packages: map }
+        Config {
+            packages: map,
+            ..Default::default()
+        }
     }
 
     #[test]

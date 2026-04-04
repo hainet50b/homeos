@@ -1541,3 +1541,32 @@ Added a `--strip-git` flag to `homeos init` that removes the `.git` directory af
 - All 257 tests pass (254 existing + 3 new).
 - The 3 new tests cover: strip_git removes `.git` directory, strip_git false preserves it, and strip_git without URL is a no-op in scaffold mode.
 - The flag has no `requires` constraint in clap — it's valid but meaningless without a URL, keeping the CLI simple.
+
+## Task: Add `plugins` section to Config
+
+**Timestamp:**
+
+2026-04-04T16:20:13Z
+
+**Why this task:**
+
+First unchecked task in dependency order — the `plugins` section in Config is a prerequisite for all subsequent plugin-related tasks (plugin list, add, remove, and package add integration).
+
+**What was done:**
+
+Added a `PluginConfig` struct with a `url: String` field. Added a `plugins: BTreeMap<String, PluginConfig>` field to `Config` with `#[serde(default, skip_serializing_if = "BTreeMap::is_empty")]` so it defaults to empty and is omitted from YAML when empty. Updated all existing `Config` struct literals across `config.rs`, `plan.rs`, `topo.rs`, and `action.rs` that used explicit field initialization to include `..Default::default()` for the new field. Added 5 new tests: parsing plugins from YAML, default to empty, skip empty on serialize, include non-empty on serialize, and save/reload round-trip with plugins.
+
+**What was changed:**
+
+- src/config.rs (added `PluginConfig` struct, added `plugins` field to `Config`, updated 2 existing test constructions, added 5 new tests)
+- src/plan.rs (updated 1 fixture `Config` construction)
+- src/topo.rs (updated 1 fixture `Config` construction)
+- src/commands/package/action.rs (updated 4 test `Config` constructions)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 262 tests pass (257 existing + 5 new).
+- The `PluginConfig` struct uses `Default` derive with an empty string for `url`, consistent with how other config structs use defaults.
+- Existing code that uses `Config::default()` or `..Default::default()` required no changes — only explicit struct literals needed updating.
