@@ -17,6 +17,10 @@ pub struct Cli {
     /// Override the base data directory (defaults to OS data directory)
     #[arg(long, global = true, hide = true)]
     pub base_dir: Option<PathBuf>,
+
+    /// Specify repository
+    #[arg(short = 'r', long, global = true, default_value = "default")]
+    pub repo: String,
 }
 
 #[derive(Subcommand)]
@@ -109,7 +113,7 @@ pub enum PackageCommands {
 
 fn main() {
     let cli = Cli::parse();
-    let ctx = context::Context::new(cli.base_dir);
+    let ctx = context::Context::new(cli.base_dir, cli.repo);
 
     match cli.command {
         Commands::Init => {
@@ -222,6 +226,33 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_repo_option_defaults_to_default() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "init"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.repo, "default");
+    }
+
+    #[test]
+    fn test_repo_option_long() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--repo", "work", "init"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.repo, "work");
+    }
+
+    #[test]
+    fn test_repo_option_short() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "-r", "server", "init"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.repo, "server");
     }
 
     #[test]

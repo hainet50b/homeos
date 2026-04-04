@@ -1287,3 +1287,34 @@ Refactored `apply_to` to use a unified dependency-ordered execution flow instead
 - The key behavioral change: previously `apply` ran all installs then all updates. Now execution interleaves install and update actions in topological order, so a dependency that needs updating runs before a dependent that needs installing.
 - The display plan still shows install and update sections separately for readability — only execution order changed.
 - Update packages are now also topologically sorted (previously they were not), ensuring correct order even when all packages are updates.
+
+## Task: Add `--repo` option to CLI
+
+**Timestamp:**
+
+2026-04-04T12:39:04Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. This is a prerequisite for the repo management commands (repo list, repo add, repo remove) that follow.
+
+**What was done:**
+
+Added a `--repo` / `-r` global CLI option (defaults to `"default"`) that selects which repository to operate on. Propagated the repo name into `Context` as a new field, replacing the hardcoded `"default"` in `default_repo_dir()`. Renamed `default_repo_dir()` to `repo_dir()` since it now resolves dynamically based on the selected repo. Updated all call sites across `init.rs`, `cd.rs`, `action.rs`, and `registry.rs`. Added 5 new tests: 3 for CLI option parsing (default value, `--repo`, `-r`) and 2 for context path resolution with custom repo names.
+
+**What was changed:**
+
+- src/main.rs (added `--repo` / `-r` global option, pass repo to Context, 3 new CLI tests)
+- src/context.rs (added `repo` field, renamed `default_repo_dir()` to `repo_dir()`, updated constructor signature, 2 new tests)
+- src/commands/init.rs (updated to use `repo_dir()`, updated fixture)
+- src/commands/cd.rs (updated to use `repo_dir()`, updated fixture and error message)
+- src/commands/package/action.rs (updated fixture)
+- src/commands/package/registry.rs (updated fixture)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 227 tests pass (222 existing + 5 new).
+- The `cd.rs` error message was updated from "Default repository not found" to "Repository not found" since it may now refer to a non-default repo.
+- All existing test fixtures pass `"default"` as the repo name, preserving existing behavior.

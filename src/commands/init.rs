@@ -7,7 +7,7 @@ pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = ctx.config_path();
 
     if config_path.exists() {
-        println!("Already initialized at {}", ctx.default_repo_dir().display());
+        println!("Already initialized at {}", ctx.repo_dir().display());
         return Ok(());
     }
 
@@ -21,7 +21,7 @@ pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
         fs::write(&gitignore_path, "state.yml\n")?;
     }
 
-    println!("Initialized homeos at {}", ctx.default_repo_dir().display());
+    println!("Initialized homeos at {}", ctx.repo_dir().display());
     Ok(())
 }
 
@@ -32,7 +32,7 @@ mod tests {
 
     fn fixture() -> (TempDir, Context) {
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
         (tmp, ctx)
     }
 
@@ -45,7 +45,7 @@ mod tests {
         run(&ctx).unwrap();
 
         // Assert
-        assert!(ctx.default_repo_dir().exists());
+        assert!(ctx.repo_dir().exists());
         assert!(ctx.packages_dir().exists());
         assert!(ctx.config_path().exists());
         let config = Config::load(&ctx.config_path()).unwrap();
