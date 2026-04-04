@@ -1708,3 +1708,31 @@ Implemented `homeos plugin remove <name>` which removes the plugin directory at 
 - All 295 tests pass (289 existing + 6 new).
 - Tests cover: successful removal (directory + config), plugin not found error, removal without directory, warning when packages reference plugin (still succeeds), does not affect other plugins, and error when not initialized.
 - Referencing packages are listed in sorted order (BTreeMap iteration) for deterministic warning messages.
+
+## Task: Add `--plugin` and `--params` options to `homeos package add` CLI definition
+
+**Timestamp:**
+
+2026-04-04T16:37:58Z
+
+**Why this task:**
+
+First unchecked task in the PRD. This is the CLI definition prerequisite for the next task which integrates plugin templates into `homeos package add`.
+
+**What was done:**
+
+Added `--plugin <name>` and `--params <key=value>...` options to the `Add` variant of `PackageCommands` in `main.rs`. The `--plugin` option is an `Option<String>` and `--params` accepts one or more `key=value` pairs parsed by a custom `parse_key_value` function that splits on the first `=`. Updated the `add` function in `registry.rs` to accept `plugin: Option<&str>` and `params: &BTreeMap<String, String>`, storing them in the `PackageConfig`. Updated all 12 existing `add` call sites in tests to pass the new parameters. Added a `BTreeMap` import to the test module in `registry.rs`. Added 3 CLI parsing tests in `main.rs` and 4 registry tests in `registry.rs`.
+
+**What was changed:**
+
+- src/main.rs (added `parse_key_value` function, added `plugin` and `params` fields to `Add` variant, updated dispatch with `BTreeMap` conversion, added 3 CLI tests)
+- src/commands/package/registry.rs (updated `add` signature with `plugin` and `params` parameters, store in `PackageConfig`, updated 12 test calls, added `BTreeMap` import to test module, added 4 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 302 tests pass (295 existing + 3 new CLI tests + 4 new registry tests).
+- The `parse_key_value` function splits on the first `=` only, allowing values to contain `=` characters.
+- The `--params` option uses `Vec<(String, String)>` at the CLI level, converted to `BTreeMap` in the dispatch for deterministic ordering in config.
+- This task only adds the CLI definition and storage — the actual template integration (loading templates, replacing placeholders) is the next task.

@@ -58,7 +58,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn add(ctx: &Context, package: &str, depends_on: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&str>, params: &std::collections::BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
@@ -67,6 +67,8 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String]) -> Result<(), Bo
 
     let pkg_config = PackageConfig {
         depends_on: depends_on.to_vec(),
+        plugin: plugin.map(|s| s.to_string()),
+        params: params.clone(),
         ..Default::default()
     };
     config
@@ -309,6 +311,7 @@ mod tests {
     use super::*;
     use crate::commands::package::script_extension;
     use crate::state::State;
+    use std::collections::BTreeMap;
     use tempfile::TempDir;
 
     fn fixture(yaml: &str) -> (TempDir, Context) {
@@ -466,7 +469,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[]);
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_ok());
@@ -482,7 +485,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[]).unwrap();
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -500,7 +503,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[]).unwrap();
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -517,7 +520,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = add(&ctx, "neovim", &[]);
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_err());
@@ -531,7 +534,7 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
 
         // Act
-        let result = add(&ctx, "neovim", &[]);
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_err());
@@ -544,7 +547,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[]);
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_ok());
@@ -564,7 +567,7 @@ mod tests {
         std::fs::write(pkg_dir.join(format!("install.{ext}")), custom_content).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[]).unwrap();
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
 
         // Assert
         let install_content =
@@ -587,7 +590,7 @@ mod tests {
         std::fs::write(pkg_dir.join(format!("uninstall.{ext}")), custom_uninstall).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[]).unwrap();
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
 
         // Assert
         let install_content =
@@ -617,7 +620,7 @@ mod tests {
         }
 
         // Act
-        add(&ctx, "neovim", &[]).unwrap();
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
 
         // Assert
         for action in &["install", "update", "uninstall"] {
@@ -634,7 +637,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &["git".to_string(), "curl".to_string()]);
+        let result = add(&ctx, "neovim", &["git".to_string(), "curl".to_string()], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_ok());
@@ -649,7 +652,7 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[]);
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
         assert!(result.is_ok());
@@ -665,11 +668,78 @@ mod tests {
         let dependencies = vec!["git".to_string(), "curl".to_string()];
 
         // Act
-        add(&ctx, "neovim", &dependencies).unwrap();
+        add(&ctx, "neovim", &dependencies, None, &BTreeMap::new()).unwrap();
         let config = Config::load(&ctx.config_path()).unwrap();
 
         // Assert
         assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_add_with_plugin_stores_plugin_name() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].plugin, Some("dnf".to_string()));
+    }
+
+    #[test]
+    fn test_add_with_params_stores_params() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+
+        // Act
+        let result = add(&ctx, "neovim", &[], Some("dnf"), &params);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].params.get("name").unwrap(), "neovim.x86_64");
+    }
+
+    #[test]
+    fn test_add_without_plugin_has_no_plugin_or_params() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].plugin.is_none());
+        assert!(config.packages["neovim"].params.is_empty());
+    }
+
+    #[test]
+    fn test_add_with_plugin_and_params_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut params = BTreeMap::new();
+        params.insert("name".to_string(), "neovim.x86_64".to_string());
+        params.insert("repo".to_string(), "extra".to_string());
+
+        // Act
+        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(config.packages["neovim"].plugin, Some("dnf".to_string()));
+        assert_eq!(config.packages["neovim"].params.len(), 2);
+        assert_eq!(config.packages["neovim"].params["name"], "neovim.x86_64");
+        assert_eq!(config.packages["neovim"].params["repo"], "extra");
     }
 
     #[test]

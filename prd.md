@@ -134,7 +134,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos plugin list-remote` — fetch `hainet50b/homeos-plugin-*` repositories from GitHub API, display name, description, and URL in a table. Show error message on network failure.
 - [x] Implement `homeos plugin add <name> [<url>]` — register plugin in `homeos.yml` and clone into `plugins/<name>/`. Without URL, resolve as `https://github.com/hainet50b/homeos-plugin-<name>`.
 - [x] Implement `homeos plugin remove <name>` — remove `plugins/<name>/` directory and entry from `homeos.yml`. Warn (but do not block) if packages reference this plugin.
-- [ ] Add `--plugin <name>` and `--params <key=value>...` options to `homeos package add` CLI definition
+- [x] Add `--plugin <name>` and `--params <key=value>...` options to `homeos package add` CLI definition
 - [ ] Integrate plugin into `homeos package add` — when `--plugin` is specified, load `params.yml` from `plugins/<plugin>/`, read the OS-appropriate template (`<action>.sh.tmpl` or `<action>.ps1.tmpl`), replace `{{key}}` placeholders with `params` values, and write the result as the action script. Skip actions whose templates do not exist for the current OS. Record `plugin` and `params` in `homeos.yml`.
 
 ## Completion Criteria

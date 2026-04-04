@@ -1,5 +1,13 @@
 use clap::{Parser, Subcommand};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+
+fn parse_key_value(s: &str) -> Result<(String, String), String> {
+    let pos = s
+        .find('=')
+        .ok_or_else(|| format!("invalid key=value pair: no '=' found in '{s}'"))?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
 
 mod commands;
 mod config;
@@ -103,6 +111,12 @@ pub enum PackageCommands {
         /// Dependencies for this package
         #[arg(long = "depends-on", num_args = 1..)]
         depends_on: Vec<String>,
+        /// Plugin to use for generating action scripts
+        #[arg(long)]
+        plugin: Option<String>,
+        /// Plugin parameters as key=value pairs
+        #[arg(long, num_args = 1.., value_parser = parse_key_value)]
+        params: Vec<(String, String)>,
     },
     /// Remove a package
     Remove {
@@ -246,8 +260,9 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Add { package, depends_on } => {
-                if let Err(e) = commands::package::add(&ctx, &package, &depends_on) {
+            PackageCommands::Add { package, depends_on, plugin, params } => {
+                let params_map: BTreeMap<String, String> = params.into_iter().collect();
+                if let Err(e) = commands::package::add(&ctx, &package, &depends_on, plugin.as_deref(), &params_map) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -382,5 +397,58 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_add_plugin_option() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos", "package", "add", "neovim", "--plugin", "dnf",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package { command: PackageCommands::Add { plugin, .. } } = cli.command {
+            assert_eq!(plugin, Some("dnf".to_string()));
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_params_option() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos", "package", "add", "neovim", "--plugin", "dnf",
+            "--params", "name=neovim.x86_64", "repo=extra",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package { command: PackageCommands::Add { params, .. } } = cli.command {
+            assert_eq!(params, vec![
+                ("name".to_string(), "neovim.x86_64".to_string()),
+                ("repo".to_string(), "extra".to_string()),
+            ]);
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_without_plugin_defaults_to_none() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos", "package", "add", "neovim",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package { command: PackageCommands::Add { plugin, params, .. } } = cli.command {
+            assert!(plugin.is_none());
+            assert!(params.is_empty());
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
     }
 }
