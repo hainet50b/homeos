@@ -127,7 +127,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Enhance `homeos repo remove` to reject removal if the repository's `state.yml` contains installed packages. Error with a message to uninstall first.
 - [x] Implement `homeos package cd [<package>]` — launch a shell in the package root or specific package directory
 - [x] Enhance `homeos init` to accept an optional `<url>` argument to clone a remote repository as the default repo
-- [ ] Implement `--strip-git` flag for `homeos init` — remove `.git` directory after cloning
+- [x] Implement `--strip-git` flag for `homeos init` — remove `.git` directory after cloning
 - [ ] Add `plugins` section to Config (serde: `BTreeMap<String, PluginConfig>` with `url` field)
 - [ ] Add `plugin` (optional `String`) and `params` (optional `BTreeMap<String, String>`) fields to PackageConfig
 - [ ] Implement `homeos plugin list` — list registered plugins in the current repository

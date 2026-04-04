@@ -44,7 +44,7 @@ mod tests {
     fn test_resolve_target_returns_repo_dir() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        init::run(&ctx, None).unwrap();
+        init::run(&ctx, None, false).unwrap();
 
         // Act
         let result = resolve_target(&ctx).unwrap();
@@ -57,7 +57,7 @@ mod tests {
     fn test_resolve_target_dir_exists() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        init::run(&ctx, None).unwrap();
+        init::run(&ctx, None, false).unwrap();
 
         // Act
         let result = resolve_target(&ctx).unwrap();

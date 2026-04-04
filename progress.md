@@ -1513,3 +1513,31 @@ Enhanced `homeos init` to accept an optional `<url>` argument. When provided, th
 - The clone mode reuses the same `git clone` pattern from `commands/repo.rs::add`.
 - Clone mode does not create `packages/`, `homeos.yml`, or `.gitignore` — those are expected to already exist in the cloned repository.
 - The success message differentiates between the two modes: scaffold says "Initialized homeos at ..." while clone says "Initialized homeos at ... (cloned from ...)".
+
+## Task: Implement `--strip-git` flag for `homeos init`
+
+**Timestamp:**
+
+2026-04-04T16:16:22Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks. Prerequisite for nothing but follows naturally from the `homeos init <url>` enhancement.
+
+**What was done:**
+
+Added a `--strip-git` flag to `homeos init` that removes the `.git` directory after cloning a remote repository. The flag is a boolean CLI argument on the `Init` variant. When `strip_git` is true and a URL is provided, the `.git` directory is removed after a successful clone. When used without a URL (scaffold mode), the flag is silently ignored. Updated the `run` function signature to accept the new `strip_git: bool` parameter and updated all existing call sites (init tests, cd tests, main dispatch). Also extracted a `create_source_repo_with_config` test helper to reduce duplication in clone-related tests.
+
+**What was changed:**
+
+- src/main.rs (added `strip_git` field to `Init` variant, updated dispatch)
+- src/commands/init.rs (added `strip_git` parameter to `run`, added `.git` removal logic, updated all existing test calls, added `create_source_repo_with_config` helper, added 3 new tests)
+- src/commands/cd.rs (updated 2 test calls to pass new parameter)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 257 tests pass (254 existing + 3 new).
+- The 3 new tests cover: strip_git removes `.git` directory, strip_git false preserves it, and strip_git without URL is a no-op in scaffold mode.
+- The flag has no `requires` constraint in clap — it's valid but meaningless without a URL, keeping the CLI simple.

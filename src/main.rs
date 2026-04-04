@@ -29,6 +29,9 @@ pub enum Commands {
     Init {
         /// Remote URL to clone as the default repo
         url: Option<String>,
+        /// Remove .git directory after cloning
+        #[arg(long)]
+        strip_git: bool,
     },
     /// Launch a shell in the default repository directory
     Cd,
@@ -147,8 +150,8 @@ fn main() {
     let ctx = context::Context::new(cli.base_dir, cli.repo);
 
     match cli.command {
-        Commands::Init { url } => {
-            if let Err(e) = commands::init::run(&ctx, url.as_deref()) {
+        Commands::Init { url, strip_git } => {
+            if let Err(e) = commands::init::run(&ctx, url.as_deref(), strip_git) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }

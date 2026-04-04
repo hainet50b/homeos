@@ -3,7 +3,7 @@ use crate::context::Context;
 use std::fs;
 use std::process::Command;
 
-pub fn run(ctx: &Context, url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(ctx: &Context, url: Option<&str>, strip_git: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo_dir = ctx.repo_dir();
     let config_path = ctx.config_path();
 
@@ -24,6 +24,13 @@ pub fn run(ctx: &Context, url: Option<&str>) -> Result<(), Box<dyn std::error::E
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("git clone failed: {}", stderr.trim()).into());
+        }
+
+        if strip_git {
+            let git_dir = repo_dir.join(".git");
+            if git_dir.exists() {
+                fs::remove_dir_all(&git_dir)?;
+            }
         }
 
         println!("Initialized homeos at {} (cloned from {})", repo_dir.display(), url);
@@ -82,7 +89,7 @@ mod tests {
         let (_tmp, ctx) = fixture();
 
         // Act
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Assert
         assert!(ctx.repo_dir().exists());
@@ -96,7 +103,7 @@ mod tests {
     fn test_init_idempotent() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
         let mut config = Config::load(&ctx.config_path()).unwrap();
         config.packages.insert(
             "test".to_string(),
@@ -105,7 +112,7 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Assert
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -118,7 +125,7 @@ mod tests {
         let (tmp, ctx) = fixture();
 
         // Act
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Assert
         let base = tmp.path();
@@ -132,7 +139,7 @@ mod tests {
         let (_tmp, ctx) = fixture();
 
         // Act
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Assert
         let gitignore_path = ctx.gitignore_path();
@@ -145,11 +152,11 @@ mod tests {
     fn test_init_idempotent_preserves_gitignore() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
         fs::write(ctx.gitignore_path(), "state.yml\ncustom\n").unwrap();
 
         // Act
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Assert
         let content = fs::read_to_string(ctx.gitignore_path()).unwrap();
@@ -185,7 +192,7 @@ mod tests {
             .unwrap();
 
         // Act
-        run(&ctx, Some(&source_dir.path().to_string_lossy())).unwrap();
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
 
         // Assert
         assert!(ctx.repo_dir().exists());
@@ -197,12 +204,12 @@ mod tests {
     fn test_init_with_url_skips_if_already_initialized() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        run(&ctx, None).unwrap();
+        run(&ctx, None, false).unwrap();
 
         // Act
         let source_dir = TempDir::new().unwrap();
         create_local_git_repo(source_dir.path());
-        run(&ctx, Some(&source_dir.path().to_string_lossy())).unwrap();
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
 
         // Assert — original scaffold preserved, not replaced by clone
         assert!(ctx.packages_dir().exists());
@@ -214,7 +221,7 @@ mod tests {
         let (_tmp, ctx) = fixture();
 
         // Act
-        let result = run(&ctx, Some("not-a-valid-url"));
+        let result = run(&ctx, Some("not-a-valid-url"), false);
 
         // Assert
         assert!(result.is_err());
@@ -231,10 +238,66 @@ mod tests {
         assert!(!ctx.repos_dir().exists());
 
         // Act
-        run(&ctx, Some(&source_dir.path().to_string_lossy())).unwrap();
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
 
         // Assert
         assert!(ctx.repos_dir().exists());
         assert!(ctx.repo_dir().exists());
+    }
+
+    fn create_source_repo_with_config(source_dir: &std::path::Path) {
+        create_local_git_repo(source_dir);
+        fs::write(source_dir.join("homeos.yml"), "packages: {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", &source_dir.to_string_lossy(), "add", "homeos.yml"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["-C", &source_dir.to_string_lossy(), "commit", "-m", "add config"])
+            .output()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_init_strip_git_removes_git_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_source_repo_with_config(source_dir.path());
+
+        // Act
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), true).unwrap();
+
+        // Assert
+        assert!(ctx.repo_dir().exists());
+        assert!(ctx.config_path().exists());
+        assert!(!ctx.repo_dir().join(".git").exists());
+    }
+
+    #[test]
+    fn test_init_strip_git_false_preserves_git_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_source_repo_with_config(source_dir.path());
+
+        // Act
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
+
+        // Assert
+        assert!(ctx.repo_dir().join(".git").exists());
+    }
+
+    #[test]
+    fn test_init_strip_git_without_url_is_noop() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, true).unwrap();
+
+        // Assert — scaffold mode ignores strip_git
+        assert!(ctx.repo_dir().exists());
+        assert!(ctx.config_path().exists());
     }
 }
