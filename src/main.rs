@@ -42,11 +42,22 @@ pub enum Commands {
         #[command(subcommand)]
         command: PackageCommands,
     },
+    /// Manage plugins
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
     /// Manage repositories
     Repo {
         #[command(subcommand)]
         command: RepoCommands,
     },
+}
+
+#[derive(Subcommand)]
+pub enum PluginCommands {
+    /// List registered plugins
+    List,
 }
 
 #[derive(Subcommand)]
@@ -168,6 +179,14 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Plugin { command } => match command {
+            PluginCommands::List => {
+                if let Err(e) = commands::plugin::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        },
         Commands::Repo { command } => match command {
             RepoCommands::List => {
                 if let Err(e) = commands::repo::list(&ctx) {

@@ -1596,3 +1596,31 @@ Added two new fields to `PackageConfig`: `plugin: Option<String>` with `#[serde(
 - All 267 tests pass (262 existing + 5 new).
 - Only 2 explicit `PackageConfig` struct literals needed updating — all others already used `..Default::default()` which handles the new fields automatically.
 - The `params` field uses `BTreeMap<String, String>` (not `Option<BTreeMap>`) for consistency with `actions_overrides`, which uses the same pattern.
+
+## Task: Implement `homeos plugin list`
+
+**Timestamp:**
+
+2026-04-04T16:25:04Z
+
+**Why this task:**
+
+First unchecked task in dependency order. The `plugins` section in Config and `PluginConfig` struct are already in place from previous tasks. This is a prerequisite for the remaining plugin commands (list-remote, add, remove).
+
+**What was done:**
+
+Implemented `homeos plugin list` which lists registered plugins from the current repository's `homeos.yml`. Created `commands/plugin.rs` with `list` and `list_to` functions following the same writer-injection pattern used by `repo list` and `package list`. Output is a formatted table with Name and URL columns. Name column width dynamically adjusts to the longest plugin name (minimum 4 for "Name" header). Plugins are listed in alphabetical order (BTreeMap iteration). Empty plugins section produces no output. Added `Plugin` subcommand with `PluginCommands::List` variant to the CLI and wired the dispatch in `main.rs`.
+
+**What was changed:**
+
+- src/commands/plugin.rs (new — plugin list implementation with 6 unit tests)
+- src/commands.rs (added `pub mod plugin`)
+- src/main.rs (added `Plugin` variant to `Commands`, `PluginCommands` enum, match arm)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 273 tests pass (267 existing + 6 new).
+- Tests cover: no plugins, single plugin, multiple plugins sorted, table header format, name column width adjustment, and error when not initialized.
+- The `PluginCommands` enum currently has only `List` — subsequent tasks will add `ListRemote`, `Add`, and `Remove` variants.
