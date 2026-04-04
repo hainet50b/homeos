@@ -13,7 +13,7 @@ pub fn topological_sort(
 
     // Build in-degree map and adjacency list (only among requested packages)
     let mut in_degree: HashMap<&str, usize> = HashMap::new();
-    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut reverse_dependencies: HashMap<&str, Vec<&str>> = HashMap::new();
 
     for name in &pkg_set {
         in_degree.entry(name).or_insert(0);
@@ -24,7 +24,7 @@ pub fn topological_sort(
             for dep in &pkg_config.depends_on {
                 if pkg_set.contains(dep.as_str()) {
                     *in_degree.entry(name).or_insert(0) += 1;
-                    dependents.entry(dep.as_str()).or_default().push(name);
+                    reverse_dependencies.entry(dep.as_str()).or_default().push(name);
                 }
             }
         }
@@ -47,9 +47,9 @@ pub fn topological_sort(
     while let Some(name) = queue.pop_front() {
         result.push(name.to_string());
 
-        if let Some(deps) = dependents.get(name) {
+        if let Some(dependents) = reverse_dependencies.get(name) {
             let mut next: Vec<&str> = Vec::new();
-            for &dependent in deps {
+            for &dependent in dependents {
                 let deg = in_degree.get_mut(dependent).unwrap();
                 *deg -= 1;
                 if *deg == 0 {
