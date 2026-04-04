@@ -152,6 +152,25 @@ pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Er
         }
     }
 
+    let dependents: Vec<&String> = config
+        .packages
+        .iter()
+        .filter(|(_, pkg)| pkg.depends_on.contains(&package.to_string()))
+        .map(|(name, _)| name)
+        .collect();
+
+    if !dependents.is_empty() {
+        let list = dependents
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Cannot remove package '{package}' because it is depended on by: {list}"
+        )
+        .into());
+    }
+
     config.packages.remove(package);
     config.save(&ctx.config_path())?;
 
@@ -933,6 +952,60 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.is_empty());
+    }
+
+    #[test]
+    fn test_remove_rejects_package_depended_on_by_others() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n",
+        );
+
+        // Act
+        let result = remove(&ctx, "git");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot remove package 'git'"));
+        assert!(err.contains("depended on by"));
+        assert!(err.contains("neovim"));
+        // Config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("git"));
+    }
+
+    #[test]
+    fn test_remove_rejects_package_depended_on_by_multiple() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep:\n    depends_on:\n      - git\n",
+        );
+
+        // Act
+        let result = remove(&ctx, "git");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("neovim"));
+        assert!(err.contains("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_allows_package_not_depended_on() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep: {}\n",
+        );
+
+        // Act
+        let result = remove(&ctx, "ripgrep");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("ripgrep"));
     }
 
     #[test]

@@ -1124,3 +1124,28 @@ Added `RemoveDep` variant to `PackageCommands` in `main.rs` with `package` and `
 
 - All 183 tests pass (176 existing + 7 new).
 - Non-existent dependencies are skipped with an informational message rather than returning an error, consistent with how `add_dep` handles duplicate dependencies.
+
+## Task: Enhance `homeos package remove` to reject packages depended on by others
+
+**Timestamp:**
+
+2026-04-04T10:58:04Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Dependency validation in `remove` is a prerequisite for the topological sort and dependency ordering tasks that follow.
+
+**What was done:**
+
+Added a dependency check to the `remove` function in `registry.rs`. Before removing a package, it scans all other packages' `depends_on` fields to find dependents. If any exist, it returns an error listing them. Added 3 new tests: reject removal when one package depends on it, reject when multiple packages depend on it, and allow removal when no packages depend on it.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added dependent check in `remove` function and 3 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 186 tests pass (183 existing + 3 new).
+- Dependents are listed in sorted order (BTreeMap iteration) for deterministic error messages.

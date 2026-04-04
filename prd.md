@@ -112,7 +112,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add `--depends-on` option to `homeos package add` to specify dependencies at creation time
 - [x] Implement `homeos package add-dep <pkg> <dep>...` — add dependencies to an existing package
 - [x] Implement `homeos package remove-dep <pkg> <dep>...` — remove dependencies from a package
-- [ ] Enhance `homeos package remove` to reject packages that are depended on by other packages. Error with a message listing the dependents.
+- [x] Enhance `homeos package remove` to reject packages that are depended on by other packages. Error with a message listing the dependents.
 - [ ] Implement topological sort for package install order based on `depends_on`. Error on circular dependencies.
 - [ ] Integrate dependency ordering into `homeos package install` — install dependencies before the requested package
 - [ ] Implement `homeos apply` — install packages that are enabled + not in state, update packages that are enabled + in state
