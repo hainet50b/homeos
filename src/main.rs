@@ -43,6 +43,11 @@ pub enum PackageCommands {
         #[arg(long = "depends-on", num_args = 1..)]
         depends_on: Vec<String>,
     },
+    /// Remove a package
+    Remove {
+        /// Package name
+        package: String,
+    },
     /// Add dependencies to an existing package
     AddDep {
         /// Package name
@@ -58,11 +63,6 @@ pub enum PackageCommands {
         /// Dependencies to remove
         #[arg(required = true)]
         deps: Vec<String>,
-    },
-    /// Remove a package
-    Remove {
-        /// Package name
-        package: String,
     },
     /// Enable packages
     Enable {
