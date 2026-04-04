@@ -1260,3 +1260,30 @@ Added `homeos apply` as a top-level CLI command. The implementation loads `homeo
 - The combined plan shows install and update sections separately so the user can see exactly what will happen.
 - When there are no enabled packages to process, a "Nothing to do." message is shown without prompting.
 - Dependency expansion only applies to the install portion; updates operate on the exact set of enabled+in-state packages.
+
+## Task: Integrate dependency ordering into `homeos apply`
+
+**Timestamp:**
+
+2026-04-04T12:34:49Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. Directly follows the `homeos apply` implementation — the apply command already existed but executed all installs before all updates without respecting dependency order across action types.
+
+**What was done:**
+
+Refactored `apply_to` to use a unified dependency-ordered execution flow instead of separate install-then-update phases. The new approach: (1) expands install dependencies transitively, (2) merges all packages (install + update + expanded deps) into a single set, (3) topologically sorts the unified set, (4) classifies each package as install or update based on state, (5) executes in that single dependency-respecting order. This ensures that if an install target depends on an already-installed package (being updated), the update runs first. Plans are still displayed separately (install vs update) for clear output. Added 5 tests covering: update-before-install dependency, install chain ordering, update-only ordering, transitive dependency expansion, and mixed install/update diamond dependency.
+
+**What was changed:**
+
+- src/commands/package/action.rs (refactored `apply_to` for unified topo-sorted execution, added 5 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 222 tests pass (217 existing + 5 new).
+- The key behavioral change: previously `apply` ran all installs then all updates. Now execution interleaves install and update actions in topological order, so a dependency that needs updating runs before a dependent that needs installing.
+- The display plan still shows install and update sections separately for readability — only execution order changed.
+- Update packages are now also topologically sorted (previously they were not), ensuring correct order even when all packages are updates.

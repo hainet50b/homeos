@@ -43,17 +43,53 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    // Build plans for display
-    let install_plan = if !to_install.is_empty() {
-        let expanded = expand_dependencies(&config, &to_install);
-        let ordered = topological_sort(&config, &expanded)?;
-        Some(Plan::build(&config, &ordered, Action::Install, &installed)?)
+    // Expand install dependencies — some deps may already be installed (update targets)
+    let expanded_install = if !to_install.is_empty() {
+        expand_dependencies(&config, &to_install)
+    } else {
+        Vec::new()
+    };
+
+    // Merge all packages (install + update + expanded deps) into a single set,
+    // then topologically sort for unified dependency-ordered execution.
+    let install_set: HashSet<&str> = expanded_install.iter().map(|s| s.as_str()).collect();
+    let update_set: HashSet<&str> = to_update.iter().map(|s| s.as_str()).collect();
+    let all_packages: Vec<String> = install_set
+        .union(&update_set)
+        .map(|s| s.to_string())
+        .collect();
+    let ordered = topological_sort(&config, &all_packages)?;
+
+    // Classify each package: if in state -> update, else -> install
+    let installed_set: HashSet<&str> = installed.iter().map(|s| s.as_str()).collect();
+    let mut ordered_actions: Vec<(String, Action)> = Vec::new();
+    for name in &ordered {
+        if installed_set.contains(name.as_str()) {
+            ordered_actions.push((name.clone(), Action::Update));
+        } else {
+            ordered_actions.push((name.clone(), Action::Install));
+        }
+    }
+
+    // Build plans for display (still separate for clear output)
+    let install_names: Vec<String> = ordered_actions
+        .iter()
+        .filter(|(_, a)| *a == Action::Install)
+        .map(|(n, _)| n.clone())
+        .collect();
+    let update_names: Vec<String> = ordered_actions
+        .iter()
+        .filter(|(_, a)| *a == Action::Update)
+        .map(|(n, _)| n.clone())
+        .collect();
+
+    let install_plan = if !install_names.is_empty() {
+        Some(Plan::build(&config, &install_names, Action::Install, &installed)?)
     } else {
         None
     };
-
-    let update_plan = if !to_update.is_empty() {
-        Some(Plan::build(&config, &to_update, Action::Update, &installed)?)
+    let update_plan = if !update_names.is_empty() {
+        Some(Plan::build(&config, &update_names, Action::Update, &installed)?)
     } else {
         None
     };
@@ -78,64 +114,52 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
+    // Collect enabled packages from both plans
+    let install_enabled: HashSet<&str> = install_plan
+        .as_ref()
+        .map(|p| p.enabled.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+    let update_enabled: HashSet<&str> = update_plan
+        .as_ref()
+        .map(|p| p.enabled.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
     let mut had_errors = false;
 
-    // Execute installs
-    if let Some(plan) = install_plan {
-        for name in &plan.enabled {
-            let pkg_config = &config.packages[name];
-            let script_name = resolve_script_name(pkg_config, Action::Install);
-            let script_path = ctx.packages_dir().join(name).join(&script_name);
-
-            if !script_path.exists() {
-                writeln!(writer, "Error: Script not found: {}", script_path.display())?;
-                had_errors = true;
-                continue;
-            }
-
-            write!(writer, "Installing {name}... ")?;
-            writer.flush()?;
-
-            match execute_script(&script_path) {
-                Ok(_) => {
-                    writeln!(writer, "done")?;
-                    update_state_per_package(ctx, Action::Install, name)?;
-                }
-                Err(e) => {
-                    writeln!(writer, "FAILED")?;
-                    writeln!(writer, "Error: {e}")?;
-                    had_errors = true;
-                }
-            }
+    // Execute in unified dependency order
+    for (name, action) in &ordered_actions {
+        let is_enabled = match action {
+            Action::Install => install_enabled.contains(name.as_str()),
+            Action::Update => update_enabled.contains(name.as_str()),
+            Action::Uninstall => false,
+        };
+        if !is_enabled {
+            continue;
         }
-    }
 
-    // Execute updates
-    if let Some(plan) = update_plan {
-        for name in &plan.enabled {
-            let pkg_config = &config.packages[name];
-            let script_name = resolve_script_name(pkg_config, Action::Update);
-            let script_path = ctx.packages_dir().join(name).join(&script_name);
+        let pkg_config = &config.packages[name];
+        let script_name = resolve_script_name(pkg_config, *action);
+        let script_path = ctx.packages_dir().join(name).join(&script_name);
 
-            if !script_path.exists() {
-                writeln!(writer, "Error: Script not found: {}", script_path.display())?;
-                had_errors = true;
-                continue;
+        if !script_path.exists() {
+            writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+            had_errors = true;
+            continue;
+        }
+
+        let verb = action.gerund();
+        write!(writer, "{verb} {name}... ")?;
+        writer.flush()?;
+
+        match execute_script(&script_path) {
+            Ok(_) => {
+                writeln!(writer, "done")?;
+                update_state_per_package(ctx, *action, name)?;
             }
-
-            write!(writer, "Updating {name}... ")?;
-            writer.flush()?;
-
-            match execute_script(&script_path) {
-                Ok(_) => {
-                    writeln!(writer, "done")?;
-                    update_state_per_package(ctx, Action::Update, name)?;
-                }
-                Err(e) => {
-                    writeln!(writer, "FAILED")?;
-                    writeln!(writer, "Error: {e}")?;
-                    had_errors = true;
-                }
+            Err(e) => {
+                writeln!(writer, "FAILED")?;
+                writeln!(writer, "Error: {e}")?;
+                had_errors = true;
             }
         }
     }
@@ -2185,5 +2209,129 @@ mod tests {
         assert!(written.contains("will be installed"));
         assert!(written.contains("will be updated"));
         assert!(written.contains("Proceed? [y/N]"));
+    }
+
+    #[test]
+    fn test_apply_updates_dependency_before_installing_dependent() {
+        // Arrange: neovim depends on git. git is already installed (update), neovim is new (install).
+        // git must be updated before neovim is installed.
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "update", "GIT_UPDATE");
+        write_script(&ctx, "neovim", "install", "NEO_INSTALL");
+        let state = State { installed: vec!["git".to_string()] };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert: git updated before neovim installed
+        let written = String::from_utf8(output).unwrap();
+        let git_pos = written.find("Updating git... done").unwrap();
+        let neo_pos = written.find("Installing neovim... done").unwrap();
+        assert!(git_pos < neo_pos, "git should be updated before neovim is installed");
+    }
+
+    #[test]
+    fn test_apply_topological_order_for_install_chain() {
+        // Arrange: c depends on b, b depends on a. All are new installs.
+        let yaml = "packages:\n  c:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n  a: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "a", "install", "A_INSTALL");
+        write_script(&ctx, "b", "install", "B_INSTALL");
+        write_script(&ctx, "c", "install", "C_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert: a before b before c
+        let written = String::from_utf8(output).unwrap();
+        let a_pos = written.find("Installing a... done").unwrap();
+        let b_pos = written.find("Installing b... done").unwrap();
+        let c_pos = written.find("Installing c... done").unwrap();
+        assert!(a_pos < b_pos, "a should be installed before b");
+        assert!(b_pos < c_pos, "b should be installed before c");
+    }
+
+    #[test]
+    fn test_apply_topological_order_for_updates() {
+        // Arrange: neovim depends on git. Both are already installed (both update).
+        // git should be updated before neovim.
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "update", "GIT_UPDATE");
+        write_script(&ctx, "neovim", "update", "NEO_UPDATE");
+        let state = State {
+            installed: vec!["git".to_string(), "neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert: git updated before neovim
+        let written = String::from_utf8(output).unwrap();
+        let git_pos = written.find("Updating git... done").unwrap();
+        let neo_pos = written.find("Updating neovim... done").unwrap();
+        assert!(git_pos < neo_pos, "git should be updated before neovim");
+    }
+
+    #[test]
+    fn test_apply_expands_transitive_deps_for_install() {
+        // Arrange: neovim depends on git (not in config as enabled but is a dep).
+        // git is not in state — should be pulled in as an install dependency.
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "install", "GIT_INSTALL");
+        write_script(&ctx, "neovim", "install", "NEO_INSTALL");
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert: both installed, git first
+        let written = String::from_utf8(output).unwrap();
+        let git_pos = written.find("Installing git... done").unwrap();
+        let neo_pos = written.find("Installing neovim... done").unwrap();
+        assert!(git_pos < neo_pos, "git should be installed before neovim");
+    }
+
+    #[test]
+    fn test_apply_mixed_install_update_diamond_dependency() {
+        // Arrange: d depends on b and c, b and c depend on a.
+        // a and b are already installed (update), c and d are new (install).
+        let yaml = "packages:\n  d:\n    depends_on:\n      - b\n      - c\n  c:\n    depends_on:\n      - a\n  b:\n    depends_on:\n      - a\n  a: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "a", "update", "A_UPDATE");
+        write_script(&ctx, "b", "update", "B_UPDATE");
+        write_script(&ctx, "c", "install", "C_INSTALL");
+        write_script(&ctx, "d", "install", "D_INSTALL");
+        let state = State {
+            installed: vec!["a".to_string(), "b".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert: a before b and c, b and c before d
+        let written = String::from_utf8(output).unwrap();
+        let a_pos = written.find("Updating a... done").unwrap();
+        let b_pos = written.find("Updating b... done").unwrap();
+        let c_pos = written.find("Installing c... done").unwrap();
+        let d_pos = written.find("Installing d... done").unwrap();
+        assert!(a_pos < c_pos, "a should be updated before c is installed");
+        assert!(a_pos < b_pos, "a should be updated before b is updated");
+        assert!(b_pos < d_pos, "b should be updated before d is installed");
+        assert!(c_pos < d_pos, "c should be installed before d is installed");
     }
 }
