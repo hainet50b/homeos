@@ -738,3 +738,34 @@ Added `not_installed: Vec<String>` field to the `Plan` struct. Updated `Plan::di
 - The `not_installed` field is structurally in place but not yet populated by `Plan::build`. The next task (behavior matrix) will add the classification logic to populate it for update/uninstall actions.
 - The `already_installed` check is now guarded by `action == "install"` to prevent in-state packages from being incorrectly skipped during update/uninstall.
 - All 129 tests pass (124 existing + 3 new confirm tests + 2 new package tests).
+
+## Task: Implement the full behavior matrix
+
+**Timestamp:**
+
+2026-04-04T18:00:00Z
+
+**Why this task:**
+
+First unchecked task in dependency order. The `not_installed` classification was structurally added in the previous task but not yet populated — this task implements the actual classification logic in `Plan::build`.
+
+**What was done:**
+
+Rewrote `Plan::build` classification logic to use a match on action with the full behavior matrix from README:
+- **install**: disabled → skip (disabled); in state → skip (already installed); else → execute
+- **update**: disabled → skip (disabled); in state → execute; not in state → skip (not installed)
+- **uninstall**: in state → execute (ignores disabled); not in state → skip (not installed)
+
+Updated 6 existing tests that were missing `state.yml` setup — update and uninstall tests now create state with the package installed, which is required by the new behavior (previously these actions didn't check state). Added 12 new behavior matrix tests in `confirm.rs` covering all 4 states × 3 actions from the README table.
+
+**What was changed:**
+
+- src/confirm.rs (rewrote `Plan::build` classification logic, fixed 2 existing tests, added 12 behavior matrix tests)
+- src/commands/package.rs (added `State` setup to 6 existing tests for update/uninstall)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The previous implementation used a flat if/else chain that didn't fully account for the state dimension. The new match-based approach maps directly to the behavior matrix, making each action's logic explicit and independent.
+- All 141 tests pass (129 existing + 12 new behavior matrix tests).

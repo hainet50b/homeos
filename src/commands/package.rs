@@ -932,6 +932,7 @@ mod tests {
         let (_tmp, ctx) = fixture(
             "packages:\n  neovim:\n    actions_overrides:\n      update: install\n",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = if cfg!(windows) { "ps1" } else { "sh" };
@@ -961,6 +962,7 @@ mod tests {
             "update",
             "UPDATE_MARKER",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -1005,6 +1007,7 @@ mod tests {
             "update",
             "SHOULD_NOT_RUN",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"n\n".to_vec());
         let mut output = Vec::new();
 
@@ -1027,6 +1030,7 @@ mod tests {
             "uninstall",
             "UNINSTALL_MARKER",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -1048,6 +1052,7 @@ mod tests {
             "uninstall",
             "echo UNINSTALL_MARKER",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -1070,6 +1075,7 @@ mod tests {
             "uninstall",
             "SHOULD_NOT_RUN",
         );
+        State { installed: vec!["neovim".to_string()] }.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"n\n".to_vec());
         let mut output = Vec::new();
 

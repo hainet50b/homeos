@@ -25,7 +25,7 @@ impl Plan {
         let mut enabled = Vec::new();
         let mut disabled = Vec::new();
         let mut already_installed = Vec::new();
-        let not_installed = Vec::new();
+        let mut not_installed = Vec::new();
 
         for name in packages {
             let pkg = config
@@ -33,12 +33,35 @@ impl Plan {
                 .get(name)
                 .ok_or_else(|| format!("Package '{name}' not found"))?;
 
-            if !pkg.enabled && action != "uninstall" {
-                disabled.push(name.clone());
-            } else if action == "install" && installed.contains(name) {
-                already_installed.push(name.clone());
-            } else {
-                enabled.push(name.clone());
+            let in_state = installed.contains(name);
+
+            match action {
+                "uninstall" => {
+                    if in_state {
+                        enabled.push(name.clone());
+                    } else {
+                        not_installed.push(name.clone());
+                    }
+                }
+                "update" => {
+                    if !pkg.enabled {
+                        disabled.push(name.clone());
+                    } else if in_state {
+                        enabled.push(name.clone());
+                    } else {
+                        not_installed.push(name.clone());
+                    }
+                }
+                _ => {
+                    // install and any other action
+                    if !pkg.enabled {
+                        disabled.push(name.clone());
+                    } else if in_state {
+                        already_installed.push(name.clone());
+                    } else {
+                        enabled.push(name.clone());
+                    }
+                }
             }
         }
 
@@ -165,7 +188,7 @@ mod tests {
             .collect();
 
         // Act
-        let sut = Plan::build(&config, &packages, "update", &[]).unwrap();
+        let sut = Plan::build(&config, &packages, "install", &[]).unwrap();
 
         // Assert
         assert_eq!(sut.enabled, vec!["neovim", "ripgrep"]);
@@ -467,9 +490,10 @@ Skipping docker (disabled)";
             .into_iter()
             .map(String::from)
             .collect();
+        let installed = vec!["neovim".to_string(), "zed".to_string()];
 
         // Act
-        let sut = Plan::build(&config, &packages, "uninstall", &[]).unwrap();
+        let sut = Plan::build(&config, &packages, "uninstall", &installed).unwrap();
 
         // Assert
         assert_eq!(sut.enabled, vec!["neovim", "zed"]);
@@ -542,5 +566,179 @@ Skipping docker (disabled)";
         assert!(sut.contains("Skipping neovim (not installed)"));
         assert!(sut.contains("will be updated"));
         assert!(sut.contains("zed"));
+    }
+
+    // --- Behavior matrix tests ---
+
+    #[test]
+    fn test_behavior_matrix_install_enabled_not_in_state_executes() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &[]).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_install_enabled_in_state_skips_already_installed() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &installed).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.already_installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_install_disabled_not_in_state_skips_disabled() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &[]).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_install_disabled_in_state_skips_disabled() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "install", &installed).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_update_enabled_not_in_state_skips_not_installed() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "update", &[]).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.not_installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_update_enabled_in_state_executes() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "update", &installed).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_update_disabled_not_in_state_skips_disabled() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "update", &[]).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_update_disabled_in_state_skips_disabled() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "update", &installed).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_uninstall_enabled_not_in_state_skips_not_installed() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "uninstall", &[]).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.not_installed, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_uninstall_enabled_in_state_executes() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "uninstall", &installed).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+    }
+
+    #[test]
+    fn test_behavior_matrix_uninstall_disabled_not_in_state_skips_not_installed() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, "uninstall", &[]).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.not_installed, vec!["neovim"]);
+        assert!(sut.disabled.is_empty());
+    }
+
+    #[test]
+    fn test_behavior_matrix_uninstall_disabled_in_state_executes() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", false)]);
+        let packages: Vec<String> = vec!["neovim"].into_iter().map(String::from).collect();
+        let installed = vec!["neovim".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, "uninstall", &installed).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+        assert!(sut.disabled.is_empty());
     }
 }
