@@ -26,7 +26,10 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Create the initial repository structure
-    Init,
+    Init {
+        /// Remote URL to clone as the default repo
+        url: Option<String>,
+    },
     /// Launch a shell in the default repository directory
     Cd,
     /// Install missing packages and update installed ones
@@ -144,8 +147,8 @@ fn main() {
     let ctx = context::Context::new(cli.base_dir, cli.repo);
 
     match cli.command {
-        Commands::Init => {
-            if let Err(e) = commands::init::run(&ctx) {
+        Commands::Init { url } => {
+            if let Err(e) = commands::init::run(&ctx, url.as_deref()) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }

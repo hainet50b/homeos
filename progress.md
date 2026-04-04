@@ -1484,3 +1484,32 @@ Implemented `homeos package cd [<package>]` which launches a shell in the packag
 - All 250 tests pass (245 existing + 5 new).
 - The `package` argument is `Option<String>` in the CLI definition, making it optional per the README spec `cd [<package>]`.
 - Reused the same shell-launch pattern from `commands/cd.rs` (`$SHELL` with fallback to `/bin/sh`).
+
+## Task: Enhance `homeos init` to accept an optional `<url>` argument
+
+**Timestamp:**
+
+2026-04-04T16:13:29Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks. Prerequisite for the `--strip-git` flag task that follows.
+
+**What was done:**
+
+Enhanced `homeos init` to accept an optional `<url>` argument. When provided, the command clones the remote repository into the default repo directory using `git clone` instead of scaffolding an empty structure. The existing idempotency check (early return when `homeos.yml` exists) applies to both modes — if already initialized, the clone is skipped. Changed the `Init` variant in `Commands` from a unit variant to a struct variant with an optional `url` field. Updated `init::run` signature to accept `url: Option<&str>`. Updated all callers (`main.rs` dispatch, `cd.rs` test fixtures) to pass the new parameter. Added 4 new tests: clone from local git repo, idempotency with URL, invalid URL error, and repos dir auto-creation.
+
+**What was changed:**
+
+- src/main.rs (changed `Init` to struct variant with `url`, updated dispatch)
+- src/commands/init.rs (added clone branch to `run`, added `create_local_git_repo` test helper, added 4 tests)
+- src/commands/cd.rs (updated 2 test calls to pass `None`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 254 tests pass (250 existing + 4 new).
+- The clone mode reuses the same `git clone` pattern from `commands/repo.rs::add`.
+- Clone mode does not create `packages/`, `homeos.yml`, or `.gitignore` — those are expected to already exist in the cloned repository.
+- The success message differentiates between the two modes: scaffold says "Initialized homeos at ..." while clone says "Initialized homeos at ... (cloned from ...)".
