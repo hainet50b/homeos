@@ -16,7 +16,7 @@ pub(crate) fn script_extension() -> &'static str {
 /// Returns the OS-appropriate shell command for executing scripts.
 pub(crate) fn shell_command() -> &'static str {
     if cfg!(windows) {
-        "powershell"
+        "pwsh"
     } else {
         "sh"
     }

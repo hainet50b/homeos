@@ -41,7 +41,7 @@ installed:
 Scripts are resolved by convention based on the OS and executed via `std::process::Command`:
 
 - Linux / macOS: `install.sh`, `update.sh`, `uninstall.sh` (run with `sh`)
-- Windows: `install.ps1`, `update.ps1`, `uninstall.ps1` (run with `powershell`)
+- Windows: `install.ps1`, `update.ps1`, `uninstall.ps1` (run with `pwsh`)
 
 `actions_overrides` aliases an action to another (e.g., `{ update: install }` runs the install script for update).
 
