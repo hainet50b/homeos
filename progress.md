@@ -993,3 +993,29 @@ No behavioral changes — purely ordering adjustments.
 - `main.rs` already had correct ordering for both `PackageCommands` enum variants and match arms — no changes needed.
 - `action.rs` functions (run_action, execute_script, resolve_script_name, update_state_per_package) are internal helpers, not command-level functions, so their order was not adjusted.
 - All 160 tests pass with no changes to test logic.
+
+## Task: Move action functions from mod.rs to action.rs
+
+**Timestamp:**
+
+2026-04-04T10:00:00Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. All other Tasks and Post Tasks are complete.
+
+**What was done:**
+
+Moved `install`, `update`, `uninstall`, and `uninstall_to` from `commands/package/mod.rs` to `commands/package/action.rs`. Updated `mod.rs` to re-export `install`, `update`, and `uninstall` via `pub use action::{install, update, uninstall}`. Removed the `pub(crate) use action::uninstall_to` re-export since the tests in `action.rs` that called `crate::commands::package::uninstall_to` were updated to use `super::uninstall_to` instead (the function now lives in the same module). `mod.rs` is now limited to module declarations, re-exports, and the two shared helpers (`script_extension`, `shell_command`). Added a compile-time verification test that confirms the re-exported functions have the expected signatures.
+
+**What was changed:**
+
+- src/commands/package/mod.rs (removed function bodies, added re-exports, added 1 test)
+- src/commands/package/action.rs (added `install`, `update`, `uninstall`, `uninstall_to` functions; updated 5 test calls from `crate::commands::package::uninstall_to` to `super::uninstall_to`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The `uninstall_to` function remains `pub(crate)` but no longer needs a re-export from `mod.rs` since all callers are now within `action.rs` or its test submodule.
+- All 161 tests pass (160 existing + 1 new).

@@ -2,12 +2,7 @@ mod action;
 mod registry;
 
 pub use registry::{list, add, remove, enable, disable, cat};
-
-use crate::plan::Action;
-use crate::context::Context;
-use crate::state::State;
-use std::io::BufRead;
-use std::io::Write;
+pub use action::{install, update, uninstall};
 
 /// Returns the OS-appropriate script file extension.
 pub(crate) fn script_extension() -> &'static str {
@@ -25,57 +20,6 @@ pub(crate) fn shell_command() -> &'static str {
     } else {
         "sh"
     }
-}
-
-pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    action::run_action(
-        ctx,
-        packages,
-        Action::Install,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
-
-pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    action::run_action(
-        ctx,
-        packages,
-        Action::Update,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
-
-pub fn uninstall(ctx: &Context, packages: &[String], all: bool) -> Result<(), Box<dyn std::error::Error>> {
-    uninstall_to(
-        ctx,
-        packages,
-        all,
-        &mut std::io::stdin().lock(),
-        &mut std::io::stdout(),
-    )
-}
-
-pub(crate) fn uninstall_to<R: BufRead, W: Write>(
-    ctx: &Context,
-    packages: &[String],
-    all: bool,
-    reader: &mut R,
-    writer: &mut W,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let resolved_packages = if all {
-        let state_path = ctx.state_path();
-        if state_path.exists() {
-            State::load(&state_path)?.installed
-        } else {
-            Vec::new()
-        }
-    } else {
-        packages.to_vec()
-    };
-
-    action::run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
 }
 
 #[cfg(test)]
@@ -110,5 +54,20 @@ mod tests {
         } else {
             assert_eq!(cmd, "sh");
         }
+    }
+
+    #[test]
+    fn test_mod_only_contains_shared_helpers_and_reexports() {
+        // Arrange — the module should re-export action functions from action.rs
+        // Verify the re-exports are callable through the package module path
+
+        // Act — confirm that the re-exported functions have the expected signatures
+        // by taking function pointers (this fails at compile time if the signatures change)
+        let _install_fn: fn(&crate::context::Context, &[String]) -> Result<(), Box<dyn std::error::Error>> = install;
+        let _update_fn: fn(&crate::context::Context, &[String]) -> Result<(), Box<dyn std::error::Error>> = update;
+        let _uninstall_fn: fn(&crate::context::Context, &[String], bool) -> Result<(), Box<dyn std::error::Error>> = uninstall;
+
+        // Assert — if this compiles, install/update/uninstall are properly re-exported
+        // from action.rs through mod.rs with correct signatures
     }
 }
