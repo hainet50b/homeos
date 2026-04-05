@@ -59,7 +59,13 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
-pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&str>, params: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(
+    ctx: &Context,
+    package: &str,
+    depends_on: &[String],
+    plugin: Option<&str>,
+    params: &BTreeMap<String, String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
@@ -72,9 +78,7 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&
         params: params.clone(),
         ..Default::default()
     };
-    config
-        .packages
-        .insert(package.to_string(), pkg_config);
+    config.packages.insert(package.to_string(), pkg_config);
     config.save(&ctx.config_path())?;
 
     let pkg_dir = ctx.packages_dir().join(package);
@@ -90,7 +94,10 @@ pub fn add(ctx: &Context, package: &str, depends_on: &[String], plugin: Option<&
     Ok(())
 }
 
-fn generate_skeleton_scripts(pkg_dir: &std::path::Path, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn generate_skeleton_scripts(
+    pkg_dir: &std::path::Path,
+    package: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     for (action, ext) in skeleton_scripts() {
         let filename = format!("{action}.{ext}");
         let path = pkg_dir.join(&filename);
@@ -102,18 +109,34 @@ fn generate_skeleton_scripts(pkg_dir: &std::path::Path, package: &str) -> Result
     Ok(())
 }
 
-fn generate_plugin_scripts(ctx: &Context, pkg_dir: &std::path::Path, plugin_name: &str, params: &BTreeMap<String, String>) -> Result<(), Box<dyn std::error::Error>> {
+fn generate_plugin_scripts(
+    ctx: &Context,
+    pkg_dir: &std::path::Path,
+    plugin_name: &str,
+    params: &BTreeMap<String, String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_dir = ctx.plugins_dir().join(plugin_name);
     if !plugin_dir.exists() {
-        return Err(format!("Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}").into());
+        return Err(format!(
+            "Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}"
+        )
+        .into());
     }
 
     let manifest_path = plugin_dir.join("params.yml");
     if manifest_path.exists() {
         let manifest = PluginManifest::load(&manifest_path)?;
-        let missing: Vec<&String> = manifest.params.iter().filter(|p| !params.contains_key(p.as_str())).collect();
+        let missing: Vec<&String> = manifest
+            .params
+            .iter()
+            .filter(|p| !params.contains_key(p.as_str()))
+            .collect();
         if !missing.is_empty() {
-            let list = missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+            let list = missing
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(format!("Missing required plugin parameters: {list}").into());
         }
     }
@@ -152,7 +175,11 @@ fn render_template(template: &str, params: &BTreeMap<String, String>) -> String 
     result
 }
 
-pub fn add_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add_dep(
+    ctx: &Context,
+    package: &str,
+    dependencies: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -174,7 +201,11 @@ pub fn add_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<
     Ok(())
 }
 
-pub fn remove_dep(ctx: &Context, package: &str, dependencies: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove_dep(
+    ctx: &Context,
+    package: &str,
+    dependencies: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -288,7 +319,11 @@ pub fn cat(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error
     cat_to(ctx, package, &mut std::io::stdout())
 }
 
-fn cat_to<W: Write>(ctx: &Context, package: &str, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
+fn cat_to<W: Write>(
+    ctx: &Context,
+    package: &str,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -319,9 +354,11 @@ fn cat_to<W: Write>(ctx: &Context, package: &str, writer: &mut W) -> Result<(), 
 
 pub fn cd(ctx: &Context, package: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let dir = resolve_cd_target(ctx, package)?;
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let shell = crate::commands::detect_shell();
 
-    let status = std::process::Command::new(&shell).current_dir(&dir).status()?;
+    let status = std::process::Command::new(&shell)
+        .current_dir(&dir)
+        .status()?;
 
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
@@ -329,7 +366,10 @@ pub fn cd(ctx: &Context, package: Option<&str>) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn resolve_cd_target(ctx: &Context, package: Option<&str>) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+fn resolve_cd_target(
+    ctx: &Context,
+    package: Option<&str>,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
     let dir = match package {
@@ -388,9 +428,7 @@ mod tests {
     #[test]
     fn test_list_shows_table_with_all_packages() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n  ripgrep: {}\n  starship: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n  starship: {}\n");
         let mut output = Vec::new();
 
         // Act
@@ -439,9 +477,7 @@ mod tests {
     #[test]
     fn test_list_shows_enabled_and_disabled_status() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n");
         let mut output = Vec::new();
 
         // Act
@@ -458,9 +494,7 @@ mod tests {
     #[test]
     fn test_list_shows_installed_status() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n  ripgrep: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
         let state = State {
             installed: vec!["neovim".to_string()],
         };
@@ -484,9 +518,7 @@ mod tests {
     #[test]
     fn test_list_without_state_file() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         // No state.yml created
         let mut output = Vec::new();
 
@@ -504,9 +536,7 @@ mod tests {
     #[test]
     fn test_list_table_header_and_separator() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         let mut output = Vec::new();
 
         // Act
@@ -684,8 +714,7 @@ mod tests {
 
         // Assert
         for action in &["install", "update", "uninstall"] {
-            let content =
-                std::fs::read_to_string(pkg_dir.join(format!("{action}.{ext}"))).unwrap();
+            let content = std::fs::read_to_string(pkg_dir.join(format!("{action}.{ext}"))).unwrap();
             assert_eq!(content, format!("# custom {action}\n"));
         }
     }
@@ -697,7 +726,13 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &["git".to_string(), "curl".to_string()], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &["git".to_string(), "curl".to_string()],
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -766,7 +801,10 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
-        assert_eq!(config.packages["neovim"].params.get("name").unwrap(), "neovim.x86_64");
+        assert_eq!(
+            config.packages["neovim"].params.get("name").unwrap(),
+            "neovim.x86_64"
+        );
     }
 
     #[test]
@@ -816,15 +854,18 @@ mod tests {
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             plugin_dir.join(format!("update.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf update -y {{name}}\n",
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             plugin_dir.join(format!("uninstall.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf remove -y {{name}}\n",
-        ).unwrap();
+        )
+        .unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
@@ -832,11 +873,26 @@ mod tests {
         add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
 
         // Assert
-        let install_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("install.{ext}"))).unwrap();
+        let install_content = std::fs::read_to_string(
+            ctx.packages_dir()
+                .join("neovim")
+                .join(format!("install.{ext}")),
+        )
+        .unwrap();
         assert!(install_content.contains("sudo dnf install -y neovim.x86_64"));
-        let update_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("update.{ext}"))).unwrap();
+        let update_content = std::fs::read_to_string(
+            ctx.packages_dir()
+                .join("neovim")
+                .join(format!("update.{ext}")),
+        )
+        .unwrap();
         assert!(update_content.contains("sudo dnf update -y neovim.x86_64"));
-        let uninstall_content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("uninstall.{ext}"))).unwrap();
+        let uninstall_content = std::fs::read_to_string(
+            ctx.packages_dir()
+                .join("neovim")
+                .join(format!("uninstall.{ext}")),
+        )
+        .unwrap();
         assert!(uninstall_content.contains("sudo dnf remove -y neovim.x86_64"));
     }
 
@@ -852,7 +908,8 @@ mod tests {
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
-        ).unwrap();
+        )
+        .unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
@@ -888,7 +945,11 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
-        std::fs::write(plugin_dir.join("params.yml"), "params:\n  - name\n  - repo\n").unwrap();
+        std::fs::write(
+            plugin_dir.join("params.yml"),
+            "params:\n  - name\n  - repo\n",
+        )
+        .unwrap();
 
         // Act
         let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
@@ -912,8 +973,13 @@ mod tests {
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf install -y {{name}} --repo={{repo}}\n",
-        ).unwrap();
-        std::fs::write(plugin_dir.join("params.yml"), "params:\n  - name\n  - repo\n").unwrap();
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_dir.join("params.yml"),
+            "params:\n  - name\n  - repo\n",
+        )
+        .unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
         params.insert("repo".to_string(), "extra".to_string());
@@ -922,7 +988,12 @@ mod tests {
         add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
 
         // Assert
-        let content = std::fs::read_to_string(ctx.packages_dir().join("neovim").join(format!("install.{ext}"))).unwrap();
+        let content = std::fs::read_to_string(
+            ctx.packages_dir()
+                .join("neovim")
+                .join(format!("install.{ext}")),
+        )
+        .unwrap();
         assert!(content.contains("sudo dnf install -y neovim.x86_64 --repo=extra"));
     }
 
@@ -939,7 +1010,8 @@ mod tests {
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
-        ).unwrap();
+        )
+        .unwrap();
         let mut params = BTreeMap::new();
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
@@ -962,7 +1034,8 @@ mod tests {
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\necho hello\n",
-        ).unwrap();
+        )
+        .unwrap();
         // No params.yml
 
         // Act
@@ -970,7 +1043,12 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        let content = std::fs::read_to_string(ctx.packages_dir().join("mypkg").join(format!("install.{ext}"))).unwrap();
+        let content = std::fs::read_to_string(
+            ctx.packages_dir()
+                .join("mypkg")
+                .join(format!("install.{ext}")),
+        )
+        .unwrap();
         assert!(content.contains("echo hello"));
     }
 
@@ -1026,9 +1104,8 @@ mod tests {
     #[test]
     fn test_add_dep_skips_duplicate_dependency() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
 
         // Act
         let result = add_dep(&ctx, "neovim", &["git".to_string(), "curl".to_string()]);
@@ -1081,9 +1158,8 @@ mod tests {
     #[test]
     fn test_add_dep_appends_to_existing_dependencies() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
 
         // Act
         let result = add_dep(&ctx, "neovim", &["curl".to_string()]);
@@ -1129,9 +1205,8 @@ mod tests {
     #[test]
     fn test_remove_dep_skips_nonexistent_dependency() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
 
         // Act
         let result = remove_dep(&ctx, "neovim", &["curl".to_string()]);
@@ -1186,9 +1261,8 @@ mod tests {
     #[test]
     fn test_remove_dep_removes_all_dependencies_clears_list() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n");
 
         // Act
         let result = remove_dep(&ctx, "neovim", &["git".to_string()]);
@@ -1312,9 +1386,8 @@ mod tests {
     #[test]
     fn test_remove_rejects_package_depended_on_by_others() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
 
         // Act
         let result = remove(&ctx, "git");
@@ -1431,15 +1504,17 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].enabled);
-        assert_eq!(config.packages["neovim"].actions_overrides["update"], "install");
+        assert_eq!(
+            config.packages["neovim"].actions_overrides["update"],
+            "install"
+        );
     }
 
     #[test]
     fn test_enable_multiple_packages() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    enabled: false\n  ripgrep:\n    enabled: false\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    enabled: false\n  ripgrep:\n    enabled: false\n");
 
         // Act
         let result = enable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
@@ -1454,9 +1529,7 @@ mod tests {
     #[test]
     fn test_enable_multiple_with_already_enabled() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim: {}\n  ripgrep:\n    enabled: false\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep:\n    enabled: false\n");
 
         // Act
         let result = enable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
@@ -1471,9 +1544,7 @@ mod tests {
     #[test]
     fn test_enable_multiple_errors_on_not_found() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    enabled: false\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n");
 
         // Act
         let result = enable(&ctx, &["neovim".to_string(), "nonexistent".to_string()]);
@@ -1540,9 +1611,8 @@ mod tests {
     #[test]
     fn test_disable_preserves_other_fields() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n",
-        );
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    actions_overrides:\n      update: install\n");
 
         // Act
         let result = disable(&ctx, &["neovim".to_string()]);
@@ -1551,7 +1621,10 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages["neovim"].enabled);
-        assert_eq!(config.packages["neovim"].actions_overrides["update"], "install");
+        assert_eq!(
+            config.packages["neovim"].actions_overrides["update"],
+            "install"
+        );
     }
 
     #[test]
@@ -1572,9 +1645,7 @@ mod tests {
     #[test]
     fn test_disable_multiple_with_already_disabled() {
         // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n",
-        );
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n");
 
         // Act
         let result = disable(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
@@ -1606,9 +1677,21 @@ mod tests {
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
-        std::fs::write(pkg_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho install\n").unwrap();
-        std::fs::write(pkg_dir.join(format!("update.{ext}")), "#!/usr/bin/env sh\necho update\n").unwrap();
-        std::fs::write(pkg_dir.join(format!("uninstall.{ext}")), "#!/usr/bin/env sh\necho uninstall\n").unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho install\n",
+        )
+        .unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("update.{ext}")),
+            "#!/usr/bin/env sh\necho update\n",
+        )
+        .unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("uninstall.{ext}")),
+            "#!/usr/bin/env sh\necho uninstall\n",
+        )
+        .unwrap();
         let mut output = Vec::new();
 
         // Act
@@ -1632,7 +1715,11 @@ mod tests {
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
-        std::fs::write(pkg_dir.join(format!("install.{ext}")), "#!/usr/bin/env sh\necho install\n").unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\necho install\n",
+        )
+        .unwrap();
         let mut output = Vec::new();
 
         // Act
@@ -1747,7 +1834,12 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Directory not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Directory not found")
+        );
     }
 
     #[test]

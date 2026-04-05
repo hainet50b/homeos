@@ -1,3 +1,4 @@
+use crate::commands::detect_shell;
 use crate::context::Context;
 use std::path::PathBuf;
 use std::process::Command;
@@ -18,7 +19,7 @@ pub fn resolve_target(ctx: &Context) -> Result<PathBuf, Box<dyn std::error::Erro
 
 pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let dir = resolve_target(ctx)?;
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let shell = detect_shell();
 
     let status = Command::new(&shell).current_dir(&dir).status()?;
 

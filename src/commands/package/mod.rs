@@ -1,25 +1,17 @@
 mod action;
 mod registry;
 
-pub use registry::{list, add, add_dep, remove_dep, remove, enable, disable, cat, cd};
-pub use action::{apply, install, update, uninstall};
+pub use action::{apply, install, uninstall, update};
+pub use registry::{add, add_dep, cat, cd, disable, enable, list, remove, remove_dep};
 
 /// Returns the OS-appropriate script file extension.
 pub(crate) fn script_extension() -> &'static str {
-    if cfg!(windows) {
-        "ps1"
-    } else {
-        "sh"
-    }
+    if cfg!(windows) { "ps1" } else { "sh" }
 }
 
 /// Returns the OS-appropriate shell command for executing scripts.
 pub(crate) fn shell_command() -> &'static str {
-    if cfg!(windows) {
-        "pwsh"
-    } else {
-        "sh"
-    }
+    if cfg!(windows) { "pwsh" } else { "sh" }
 }
 
 #[cfg(test)]
@@ -50,7 +42,7 @@ mod tests {
 
         // Assert
         if cfg!(windows) {
-            assert_eq!(cmd, "powershell");
+            assert_eq!(cmd, "pwsh");
         } else {
             assert_eq!(cmd, "sh");
         }
@@ -63,9 +55,19 @@ mod tests {
 
         // Act — confirm that the re-exported functions have the expected signatures
         // by taking function pointers (this fails at compile time if the signatures change)
-        let _install_fn: fn(&crate::context::Context, &[String]) -> Result<(), Box<dyn std::error::Error>> = install;
-        let _update_fn: fn(&crate::context::Context, &[String]) -> Result<(), Box<dyn std::error::Error>> = update;
-        let _uninstall_fn: fn(&crate::context::Context, &[String], bool) -> Result<(), Box<dyn std::error::Error>> = uninstall;
+        let _install_fn: fn(
+            &crate::context::Context,
+            &[String],
+        ) -> Result<(), Box<dyn std::error::Error>> = install;
+        let _update_fn: fn(
+            &crate::context::Context,
+            &[String],
+        ) -> Result<(), Box<dyn std::error::Error>> = update;
+        let _uninstall_fn: fn(
+            &crate::context::Context,
+            &[String],
+            bool,
+        ) -> Result<(), Box<dyn std::error::Error>> = uninstall;
 
         // Assert — if this compiles, install/update/uninstall are properly re-exported
         // from action.rs through mod.rs with correct signatures

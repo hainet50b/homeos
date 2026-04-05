@@ -1771,3 +1771,36 @@ This is the last remaining unchecked task in the PRD. All previous tasks are com
 - `params.yml` is optional in the plugin directory — if absent, no parameter validation is performed.
 - Templates that don't exist for the current OS are silently skipped, matching the PRD requirement.
 - Existing scripts in the package directory are preserved even when using plugin templates, consistent with the existing skeleton script behavior.
+
+---
+
+# Ralph Loop — 2026-04-05T04:03:41Z
+
+## Task: Fix shell detection for Windows support
+
+**Timestamp:**
+
+2026-04-05T04:06:07Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Extracted a shared `detect_shell()` function into `commands.rs` that uses the `SHELL` env var if set, otherwise falls back to `pwsh` on Windows or `/bin/sh` on Unix. Replaced the duplicated inline shell detection in both `cd.rs` and `package/registry.rs` with calls to the shared helper. Added a testable `resolve_shell()` inner function to avoid unsafe env var manipulation in tests. Added 2 unit tests. Also fixed a pre-existing test bug in `package/mod.rs` where `test_shell_command_returns_os_appropriate_value` expected `"powershell"` but `shell_command()` returns `"pwsh"`.
+
+**What was changed:**
+
+- src/commands.rs (added `detect_shell`, `resolve_shell`, and 2 tests)
+- src/commands/cd.rs (replaced inline shell detection with `detect_shell()`)
+- src/commands/package/registry.rs (replaced inline shell detection with `detect_shell()`)
+- src/commands/package/mod.rs (fixed test expectation from `"powershell"` to `"pwsh"`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 316 tests pass.
+- Used a `resolve_shell(shell_env: Option<String>)` inner function to make the logic testable without `unsafe` env var manipulation (Rust 2024 edition marks `set_var`/`remove_var` as unsafe).
+- The helper is placed in `commands.rs` rather than `package/mod.rs` since it's used by both `commands::cd` and `commands::package::registry` — keeping it at the `commands` level avoids an awkward cross-module dependency.
