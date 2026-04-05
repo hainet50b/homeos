@@ -3,7 +3,11 @@ use crate::context::Context;
 use std::fs;
 use std::process::Command;
 
-pub fn run(ctx: &Context, url: Option<&str>, strip_git: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    ctx: &Context,
+    url: Option<&str>,
+    strip_git: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo_dir = ctx.repo_dir();
     let config_path = ctx.config_path();
 
@@ -26,6 +30,11 @@ pub fn run(ctx: &Context, url: Option<&str>, strip_git: bool) -> Result<(), Box<
             return Err(format!("git clone failed: {}", stderr.trim()).into());
         }
 
+        if !config_path.exists() {
+            fs::remove_dir_all(&repo_dir)?;
+            return Err("Not a valid homeos repository".into());
+        }
+
         if strip_git {
             let git_dir = repo_dir.join(".git");
             if git_dir.exists() {
@@ -33,7 +42,11 @@ pub fn run(ctx: &Context, url: Option<&str>, strip_git: bool) -> Result<(), Box<
             }
         }
 
-        println!("Initialized homeos at {} (cloned from {})", repo_dir.display(), url);
+        println!(
+            "Initialized homeos at {} (cloned from {})",
+            repo_dir.display(),
+            url
+        );
     } else {
         // Scaffold mode: create empty structure
         let packages_dir = ctx.packages_dir();
@@ -105,10 +118,9 @@ mod tests {
         let (_tmp, ctx) = fixture();
         run(&ctx, None, false).unwrap();
         let mut config = Config::load(&ctx.config_path()).unwrap();
-        config.packages.insert(
-            "test".to_string(),
-            crate::config::PackageConfig::default(),
-        );
+        config
+            .packages
+            .insert("test".to_string(), crate::config::PackageConfig::default());
         config.save(&ctx.config_path()).unwrap();
 
         // Act
@@ -234,7 +246,7 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture();
         let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
+        create_source_repo_with_config(source_dir.path());
         assert!(!ctx.repos_dir().exists());
 
         // Act
@@ -253,7 +265,13 @@ mod tests {
             .output()
             .unwrap();
         Command::new("git")
-            .args(["-C", &source_dir.to_string_lossy(), "commit", "-m", "add config"])
+            .args([
+                "-C",
+                &source_dir.to_string_lossy(),
+                "commit",
+                "-m",
+                "add config",
+            ])
             .output()
             .unwrap();
     }
@@ -299,5 +317,38 @@ mod tests {
         // Assert — scaffold mode ignores strip_git
         assert!(ctx.repo_dir().exists());
         assert!(ctx.config_path().exists());
+    }
+
+    #[test]
+    fn test_init_with_url_rejects_repo_without_homeos_yml() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Not a valid homeos repository"
+        );
+        assert!(!ctx.repo_dir().exists());
+    }
+
+    #[test]
+    fn test_init_with_url_rejects_repo_without_homeos_yml_cleans_up() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let _ = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
+
+        // Assert — repos dir may exist but the repo itself must be removed
+        assert!(!ctx.repo_dir().exists());
     }
 }

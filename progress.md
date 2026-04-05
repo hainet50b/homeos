@@ -1804,3 +1804,29 @@ Extracted a shared `detect_shell()` function into `commands.rs` that uses the `S
 - All 316 tests pass.
 - Used a `resolve_shell(shell_env: Option<String>)` inner function to make the logic testable without `unsafe` env var manipulation (Rust 2024 edition marks `set_var`/`remove_var` as unsafe).
 - The helper is placed in `commands.rs` rather than `package/mod.rs` since it's used by both `commands::cd` and `commands::package::registry` — keeping it at the `commands` level avoids an awkward cross-module dependency.
+
+## Task: Validate cloned repository in `homeos init <url>`
+
+**Timestamp:**
+
+2026-04-05T04:09:04Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added validation after `git clone` in `homeos init <url>` to check that `homeos.yml` exists in the cloned directory. If it does not exist, the cloned directory is removed and an error "Not a valid homeos repository" is returned. Also fixed an existing test (`test_init_with_url_creates_repos_dir`) that was cloning a repo without `homeos.yml` — updated it to use the `create_source_repo_with_config` helper. Added 2 new tests: one verifying the error message and one verifying cleanup of the cloned directory.
+
+**What was changed:**
+
+- src/commands/init.rs (added validation logic after clone, fixed existing test, added 2 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 318 tests pass (316 existing + 2 new).
+- The validation is placed between the clone success check and the `--strip-git` logic, so invalid repos are rejected before any further processing.
+- The existing test `test_init_with_url_creates_repos_dir` was using `create_local_git_repo` (no `homeos.yml`) — now correctly uses `create_source_repo_with_config` to include a valid `homeos.yml`.
