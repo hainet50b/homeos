@@ -16,6 +16,8 @@ if [[ ! -s "$METRICS_FILE" ]]; then
   echo "timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd" > "$METRICS_FILE"
 fi
 
+echo -e "\n---\n\n# Ralph Loop — $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n" >> progress.md
+
 echo "=== Ralph Loop ==="
 echo "Max iterations: $MAX_ITERATIONS"
 echo ""
