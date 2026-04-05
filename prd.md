@@ -141,7 +141,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Validate cloned plugin in `homeos plugin add` — after clone, check that `params.yml` exists. If not, remove the cloned directory and error with "Not a valid homeos plugin".
 - [x] Add URL existence check before `git clone` in `homeos plugin add` (when URL is auto-resolved). Use GitHub API to verify the repository is public. Error with a clear message if not found.
 - [x] Implement `--local` flag for `homeos plugin add` — create an empty plugin skeleton (`params.yml` + OS-appropriate template files) in `plugins/<name>/` for local development.
-- [ ] Remove `.git` directory from cloned plugins after `homeos plugin add` (same approach as `init --strip-git`).
+- [x] Remove `.git` directory from cloned plugins after `homeos plugin add` (same approach as `init --strip-git`).
 
 ## Completion Criteria
 

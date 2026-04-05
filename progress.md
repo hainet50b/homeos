@@ -1928,3 +1928,28 @@ Added `add_local` function in `plugin.rs` that handles the skeleton creation. Up
 - The `add_local` function reuses `script_extension()` from `commands::package::mod` for OS-appropriate template file extensions.
 - When `--local` is used with a URL argument, `--local` takes precedence and the URL is ignored (tested).
 - The empty URL in `homeos.yml` distinguishes local plugins from cloned ones.
+
+## Task: Remove `.git` directory from cloned plugins after `homeos plugin add`
+
+**Timestamp:**
+
+2026-04-05T04:21:18Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. Completes all Tasks.
+
+**What was done:**
+
+Added `.git` directory removal in `add_with()` after successful clone and validation. After verifying `params.yml` exists, the code now checks for a `.git` directory in the cloned plugin and removes it with `fs::remove_dir_all`. This matches the same approach used by `init --strip-git`. Added a unit test `test_add_removes_git_directory_after_clone` that clones a local plugin repo and asserts the `.git` directory is absent afterward.
+
+**What was changed:**
+
+- src/commands/plugin.rs (added `.git` removal after clone validation, added 1 new test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 333 tests pass (332 existing + 1 new).
+- Unlike `init --strip-git` which uses an opt-in flag, plugin add always strips `.git` since plugins are meant to be embedded in the repository, not maintained as separate git repos.

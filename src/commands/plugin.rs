@@ -249,6 +249,11 @@ where
         return Err("Not a valid homeos plugin".into());
     }
 
+    let git_dir = target.join(".git");
+    if git_dir.exists() {
+        std::fs::remove_dir_all(&git_dir)?;
+    }
+
     let mut config = config;
     config
         .plugins
@@ -671,6 +676,29 @@ mod tests {
             config.plugins["dnf"].url,
             source_dir.path().to_string_lossy()
         );
+    }
+
+    #[test]
+    fn test_add_removes_git_directory_after_clone() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_plugin_repo(source_dir.path());
+
+        // Act
+        add(
+            &ctx,
+            "dnf",
+            Some(&source_dir.path().to_string_lossy()),
+            false,
+        )
+        .unwrap();
+
+        // Assert
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        assert!(plugin_dir.exists());
+        assert!(!plugin_dir.join(".git").exists());
     }
 
     #[test]
