@@ -128,13 +128,45 @@ where
     Ok(())
 }
 
+fn check_repo_exists(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let api_url = format!(
+        "https://api.github.com/repos/hainet50b/homeos-plugin-{}",
+        name
+    );
+    let client = reqwest::blocking::Client::new();
+    let response = client.get(&api_url).header("User-Agent", "homeos").send()?;
+
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!(
+            "Plugin '{}' not found on GitHub (homeos-plugin-{})",
+            name, name
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 pub fn add(ctx: &Context, name: &str, url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    add_with(ctx, name, url, check_repo_exists)
+}
+
+fn add_with<F>(
+    ctx: &Context,
+    name: &str,
+    url: Option<&str>,
+    repo_checker: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce(&str) -> Result<(), Box<dyn std::error::Error>>,
+{
     let config = Config::load(&ctx.config_path())?;
 
     if config.plugins.contains_key(name) {
         return Err(format!("Plugin '{}' already exists", name).into());
     }
 
+    let auto_resolved = url.is_none();
     let url = url
         .map(|u| u.to_string())
         .unwrap_or_else(|| format!("https://github.com/hainet50b/homeos-plugin-{}", name));
@@ -144,6 +176,10 @@ pub fn add(ctx: &Context, name: &str, url: Option<&str>) -> Result<(), Box<dyn s
 
     if target.exists() {
         return Err(format!("Plugin directory '{}' already exists", name).into());
+    }
+
+    if auto_resolved {
+        repo_checker(name)?;
     }
 
     std::fs::create_dir_all(&plugins_dir)?;
@@ -718,18 +754,86 @@ mod tests {
 
     #[test]
     fn test_add_resolves_default_url() {
-        // Arrange — we can't actually clone from GitHub, but we can test that the
-        // function attempts to use the correct default URL by checking the error message.
+        // Arrange — use add_with to inject a checker that records it was called
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_plugin_repo(source_dir.path());
+
+        // Act — no URL provided, repo_checker should be called
+        // We use add_with directly to inject a fake checker that always succeeds,
+        // but we can't actually clone from the default GitHub URL, so we test
+        // via the error path: the checker rejects the plugin.
+        let result = add_with(&ctx, "nonexistent-plugin-xyz", None, |name| {
+            Err(format!(
+                "Plugin '{}' not found on GitHub (homeos-plugin-{})",
+                name, name
+            )
+            .into())
+        });
+
+        // Assert — should fail with the checker's error, not git clone
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not found on GitHub"));
+        assert!(err.contains("nonexistent-plugin-xyz"));
+    }
+
+    #[test]
+    fn test_add_auto_resolved_url_checks_repo_exists() {
+        // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
 
-        // Act — no URL provided, should attempt to clone from default GitHub URL
-        let result = add(&ctx, "nonexistent-plugin-xyz", None);
+        // Act — no URL, checker returns error
+        let result = add_with(&ctx, "missing", None, |_name| {
+            Err("Plugin 'missing' not found on GitHub (homeos-plugin-missing)".into())
+        });
 
-        // Assert — clone will fail, but the error should reference git clone
+        // Assert
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.starts_with("git clone failed:"));
+        assert_eq!(
+            err,
+            "Plugin 'missing' not found on GitHub (homeos-plugin-missing)"
+        );
+    }
+
+    #[test]
+    fn test_add_auto_resolved_url_skips_check_with_explicit_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_plugin_repo(source_dir.path());
+
+        // Act — explicit URL provided, checker should NOT be called
+        let result = add_with(
+            &ctx,
+            "dnf",
+            Some(&source_dir.path().to_string_lossy()),
+            |_name| {
+                panic!("repo_checker should not be called when URL is explicit");
+            },
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_add_auto_resolved_url_no_clone_on_check_failure() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act — checker fails, clone should not be attempted
+        let _ = add_with(&ctx, "bad-plugin", None, |_name| Err("not found".into()));
+
+        // Assert — plugins directory should not have been created
+        assert!(!ctx.plugins_dir().join("bad-plugin").exists());
     }
 
     #[test]

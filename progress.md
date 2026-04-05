@@ -1861,3 +1861,36 @@ Added validation after `git clone` in `homeos plugin add` to check that `params.
 - All 320 tests pass (318 existing + 2 new).
 - The validation is placed between the clone success check and the config update, mirroring the same pattern used in `homeos init <url>` for `homeos.yml` validation.
 - The previous session had implemented the code changes but not completed the commit workflow. This session verified, formatted, and committed the work.
+
+## Task: Add URL existence check before `git clone` in `homeos plugin add`
+
+**Timestamp:**
+
+2026-04-05T04:15:07Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a `check_repo_exists` function that calls the GitHub API (`GET /repos/hainet50b/homeos-plugin-<name>`) to verify the repository exists before attempting `git clone`. This check only runs when the URL is auto-resolved (no explicit URL provided). If the API returns 404, the function returns an error with a clear message: "Plugin '<name>' not found on GitHub (homeos-plugin-<name>)".
+
+Refactored `add` into `add` (public, calls `check_repo_exists`) and `add_with` (internal, accepts an injectable `repo_checker` function) to make the GitHub API check testable without network access.
+
+Updated the existing `test_add_resolves_default_url` test to use `add_with` with an injected checker. Added 3 new tests:
+- `test_add_auto_resolved_url_checks_repo_exists` — verifies error message from checker
+- `test_add_auto_resolved_url_skips_check_with_explicit_url` — verifies checker is NOT called when URL is explicit (panics if called)
+- `test_add_auto_resolved_url_no_clone_on_check_failure` — verifies no clone directory is created when checker fails
+
+**What was changed:**
+
+- src/commands/plugin.rs (added `check_repo_exists`, refactored `add` into `add`/`add_with`, updated 1 test, added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 323 tests pass (320 existing + 3 new).
+- The `check_repo_exists` function is placed immediately before `add` since it's a helper specific to that function, consistent with the pattern used elsewhere (e.g., `fetch_remote_plugins` before `list_remote`).
+- The `auto_resolved` flag tracks whether the URL was provided or auto-generated, so the check only fires for the convention-based default URL path.
