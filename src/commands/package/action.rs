@@ -89,12 +89,22 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .collect();
 
     let install_plan = if !install_names.is_empty() {
-        Some(Plan::build(&config, &install_names, Action::Install, &installed)?)
+        Some(Plan::build(
+            &config,
+            &install_names,
+            Action::Install,
+            &installed,
+        )?)
     } else {
         None
     };
     let update_plan = if !update_names.is_empty() {
-        Some(Plan::build(&config, &update_names, Action::Update, &installed)?)
+        Some(Plan::build(
+            &config,
+            &update_names,
+            Action::Update,
+            &installed,
+        )?)
     } else {
         None
     };
@@ -2055,7 +2065,9 @@ mod tests {
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "neovim", "install", "NEO_INSTALL");
         write_script(&ctx, "zed", "update", "ZED_UPDATE");
-        let state = State { installed: vec!["zed".to_string()] };
+        let state = State {
+            installed: vec!["zed".to_string()],
+        };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -2171,7 +2183,9 @@ mod tests {
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "git", "update", "GIT_UPDATE");
         write_script(&ctx, "neovim", "update", "NEO_UPDATE");
-        let state = State { installed: vec!["git".to_string(), "neovim".to_string()] };
+        let state = State {
+            installed: vec!["git".to_string(), "neovim".to_string()],
+        };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -2210,7 +2224,9 @@ mod tests {
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "neovim", "install", "NEO_INSTALL");
         write_script(&ctx, "zed", "update", "ZED_UPDATE");
-        let state = State { installed: vec!["zed".to_string()] };
+        let state = State {
+            installed: vec!["zed".to_string()],
+        };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -2233,7 +2249,9 @@ mod tests {
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "git", "update", "GIT_UPDATE");
         write_script(&ctx, "neovim", "install", "NEO_INSTALL");
-        let state = State { installed: vec!["git".to_string()] };
+        let state = State {
+            installed: vec!["git".to_string()],
+        };
         state.save(&ctx.state_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -2245,7 +2263,10 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         let git_pos = written.find("Updating git... done").unwrap();
         let neo_pos = written.find("Installing neovim... done").unwrap();
-        assert!(git_pos < neo_pos, "git should be updated before neovim is installed");
+        assert!(
+            git_pos < neo_pos,
+            "git should be updated before neovim is installed"
+        );
     }
 
     #[test]
@@ -2352,8 +2373,7 @@ mod tests {
     #[test]
     fn test_apply_shows_disabled_in_plan_with_enabled_packages() {
         // Arrange: neovim disabled, zed enabled+not-in-state, ripgrep enabled+in-state
-        let yaml =
-            "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n  zed: {}\n";
+        let yaml = "packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n  zed: {}\n";
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "zed", "install", "ZED_INSTALL");
         write_script(&ctx, "ripgrep", "update", "RG_UPDATE");
@@ -2377,7 +2397,8 @@ mod tests {
     #[test]
     fn test_apply_shows_multiple_disabled_packages() {
         // Arrange: two disabled packages, one enabled
-        let yaml = "packages:\n  docker:\n    enabled: false\n  neovim:\n    enabled: false\n  zed: {}\n";
+        let yaml =
+            "packages:\n  docker:\n    enabled: false\n  neovim:\n    enabled: false\n  zed: {}\n";
         let (_tmp, ctx) = fixture(yaml);
         write_script(&ctx, "zed", "install", "ZED_INSTALL");
         let mut input = std::io::Cursor::new(b"y\n".to_vec());

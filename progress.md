@@ -1830,3 +1830,34 @@ Added validation after `git clone` in `homeos init <url>` to check that `homeos.
 - All 318 tests pass (316 existing + 2 new).
 - The validation is placed between the clone success check and the `--strip-git` logic, so invalid repos are rejected before any further processing.
 - The existing test `test_init_with_url_creates_repos_dir` was using `create_local_git_repo` (no `homeos.yml`) — now correctly uses `create_source_repo_with_config` to include a valid `homeos.yml`.
+
+## Task: Validate cloned plugin in `homeos plugin add`
+
+**Timestamp:**
+
+2026-04-05T04:12:50Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added validation after `git clone` in `homeos plugin add` to check that `params.yml` exists in the cloned directory. If it does not exist, the cloned directory is removed and an error "Not a valid homeos plugin" is returned. Added a `create_local_plugin_repo` test helper that creates a git repo with `params.yml` committed. Updated 3 existing tests (`test_add_clones_and_registers_plugin`, `test_add_default_url_without_explicit_url`, `test_add_creates_plugins_dir`) to use the new helper since they now need `params.yml` to pass validation. Added 2 new tests: one verifying the error message and one verifying cleanup of the cloned directory and that config is not modified.
+
+**What was changed:**
+
+- src/commands/plugin.rs (added params.yml validation after clone, added `create_local_plugin_repo` helper, updated 3 existing tests, added 2 new tests)
+- src/commands/package/action.rs (cargo fmt formatting only)
+- src/commands/repo.rs (cargo fmt formatting only)
+- src/context.rs (cargo fmt formatting only)
+- src/main.rs (cargo fmt formatting only)
+- src/topo.rs (cargo fmt formatting only)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 320 tests pass (318 existing + 2 new).
+- The validation is placed between the clone success check and the config update, mirroring the same pattern used in `homeos init <url>` for `homeos.yml` validation.
+- The previous session had implemented the code changes but not completed the commit workflow. This session verified, formatted, and committed the work.

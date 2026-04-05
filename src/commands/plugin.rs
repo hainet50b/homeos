@@ -80,10 +80,7 @@ pub fn list_remote() -> Result<(), Box<dyn std::error::Error>> {
     list_remote_to(&mut std::io::stdout(), fetch_remote_plugins)
 }
 
-fn list_remote_to<W: Write, F>(
-    writer: &mut W,
-    fetch: F,
-) -> Result<(), Box<dyn std::error::Error>>
+fn list_remote_to<W: Write, F>(writer: &mut W, fetch: F) -> Result<(), Box<dyn std::error::Error>>
 where
     F: FnOnce() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error>>,
 {
@@ -158,6 +155,11 @@ pub fn add(ctx: &Context, name: &str, url: Option<&str>) -> Result<(), Box<dyn s
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("git clone failed: {}", stderr.trim()).into());
+    }
+
+    if !target.join("params.yml").exists() {
+        std::fs::remove_dir_all(&target)?;
+        return Err("Not a valid homeos plugin".into());
     }
 
     let mut config = config;
@@ -244,6 +246,25 @@ mod tests {
                 "--allow-empty",
                 "-m",
                 "init",
+            ])
+            .output()
+            .unwrap();
+    }
+
+    fn create_local_plugin_repo(dir: &std::path::Path) {
+        create_local_git_repo(dir);
+        std::fs::write(dir.join("params.yml"), "name: test\n").unwrap();
+        Command::new("git")
+            .args(["-C", &dir.to_string_lossy(), "add", "params.yml"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &dir.to_string_lossy(),
+                "commit",
+                "-m",
+                "add params.yml",
             ])
             .output()
             .unwrap();
@@ -544,7 +565,7 @@ mod tests {
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
         let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
+        create_local_plugin_repo(source_dir.path());
 
         // Act
         let result = add(&ctx, "dnf", Some(&source_dir.path().to_string_lossy()));
@@ -565,9 +586,9 @@ mod tests {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
-        // Create a local git repo to simulate the default URL clone target
+        // Create a local plugin repo to simulate the default URL clone target
         let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
+        create_local_plugin_repo(source_dir.path());
 
         // Act — use explicit URL since we can't clone from GitHub in tests
         let result = add(&ctx, "mise", Some(&source_dir.path().to_string_lossy()));
@@ -576,6 +597,40 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.plugins.contains_key("mise"));
+    }
+
+    #[test]
+    fn test_add_rejects_repo_without_params_yml() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = add(&ctx, "bad", Some(&source_dir.path().to_string_lossy()));
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Not a valid homeos plugin");
+    }
+
+    #[test]
+    fn test_add_rejects_repo_without_params_yml_cleans_up() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let _ = add(&ctx, "bad", Some(&source_dir.path().to_string_lossy()));
+
+        // Assert — cloned directory should be removed
+        assert!(!ctx.plugins_dir().join("bad").exists());
+        // Config should not be modified
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("bad"));
     }
 
     #[test]
@@ -636,7 +691,7 @@ mod tests {
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
         let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
+        create_local_plugin_repo(source_dir.path());
         assert!(!ctx.plugins_dir().exists());
 
         // Act

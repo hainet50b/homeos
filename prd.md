@@ -138,7 +138,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Integrate plugin into `homeos package add` — when `--plugin` is specified, load `params.yml` from `plugins/<plugin>/`, read the OS-appropriate template (`<action>.sh.tmpl` or `<action>.ps1.tmpl`), replace `{{key}}` placeholders with `params` values, and write the result as the action script. Skip actions whose templates do not exist for the current OS. Record `plugin` and `params` in `homeos.yml`.
 - [x] Fix shell detection in `cd.rs` and `package/registry.rs` for Windows support. Use `SHELL` env var if set, otherwise `pwsh` on Windows, `/bin/sh` on Unix. Extract the shared logic into a common helper to eliminate duplication.
 - [x] Validate cloned repository in `homeos init <url>` — after clone, check that `homeos.yml` exists. If not, remove the cloned directory and error with "Not a valid homeos repository".
-- [ ] Validate cloned plugin in `homeos plugin add` — after clone, check that `params.yml` exists. If not, remove the cloned directory and error with "Not a valid homeos plugin".
+- [x] Validate cloned plugin in `homeos plugin add` — after clone, check that `params.yml` exists. If not, remove the cloned directory and error with "Not a valid homeos plugin".
 - [ ] Add URL existence check before `git clone` in `homeos plugin add` (when URL is auto-resolved). Use GitHub API to verify the repository is public. Error with a clear message if not found.
 - [ ] Implement `--local` flag for `homeos plugin add` — create an empty plugin skeleton (`params.yml` + OS-appropriate template files) in `plugins/<name>/` for local development.
 - [ ] Remove `.git` directory from cloned plugins after `homeos plugin add` (same approach as `init --strip-git`).

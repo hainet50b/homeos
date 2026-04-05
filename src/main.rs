@@ -11,13 +11,16 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 
 mod commands;
 mod config;
-mod plan;
 mod context;
+mod plan;
 mod state;
 mod topo;
 
 #[derive(Parser)]
-#[command(name = "homeos", about = "Manage application install scripts and configurations across environments")]
+#[command(
+    name = "homeos",
+    about = "Manage application install scripts and configurations across environments"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -260,20 +263,37 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Add { package, depends_on, plugin, params } => {
+            PackageCommands::Add {
+                package,
+                depends_on,
+                plugin,
+                params,
+            } => {
                 let params_map: BTreeMap<String, String> = params.into_iter().collect();
-                if let Err(e) = commands::package::add(&ctx, &package, &depends_on, plugin.as_deref(), &params_map) {
+                if let Err(e) = commands::package::add(
+                    &ctx,
+                    &package,
+                    &depends_on,
+                    plugin.as_deref(),
+                    &params_map,
+                ) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::AddDep { package, dependency } => {
+            PackageCommands::AddDep {
+                package,
+                dependency,
+            } => {
                 if let Err(e) = commands::package::add_dep(&ctx, &package, &dependency) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::RemoveDep { package, dependency } => {
+            PackageCommands::RemoveDep {
+                package,
+                dependency,
+            } => {
                 if let Err(e) = commands::package::remove_dep(&ctx, &package, &dependency) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
@@ -402,13 +422,14 @@ mod tests {
     #[test]
     fn test_add_plugin_option() {
         // Arrange & Act
-        let cli = Cli::try_parse_from([
-            "homeos", "package", "add", "neovim", "--plugin", "dnf",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "add", "neovim", "--plugin", "dnf"]).unwrap();
 
         // Assert
-        if let Commands::Package { command: PackageCommands::Add { plugin, .. } } = cli.command {
+        if let Commands::Package {
+            command: PackageCommands::Add { plugin, .. },
+        } = cli.command
+        {
             assert_eq!(plugin, Some("dnf".to_string()));
         } else {
             panic!("Expected PackageCommands::Add");
@@ -419,17 +440,30 @@ mod tests {
     fn test_add_params_option() {
         // Arrange & Act
         let cli = Cli::try_parse_from([
-            "homeos", "package", "add", "neovim", "--plugin", "dnf",
-            "--params", "name=neovim.x86_64", "repo=extra",
+            "homeos",
+            "package",
+            "add",
+            "neovim",
+            "--plugin",
+            "dnf",
+            "--params",
+            "name=neovim.x86_64",
+            "repo=extra",
         ])
         .unwrap();
 
         // Assert
-        if let Commands::Package { command: PackageCommands::Add { params, .. } } = cli.command {
-            assert_eq!(params, vec![
-                ("name".to_string(), "neovim.x86_64".to_string()),
-                ("repo".to_string(), "extra".to_string()),
-            ]);
+        if let Commands::Package {
+            command: PackageCommands::Add { params, .. },
+        } = cli.command
+        {
+            assert_eq!(
+                params,
+                vec![
+                    ("name".to_string(), "neovim.x86_64".to_string()),
+                    ("repo".to_string(), "extra".to_string()),
+                ]
+            );
         } else {
             panic!("Expected PackageCommands::Add");
         }
@@ -438,13 +472,13 @@ mod tests {
     #[test]
     fn test_add_without_plugin_defaults_to_none() {
         // Arrange & Act
-        let cli = Cli::try_parse_from([
-            "homeos", "package", "add", "neovim",
-        ])
-        .unwrap();
+        let cli = Cli::try_parse_from(["homeos", "package", "add", "neovim"]).unwrap();
 
         // Assert
-        if let Commands::Package { command: PackageCommands::Add { plugin, params, .. } } = cli.command {
+        if let Commands::Package {
+            command: PackageCommands::Add { plugin, params, .. },
+        } = cli.command
+        {
             assert!(plugin.is_none());
             assert!(params.is_empty());
         } else {

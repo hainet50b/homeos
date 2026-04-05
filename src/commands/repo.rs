@@ -97,7 +97,14 @@ mod tests {
             .output()
             .unwrap();
         Command::new("git")
-            .args(["-C", &dir.to_string_lossy(), "commit", "--allow-empty", "-m", "init"])
+            .args([
+                "-C",
+                &dir.to_string_lossy(),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
             .output()
             .unwrap();
     }
@@ -314,9 +321,7 @@ mod tests {
         let ctx = setup_context(&base_dir);
         let repo_dir = ctx.repos_dir().join("my-repo");
         std::fs::create_dir_all(&repo_dir).unwrap();
-        let state = crate::state::State {
-            installed: vec![],
-        };
+        let state = crate::state::State { installed: vec![] };
         state.save(&repo_dir.join("state.yml")).unwrap();
 
         // Act

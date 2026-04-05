@@ -24,7 +24,10 @@ pub fn topological_sort(
             for dep in &pkg_config.depends_on {
                 if pkg_set.contains(dep.as_str()) {
                     *in_degree.entry(name).or_insert(0) += 1;
-                    reverse_dependencies.entry(dep.as_str()).or_default().push(name);
+                    reverse_dependencies
+                        .entry(dep.as_str())
+                        .or_default()
+                        .push(name);
                 }
             }
         }
@@ -139,15 +142,8 @@ mod tests {
     #[test]
     fn test_chain_dependency_orders_correctly() {
         // Arrange — c depends on b, b depends on a
-        let config = fixture_config(vec![
-            ("c", vec!["b"]),
-            ("b", vec!["a"]),
-            ("a", vec![]),
-        ]);
-        let packages: Vec<String> = vec!["c", "b", "a"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        let config = fixture_config(vec![("c", vec!["b"]), ("b", vec!["a"]), ("a", vec![])]);
+        let packages: Vec<String> = vec!["c", "b", "a"].into_iter().map(String::from).collect();
 
         // Act
         let sut = topological_sort(&config, &packages).unwrap();
@@ -201,22 +197,20 @@ mod tests {
     #[test]
     fn test_three_way_circular_dependency_errors() {
         // Arrange — a -> b -> c -> a
-        let config = fixture_config(vec![
-            ("a", vec!["b"]),
-            ("b", vec!["c"]),
-            ("c", vec!["a"]),
-        ]);
-        let packages: Vec<String> = vec!["a", "b", "c"]
-            .into_iter()
-            .map(String::from)
-            .collect();
+        let config = fixture_config(vec![("a", vec!["b"]), ("b", vec!["c"]), ("c", vec!["a"])]);
+        let packages: Vec<String> = vec!["a", "b", "c"].into_iter().map(String::from).collect();
 
         // Act
         let result = topological_sort(&config, &packages);
 
         // Assert
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circular dependency"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
     }
 
     #[test]

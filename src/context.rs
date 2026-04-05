@@ -52,7 +52,10 @@ mod tests {
     #[test]
     fn test_repos_dir() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.repos_dir();
@@ -64,7 +67,10 @@ mod tests {
     #[test]
     fn test_repo_dir_default() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.repo_dir();
@@ -76,7 +82,10 @@ mod tests {
     #[test]
     fn test_repo_dir_custom() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "my-repo".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "my-repo".to_string(),
+        );
 
         // Act
         let result = sut.repo_dir();
@@ -88,7 +97,10 @@ mod tests {
     #[test]
     fn test_packages_dir() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.packages_dir();
@@ -100,31 +112,46 @@ mod tests {
     #[test]
     fn test_config_path() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.config_path();
 
         // Assert
-        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/homeos.yml"));
+        assert_eq!(
+            result,
+            Path::new("/tmp/test-homeos/repos/default/homeos.yml")
+        );
     }
 
     #[test]
     fn test_state_path() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.state_path();
 
         // Assert
-        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/state.yml"));
+        assert_eq!(
+            result,
+            Path::new("/tmp/test-homeos/repos/default/state.yml")
+        );
     }
 
     #[test]
     fn test_plugins_dir() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.plugins_dir();
@@ -136,13 +163,19 @@ mod tests {
     #[test]
     fn test_gitignore_path() {
         // Arrange
-        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")), "default".to_string());
+        let sut = Context::new(
+            Some(PathBuf::from("/tmp/test-homeos")),
+            "default".to_string(),
+        );
 
         // Act
         let result = sut.gitignore_path();
 
         // Assert
-        assert_eq!(result, Path::new("/tmp/test-homeos/repos/default/.gitignore"));
+        assert_eq!(
+            result,
+            Path::new("/tmp/test-homeos/repos/default/.gitignore")
+        );
     }
 
     #[test]
@@ -152,11 +185,26 @@ mod tests {
 
         // Act & Assert
         assert_eq!(sut.repo_dir(), Path::new("/tmp/test-homeos/repos/work"));
-        assert_eq!(sut.packages_dir(), Path::new("/tmp/test-homeos/repos/work/packages"));
-        assert_eq!(sut.plugins_dir(), Path::new("/tmp/test-homeos/repos/work/plugins"));
-        assert_eq!(sut.config_path(), Path::new("/tmp/test-homeos/repos/work/homeos.yml"));
-        assert_eq!(sut.state_path(), Path::new("/tmp/test-homeos/repos/work/state.yml"));
-        assert_eq!(sut.gitignore_path(), Path::new("/tmp/test-homeos/repos/work/.gitignore"));
+        assert_eq!(
+            sut.packages_dir(),
+            Path::new("/tmp/test-homeos/repos/work/packages")
+        );
+        assert_eq!(
+            sut.plugins_dir(),
+            Path::new("/tmp/test-homeos/repos/work/plugins")
+        );
+        assert_eq!(
+            sut.config_path(),
+            Path::new("/tmp/test-homeos/repos/work/homeos.yml")
+        );
+        assert_eq!(
+            sut.state_path(),
+            Path::new("/tmp/test-homeos/repos/work/state.yml")
+        );
+        assert_eq!(
+            sut.gitignore_path(),
+            Path::new("/tmp/test-homeos/repos/work/.gitignore")
+        );
     }
 
     #[test]
