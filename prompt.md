@@ -5,10 +5,11 @@ Read the PRD at prd.md and progress.md, then follow these instructions:
 3. Implement ONLY that one task.
 4. Verify that functions, methods, and CLI subcommands across the affected files are ordered consistently with `README.md`. Fix any ordering inconsistencies, not just in code you added.
 5. Write corresponding unit tests following the 3A pattern (Arrange / Act / Assert). Fixtures must only handle Arrange (preconditions). Act must explicitly call the method or function under test — never hide it inside a fixture.
-6. Run `cargo clippy` and fix any warnings.
-7. Run `cargo test` to verify all existing tests still pass.
-8. If clippy and tests pass, mark the task as checked (- [x]) in the PRD.
-9. Append a progress entry to `progress.md` using the following format:
+6. Run `cargo fmt`.
+7. Run `cargo clippy` and fix any warnings.
+8. Run `cargo test` to verify all existing tests still pass.
+9. If fmt, clippy, and tests pass, mark the task as checked (- [x]) in the PRD.
+10. Append a progress entry to `progress.md` using the following format:
 
 ```
 ## Task: <task name>
@@ -34,8 +35,8 @@ Read the PRD at prd.md and progress.md, then follow these instructions:
 <any issues encountered, workarounds applied, or lessons learned — write as much as needed>
 ```
 
-10. Stage all changes and create a git commit with a descriptive message.
-11. If ALL tasks in both Tasks and Post Tasks are now checked, include the exact text `<promise>COMPLETE</promise>` in your response.
+11. Stage all changes and create a git commit with a descriptive message.
+12. If ALL tasks in both Tasks and Post Tasks are now checked, include the exact text `<promise>COMPLETE</promise>` in your response.
 
 IMPORTANT:
 - Work on only ONE task, then stop.

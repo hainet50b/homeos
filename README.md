@@ -8,6 +8,7 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
 
 ## Table of contents
 
+- [Design Principles](#design-principles)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
   - [General](#general)
@@ -25,6 +26,13 @@ A CLI tool to set up and reproduce your personal machine environment from a sing
   - [Plugin structure](#plugin-structure)
   - [params.yml](#paramsyml)
   - [Template syntax](#template-syntax)
+
+## Design Principles
+
+- **Transparency** — You can always see what is installed (`state.yml`), what will be executed (`package cat`), in what order (`depends_on`), and what will be skipped (plan display). Nothing happens behind the scenes.
+- **Structured freedom** — homeos gives structure to your scripts (directory layout, naming conventions, dependency ordering) but never controls what's inside them. The scripts and even plugins are yours.
+- **Git-native** — Everything lives in a Git repository. Push to share, clone to reproduce. Plugins, packages, and configuration travel together.
+- **Confirmation before action** — Every destructive or side-effecting operation shows a plan and asks for confirmation before proceeding.
 
 ## Quick Start
 
@@ -173,7 +181,7 @@ Each repository contains its own `homeos.yml`.
 ```sh
 homeos plugin list
 homeos plugin list-remote
-homeos plugin add <name> [<url>]
+homeos plugin add <name> [<url>] [--local]
 homeos plugin remove <name>
 ```
 
@@ -183,7 +191,8 @@ Manage plugins used to provide package action implementations.
 - `list-remote` — List official plugins available from GitHub.
 - `add` — Register a plugin and clone it into `plugins/`.  
   Without `<url>`, resolves the official repository automatically.  
-  With `<url>`, clones the specified repository.
+  With `<url>`, clones the specified repository.  
+  With `--local`, creates an empty plugin skeleton (`params.yml` + template files) for local development.
 - `remove` — Remove the plugin directory and entry from `homeos.yml`.
 
 Each repository manages its own plugins.
@@ -305,6 +314,8 @@ This pattern is useful when you maintain multiple machines with overlapping but 
 ## Plugin Development
 
 This section is for plugin developers.
+
+Downloaded plugins can be freely edited locally. Changes only affect your machine and are not pushed upstream. You can also create plugins from scratch using `homeos plugin add <name> --local`.
 
 ### Plugin structure
 
