@@ -77,6 +77,9 @@ pub enum PluginCommands {
         name: String,
         /// Remote URL to clone (defaults to official repository)
         url: Option<String>,
+        /// Create an empty plugin skeleton for local development
+        #[arg(long)]
+        local: bool,
     },
     /// Remove a plugin and its directory
     Remove {
@@ -223,8 +226,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Add { name, url } => {
-                if let Err(e) = commands::plugin::add(&ctx, &name, url.as_deref()) {
+            PluginCommands::Add { name, url, local } => {
+                if let Err(e) = commands::plugin::add(&ctx, &name, url.as_deref(), local) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -417,6 +420,40 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_plugin_add_local_flag() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "custom", "--local"]).unwrap();
+
+        // Assert
+        if let Commands::Plugin {
+            command: PluginCommands::Add { name, url, local },
+        } = cli.command
+        {
+            assert_eq!(name, "custom");
+            assert!(url.is_none());
+            assert!(local);
+        } else {
+            panic!("Expected PluginCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_plugin_add_without_local_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "dnf"]).unwrap();
+
+        // Assert
+        if let Commands::Plugin {
+            command: PluginCommands::Add { local, .. },
+        } = cli.command
+        {
+            assert!(!local);
+        } else {
+            panic!("Expected PluginCommands::Add");
+        }
     }
 
     #[test]
