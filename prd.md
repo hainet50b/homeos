@@ -146,7 +146,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Respect dependency order in `homeos package uninstall` — expand dependencies and topologically sort, then execute in reverse order (dependents first, then their dependencies).
 - [ ] Ensure all commands produce meaningful stdout output describing what was done. Review every command and add output where missing for consistency.
 - [ ] Implement `homeos plugin cat <name>` — display all template files and `params.yml` for the specified plugin with filename headers.
-- [ ] Implement `homeos plugin cd <name>` — launch a shell in the plugin directory.
+- [ ] Implement `homeos plugin cd [<name>]` — launch a shell in the plugins root directory, or in the specific plugin directory if name is given.
 - [ ] Fix `homeos plugin add --local` to generate all template files (.sh.tmpl and .ps1.tmpl) regardless of the current OS. OS-specific selection happens at `package add` time, not plugin creation time.
 
 ## Completion Criteria

@@ -184,7 +184,7 @@ homeos plugin list-remote
 homeos plugin add <name> [<url>] [--local]
 homeos plugin remove <name>
 homeos plugin cat <name>
-homeos plugin cd <name>
+homeos plugin cd [<name>]
 ```
 
 Manage plugins used to provide package action implementations.
@@ -197,7 +197,8 @@ Manage plugins used to provide package action implementations.
   With `--local`, creates an empty plugin skeleton (`params.yml` + template files) for local development.
 - `remove` — Remove the plugin directory and entry from `homeos.yml`.
 - `cat` — Display all template files and `params.yml` for the specified plugin.
-- `cd` — Launch a shell in the plugin directory.
+- `cd` — Launch a shell in the plugins root directory.  
+  If name is given, move to the specific plugin directory.
 
 Each repository manages its own plugins.
 
