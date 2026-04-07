@@ -152,6 +152,8 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Show plugin name in plan display — append `(plugin: <name>)` to packages that use a plugin.
 - [ ] Change `homeos package add` to deny if the package directory already exists, instead of adding only missing scripts. Show a clear error message suggesting to remove the existing directory first.
 - [ ] Enhance `homeos package remove` to accept multiple packages (`<packages>...`). Update help message to "Remove package entries from homeos.yml".
+- [ ] Rename CLI argument placeholders and variable names: plugin commands `name` → `plugin`, repo commands `name` → `repo`. Update help output, variable names, and call sites.
+- [ ] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
 
 ## Completion Criteria
 

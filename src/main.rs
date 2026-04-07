@@ -71,7 +71,7 @@ pub enum PluginCommands {
     List,
     /// List official plugins available from GitHub
     ListRemote,
-    /// Register a plugin and clone it into plugins/
+    /// Register a plugin
     Add {
         /// Plugin name
         name: String,
@@ -81,7 +81,7 @@ pub enum PluginCommands {
         #[arg(long)]
         local: bool,
     },
-    /// Remove a plugin and its directory
+    /// Remove a plugin
     Remove {
         /// Plugin name
         name: String,
