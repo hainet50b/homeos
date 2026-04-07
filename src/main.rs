@@ -36,7 +36,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create the initial repository structure
+    /// Create the initial repo structure
     Init {
         /// Remote URL to clone as the default repo
         url: Option<String>,
@@ -44,9 +44,9 @@ pub enum Commands {
         #[arg(long)]
         strip_git: bool,
     },
-    /// Launch a shell in the default repository directory
+    /// Launch a shell in the repo directory
     Cd,
-    /// Install missing packages and update installed ones
+    /// Install new packages and update installed ones
     Apply,
     /// Manage packages
     Package {
@@ -117,7 +117,7 @@ pub enum PackageCommands {
         /// Dependencies for this package
         #[arg(long = "depends-on", num_args = 1..)]
         depends_on: Vec<String>,
-        /// Plugin to use for generating action scripts
+        /// Plugin to use for generating scripts
         #[arg(long)]
         plugin: Option<String>,
         /// Plugin parameters as key=value pairs
@@ -157,7 +157,7 @@ pub enum PackageCommands {
         #[arg(required = true)]
         packages: Vec<String>,
     },
-    /// Display all action scripts for a package
+    /// Display all scripts for a package
     Cat {
         /// Package name
         package: String,
@@ -167,19 +167,19 @@ pub enum PackageCommands {
         /// Package name (optional — defaults to packages root)
         package: Option<String>,
     },
-    /// Execute install action scripts
+    /// Execute install scripts
     Install {
         /// Package names
         #[arg(required = true)]
         packages: Vec<String>,
     },
-    /// Execute update action scripts
+    /// Execute update scripts
     Update {
         /// Package names
         #[arg(required = true)]
         packages: Vec<String>,
     },
-    /// Execute uninstall action scripts
+    /// Execute uninstall scripts
     Uninstall {
         /// Package names
         #[arg(required_unless_present = "all")]
