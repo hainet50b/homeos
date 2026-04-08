@@ -176,7 +176,7 @@ Options:
 
 #### `homeos cd`
 
-Launch a shell in the base directory.
+Launch a shell in the repos directory.
 
 ```
 Usage: homeos cd
