@@ -32,7 +32,7 @@ impl PluginManifest {
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct PackageConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub actions_overrides: BTreeMap<String, String>,
+    pub script_aliases: BTreeMap<String, String>,
     #[serde(default = "default_enabled", skip_serializing_if = "is_true")]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -83,7 +83,7 @@ mod tests {
         let yaml = r#"
 packages:
   neovim:
-    actions_overrides:
+    script_aliases:
       update: install
     enabled: false
   ripgrep:
@@ -96,10 +96,10 @@ packages:
         // Assert
         assert_eq!(sut.packages.len(), 2);
         let neovim = &sut.packages["neovim"];
-        assert_eq!(neovim.actions_overrides["update"], "install");
+        assert_eq!(neovim.script_aliases["update"], "install");
         assert!(!neovim.enabled);
         let ripgrep = &sut.packages["ripgrep"];
-        assert!(ripgrep.actions_overrides.is_empty());
+        assert!(ripgrep.script_aliases.is_empty());
         assert!(ripgrep.enabled);
     }
 
@@ -126,7 +126,7 @@ packages:
         // Assert
         let git = &sut.packages["git"];
         assert!(git.enabled);
-        assert!(git.actions_overrides.is_empty());
+        assert!(git.script_aliases.is_empty());
     }
 
     #[test]
@@ -140,14 +140,14 @@ packages:
         // Assert
         let fish = &sut.packages["fish"];
         assert!(fish.enabled);
-        assert!(fish.actions_overrides.is_empty());
+        assert!(fish.script_aliases.is_empty());
     }
 
     #[test]
     fn test_load_from_file() {
         // Arrange
         let tmp = fixture_file(
-            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n    enabled: false\n",
+            "packages:\n  neovim:\n    script_aliases:\n      update: install\n    enabled: false\n",
         );
 
         // Act
@@ -165,7 +165,7 @@ packages:
         config.packages.insert(
             "starship".to_string(),
             PackageConfig {
-                actions_overrides: BTreeMap::from([("update".to_string(), "install".to_string())]),
+                script_aliases: BTreeMap::from([("update".to_string(), "install".to_string())]),
                 enabled: true,
                 depends_on: Vec::new(),
                 plugin: None,
@@ -189,7 +189,7 @@ packages:
             packages: BTreeMap::from([(
                 "git".to_string(),
                 PackageConfig {
-                    actions_overrides: BTreeMap::new(),
+                    script_aliases: BTreeMap::new(),
                     enabled: true,
                     depends_on: Vec::new(),
                     plugin: None,
@@ -203,7 +203,7 @@ packages:
         let sut = yaml_serde::to_string(&config).unwrap();
 
         // Assert
-        assert!(!sut.contains("actions_overrides"));
+        assert!(!sut.contains("script_aliases"));
         assert!(!sut.contains("enabled"));
     }
 

@@ -1526,7 +1526,7 @@ mod tests {
     fn test_enable_preserves_other_fields() {
         // Arrange
         let (_tmp, ctx) = fixture(
-            "packages:\n  neovim:\n    actions_overrides:\n      update: install\n    enabled: false\n",
+            "packages:\n  neovim:\n    script_aliases:\n      update: install\n    enabled: false\n",
         );
 
         // Act
@@ -1537,7 +1537,7 @@ mod tests {
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].enabled);
         assert_eq!(
-            config.packages["neovim"].actions_overrides["update"],
+            config.packages["neovim"].script_aliases["update"],
             "install"
         );
     }
@@ -1644,7 +1644,7 @@ mod tests {
     fn test_disable_preserves_other_fields() {
         // Arrange
         let (_tmp, ctx) =
-            fixture("packages:\n  neovim:\n    actions_overrides:\n      update: install\n");
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
 
         // Act
         let result = disable(&ctx, &["neovim".to_string()]);
@@ -1654,7 +1654,7 @@ mod tests {
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages["neovim"].enabled);
         assert_eq!(
-            config.packages["neovim"].actions_overrides["update"],
+            config.packages["neovim"].script_aliases["update"],
             "install"
         );
     }

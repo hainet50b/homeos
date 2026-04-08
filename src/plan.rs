@@ -31,7 +31,7 @@ impl Action {
         }
     }
 
-    /// Action name as used in script filenames and overrides (e.g., "install").
+    /// Action name as used in script filenames and aliases (e.g., "install").
     pub fn as_str(self) -> &'static str {
         match self {
             Action::Install => "install",
@@ -223,11 +223,11 @@ impl Plan {
     }
 }
 
-/// Resolve the script filename for a given action, considering overrides.
+/// Resolve the script filename for a given action, considering aliases.
 fn resolve_script_name(pkg_config: &PackageConfig, action: Action) -> String {
     let action_str = action.as_str();
     let resolved_action = pkg_config
-        .actions_overrides
+        .script_aliases
         .get(action_str)
         .map(|s| s.as_str())
         .unwrap_or(action_str);
@@ -1102,7 +1102,7 @@ The following packages will be skipped:
     }
 
     #[test]
-    fn test_build_detects_unmodified_with_action_override() {
+    fn test_build_detects_unmodified_with_script_alias() {
         // Arrange
         let tmp = tempfile::TempDir::new().unwrap();
         let packages_dir = tmp.path().join("packages");
@@ -1120,7 +1120,7 @@ The following packages will be skipped:
         packages.insert(
             "neovim".to_string(),
             PackageConfig {
-                actions_overrides: BTreeMap::from([("update".to_string(), "install".to_string())]),
+                script_aliases: BTreeMap::from([("update".to_string(), "install".to_string())]),
                 enabled: true,
                 ..Default::default()
             },

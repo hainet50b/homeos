@@ -390,11 +390,11 @@ fn update_state_per_package(
     Ok(())
 }
 
-/// Resolve the script filename for a given action, considering overrides.
+/// Resolve the script filename for a given action, considering aliases.
 fn resolve_script_name(pkg_config: &PackageConfig, action: Action) -> String {
     let action_str = action.as_str();
     let resolved_action = pkg_config
-        .actions_overrides
+        .script_aliases
         .get(action_str)
         .map(|s| s.as_str())
         .unwrap_or(action_str);
@@ -488,10 +488,10 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_script_name_with_override() {
+    fn test_resolve_script_name_with_alias() {
         // Arrange
         let pkg_config = PackageConfig {
-            actions_overrides: std::collections::BTreeMap::from([(
+            script_aliases: std::collections::BTreeMap::from([(
                 "update".to_string(),
                 "install".to_string(),
             )]),
@@ -636,10 +636,10 @@ mod tests {
     }
 
     #[test]
-    fn test_run_action_respects_action_overrides() {
+    fn test_run_action_respects_script_aliases() {
         // Arrange
         let (_tmp, ctx) =
-            fixture("packages:\n  neovim:\n    actions_overrides:\n      update: install\n");
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
         State {
             installed: vec!["neovim".to_string()],
         }

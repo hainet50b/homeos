@@ -20,7 +20,7 @@ See `README.md` for the full specification of commands, directory structure, and
 ```yaml
 packages:
   neovim:
-    actions_overrides: { update: install }
+    script_aliases: { update: install }
     enabled: false
 ```
 
@@ -44,7 +44,7 @@ Scripts are resolved by convention based on the OS and executed via `std::proces
 - Linux / macOS: `install.sh`, `update.sh`, `uninstall.sh` (run with `sh`)
 - Windows: `install.ps1`, `update.ps1`, `uninstall.ps1` (run with `pwsh`)
 
-`actions_overrides` aliases an action to another (e.g., `{ update: install }` runs the install script for update).
+`script_aliases` aliases an action to another (e.g., `{ update: install }` runs the install script for update).
 
 ### Confirmation prompt
 
@@ -71,7 +71,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 ## Tasks
 
 - [x] Scaffold Cargo project with clap CLI skeleton (`homeos --help` works). Base directory must be injectable so tests use a `tempdir` instead of the real data directory.
-- [x] Implement `homeos.yml` parsing with serde (packages with `actions_overrides` and `enabled`)
+- [x] Implement `homeos.yml` parsing with serde (packages with `script_aliases` and `enabled`)
 - [x] Implement `homeos init` — create directory structure and empty `homeos.yml`
 - [x] Migrate from `serde_yaml` to `yaml_serde` and update all existing code and tests
 - [x] Refactor all existing unit tests to follow the 3A pattern (Arrange / Act / Assert)
@@ -157,7 +157,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Rename CLI argument placeholders and variable names: plugin commands `name` → `plugin`, repo commands `name` → `repo`. Update help output, variable names, and call sites.
 - [x] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
 - [x] Guard `homeos repo remove` against deleting the `default` repository. Error with a clear message.
-- [ ] Rename `actions_overrides` to `script_aliases` in `PackageConfig`, `homeos.yml` serde, and all related code and tests.
+- [x] Rename `script_aliases` to `script_aliases` in `PackageConfig`, `homeos.yml` serde, and all related code and tests.
 - [ ] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).
 - [ ] Implement `homeos package add-alias <pkg> <alias>...` — add script aliases to an existing package (e.g., `update=install`).
 - [ ] Implement `homeos package remove-alias <pkg> <alias>...` — remove script aliases from a package by target name (e.g., `update`).

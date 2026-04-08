@@ -2404,3 +2404,31 @@ Added an early guard in `repo::remove` that checks if the repo name is `"default
 
 - All 379 tests pass (1 new test added).
 - The guard is placed before the directory existence check, so it rejects "default" even if the directory doesn't exist — this is intentional since the error is about the name, not the filesystem state.
+
+## Task: Rename `actions_overrides` to `script_aliases`
+
+**Timestamp:**
+
+2026-04-08T10:24:01Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Renamed `actions_overrides` to `script_aliases` in `PackageConfig` struct field, serde serialization key, and all references across the codebase. Updated YAML strings in test fixtures, assertion field accesses, doc comments ("overrides" → "aliases"), and test function names (`test_resolve_script_name_with_override` → `test_resolve_script_name_with_alias`, `test_run_action_respects_action_overrides` → `test_run_action_respects_script_aliases`, `test_build_detects_unmodified_with_action_override` → `test_build_detects_unmodified_with_script_alias`). Also updated the PRD data model section to use the new name.
+
+**What was changed:**
+
+- src/config.rs (renamed field and all test references)
+- src/plan.rs (renamed field access, doc comments, and test function name)
+- src/commands/package/action.rs (renamed field access, doc comment, and test function names)
+- src/commands/package/registry.rs (renamed YAML fixture strings and field accesses in tests)
+- prd.md (updated data model references and marked task as checked)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 379 tests pass (no new tests added, existing tests updated).
+- Since the serde field name defaults to the Rust field name, the YAML key automatically becomes `script_aliases` — no explicit `#[serde(rename)]` needed.
