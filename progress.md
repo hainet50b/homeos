@@ -2432,3 +2432,30 @@ Renamed `actions_overrides` to `script_aliases` in `PackageConfig` struct field,
 
 - All 379 tests pass (no new tests added, existing tests updated).
 - Since the serde field name defaults to the Rust field name, the YAML key automatically becomes `script_aliases` — no explicit `#[serde(rename)]` needed.
+
+## Task: Add `--script-aliases` option to `homeos package add`
+
+**Timestamp:**
+
+2026-04-08T10:28:08Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added `--script-aliases` option to `homeos package add` CLI definition, using the same `parse_key_value` parser as `--params`. The option accepts `target=source` pairs (e.g., `--script-aliases update=install`). Updated the `add` function in `registry.rs` to accept and persist script aliases in `homeos.yml`. Added 4 new tests: 2 CLI parsing tests (`test_add_script_aliases_option`, `test_add_without_script_aliases_defaults_to_empty`) and 2 integration tests (`test_add_with_script_aliases_persists_after_reload`, `test_add_with_empty_script_aliases_omits_field`). Updated all 22 existing test call sites to pass the new `script_aliases` parameter.
+
+**What was changed:**
+
+- src/main.rs (added `--script-aliases` option to `PackageCommands::Add`, updated dispatch, added 2 CLI tests)
+- src/commands/package/registry.rs (added `script_aliases` parameter to `add()`, updated all test call sites, added 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 383 tests pass (4 new tests added, 22 existing tests updated with new parameter).
+- The `--script-aliases` option is ordered between `--depends-on` and `--plugin` in the CLI definition, matching the README specification.
+- Empty `script_aliases` is omitted from YAML output via existing `skip_serializing_if = "BTreeMap::is_empty"` on `PackageConfig`.

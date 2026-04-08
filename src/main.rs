@@ -127,6 +127,9 @@ pub enum PackageCommands {
         /// Dependencies for this package
         #[arg(long = "depends-on", num_args = 1..)]
         depends_on: Vec<String>,
+        /// Script aliases as target=source pairs (e.g., update=install)
+        #[arg(long = "script-aliases", num_args = 1.., value_parser = parse_key_value)]
+        script_aliases: Vec<(String, String)>,
         /// Plugin to use for generating scripts
         #[arg(long)]
         plugin: Option<String>,
@@ -292,14 +295,18 @@ fn main() {
             PackageCommands::Add {
                 package,
                 depends_on,
+                script_aliases,
                 plugin,
                 params,
             } => {
+                let script_aliases_map: BTreeMap<String, String> =
+                    script_aliases.into_iter().collect();
                 let params_map: BTreeMap<String, String> = params.into_iter().collect();
                 if let Err(e) = commands::package::add(
                     &ctx,
                     &package,
                     &depends_on,
+                    &script_aliases_map,
                     plugin.as_deref(),
                     &params_map,
                 ) {
@@ -491,6 +498,49 @@ mod tests {
         } = cli.command
         {
             assert_eq!(plugin, Some("dnf".to_string()));
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_script_aliases_option() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "neovim",
+            "--script-aliases",
+            "update=install",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Add { script_aliases, .. },
+        } = cli.command
+        {
+            assert_eq!(
+                script_aliases,
+                vec![("update".to_string(), "install".to_string())]
+            );
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_without_script_aliases_defaults_to_empty() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "package", "add", "neovim"]).unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Add { script_aliases, .. },
+        } = cli.command
+        {
+            assert!(script_aliases.is_empty());
         } else {
             panic!("Expected PackageCommands::Add");
         }

@@ -158,7 +158,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
 - [x] Guard `homeos repo remove` against deleting the `default` repository. Error with a clear message.
 - [x] Rename `script_aliases` to `script_aliases` in `PackageConfig`, `homeos.yml` serde, and all related code and tests.
-- [ ] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).
+- [x] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).
 - [ ] Implement `homeos package add-alias <pkg> <alias>...` — add script aliases to an existing package (e.g., `update=install`).
 - [ ] Implement `homeos package remove-alias <pkg> <alias>...` — remove script aliases from a package by target name (e.g., `update`).
 - [ ] Change `homeos package add` to generate skeleton scripts for all OS (both `.sh` and `.ps1`) regardless of the current OS.

@@ -64,6 +64,7 @@ pub fn add(
     ctx: &Context,
     package: &str,
     depends_on: &[String],
+    script_aliases: &BTreeMap<String, String>,
     plugin: Option<&str>,
     params: &BTreeMap<String, String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -75,6 +76,7 @@ pub fn add(
 
     let pkg_config = PackageConfig {
         depends_on: depends_on.to_vec(),
+        script_aliases: script_aliases.clone(),
         plugin: plugin.map(|s| s.to_string()),
         params: params.clone(),
         ..Default::default()
@@ -575,7 +577,14 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -591,7 +600,15 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
+        add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -609,7 +626,15 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
+        add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -626,7 +651,14 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_err());
@@ -640,7 +672,14 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_err());
@@ -653,7 +692,14 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -670,7 +716,14 @@ mod tests {
         std::fs::create_dir_all(&pkg_dir).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         let err = result.unwrap_err().to_string();
@@ -689,6 +742,7 @@ mod tests {
             &ctx,
             "neovim",
             &["git".to_string(), "curl".to_string()],
+            &BTreeMap::new(),
             None,
             &BTreeMap::new(),
         );
@@ -706,7 +760,14 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -722,11 +783,59 @@ mod tests {
         let dependencies = vec!["git".to_string(), "curl".to_string()];
 
         // Act
-        add(&ctx, "neovim", &dependencies, None, &BTreeMap::new()).unwrap();
+        add(
+            &ctx,
+            "neovim",
+            &dependencies,
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
         let config = Config::load(&ctx.config_path()).unwrap();
 
         // Assert
         assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_add_with_script_aliases_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let script_aliases = BTreeMap::from([("update".to_string(), "install".to_string())]);
+
+        // Act
+        add(&ctx, "neovim", &[], &script_aliases, None, &BTreeMap::new()).unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(
+            config.packages["neovim"].script_aliases,
+            BTreeMap::from([("update".to_string(), "install".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_add_with_empty_script_aliases_omits_field() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let yaml = std::fs::read_to_string(ctx.config_path()).unwrap();
+
+        // Assert
+        assert!(!yaml.contains("script_aliases"));
     }
 
     #[test]
@@ -737,7 +846,14 @@ mod tests {
         std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            Some("dnf"),
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -755,7 +871,7 @@ mod tests {
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
         // Act
-        let result = add(&ctx, "neovim", &[], Some("dnf"), &params);
+        let result = add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params);
 
         // Assert
         assert!(result.is_ok());
@@ -773,7 +889,15 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
+        add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        )
+        .unwrap();
 
         // Assert
         let config = Config::load(&ctx.config_path()).unwrap();
@@ -792,7 +916,7 @@ mod tests {
         params.insert("repo".to_string(), "extra".to_string());
 
         // Act
-        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params).unwrap();
         let config = Config::load(&ctx.config_path()).unwrap();
 
         // Assert
@@ -829,7 +953,7 @@ mod tests {
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
         // Act
-        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params).unwrap();
 
         // Assert
         let install_content = std::fs::read_to_string(
@@ -873,7 +997,7 @@ mod tests {
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
         // Act
-        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params).unwrap();
 
         // Assert
         let pkg_dir = ctx.packages_dir().join("neovim");
@@ -889,7 +1013,14 @@ mod tests {
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], Some("nonexistent"), &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            Some("nonexistent"),
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_err());
@@ -911,7 +1042,14 @@ mod tests {
         .unwrap();
 
         // Act
-        let result = add(&ctx, "neovim", &[], Some("dnf"), &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            Some("dnf"),
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_err());
@@ -944,7 +1082,7 @@ mod tests {
         params.insert("repo".to_string(), "extra".to_string());
 
         // Act
-        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params).unwrap();
 
         // Assert
         let content = std::fs::read_to_string(
@@ -974,7 +1112,7 @@ mod tests {
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
         // Act
-        let result = add(&ctx, "neovim", &[], Some("dnf"), &params);
+        let result = add(&ctx, "neovim", &[], &BTreeMap::new(), Some("dnf"), &params);
 
         // Assert
         let err = result.unwrap_err().to_string();
@@ -998,7 +1136,14 @@ mod tests {
         // No plugin.yml
 
         // Act
-        let result = add(&ctx, "mypkg", &[], Some("simple"), &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "mypkg",
+            &[],
+            &BTreeMap::new(),
+            Some("simple"),
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1021,7 +1166,14 @@ mod tests {
         // No template files
 
         // Act
-        let result = add(&ctx, "mypkg", &[], Some("empty"), &BTreeMap::new());
+        let result = add(
+            &ctx,
+            "mypkg",
+            &[],
+            &BTreeMap::new(),
+            Some("empty"),
+            &BTreeMap::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
