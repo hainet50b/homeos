@@ -71,3 +71,5 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-05T04:15:40Z,67bd428,"Add URL existence check before git clone in homeos plugin add",131,24,6278,0.80883375
 2026-04-05T04:19:28Z,3ffd0a0,"Implement --local flag for homeos plugin add",224,43,10037,1.6729812499999999
 2026-04-05T04:21:44Z,8648693,"Remove .git directory from cloned plugins after homeos plugin add",133,22,3614,0.8633576
+2026-04-08T07:14:44Z,6370fdd,"Warn when executing unmodified skeleton scripts in plan display",487,151,18513,3.19787125
+2026-04-08T07:19:00Z,cc9ab25,"Respect dependency order in homeos package uninstall",252,12217,8458,1.9557979999999995
