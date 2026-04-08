@@ -2185,3 +2185,30 @@ Implemented `homeos plugin cd [<name>]` command that launches a shell in the plu
 - Function ordering in plugin.rs matches README reference order: list, list-remote, add, remove, cat, cd.
 - The implementation mirrors the `package cd` pattern: separate `resolve_cd_target` for testability, `cd` for shell launch.
 
+---
+
+## Task: Fix `homeos plugin add --local` to generate all template files
+
+**Timestamp:**
+
+2026-04-08T08:09:37Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Fixed `add_local` in `plugin.rs` to generate template files for all OS (both `.sh.tmpl` and `.ps1.tmpl`) instead of only the current OS extension. Previously, it called `script_extension()` which returns `sh` on Linux/macOS or `ps1` on Windows, generating only 3 templates. Now it iterates over both extensions, generating 6 template files (install/update/uninstall × sh/ps1). Removed the now-unused `script_extension` import. Updated two tests (`test_add_local_creates_skeleton` and `test_add_local_template_content`) to assert on both extensions.
+
+**What was changed:**
+
+- src/commands/plugin.rs (fixed `add_local` to generate all templates, removed unused import, updated 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 359 tests pass (no new tests needed — existing tests were updated to cover the new behavior).
+- OS-specific selection now correctly happens only at `package add` time when templates are rendered, not at plugin creation time.
+
