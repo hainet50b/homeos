@@ -29,7 +29,7 @@ impl PluginManifest {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct PackageConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub script_aliases: BTreeMap<String, String>,
@@ -41,6 +41,18 @@ pub struct PackageConfig {
     pub plugin: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub params: BTreeMap<String, String>,
+}
+
+impl Default for PackageConfig {
+    fn default() -> Self {
+        Self {
+            script_aliases: BTreeMap::new(),
+            enabled: true,
+            depends_on: Vec::new(),
+            plugin: None,
+            params: BTreeMap::new(),
+        }
+    }
 }
 
 fn default_enabled() -> bool {
@@ -75,6 +87,19 @@ mod tests {
         let mut tmp = NamedTempFile::new().unwrap();
         write!(tmp, "{}", content).unwrap();
         tmp
+    }
+
+    #[test]
+    fn test_package_config_default_enabled_is_true() {
+        // Arrange / Act
+        let sut = PackageConfig::default();
+
+        // Assert
+        assert!(sut.enabled);
+        assert!(sut.script_aliases.is_empty());
+        assert!(sut.depends_on.is_empty());
+        assert_eq!(sut.plugin, None);
+        assert!(sut.params.is_empty());
     }
 
     #[test]

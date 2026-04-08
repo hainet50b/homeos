@@ -2566,3 +2566,35 @@ Changed `cat_to` to iterate over all extensions (`all_script_extensions()`) inst
 
 - All 401 tests pass (1 new test added).
 - The ordering is action-grouped: install.sh, install.ps1, update.sh, update.ps1, uninstall.sh, uninstall.ps1 — consistent with how `package add` generates skeleton scripts for all OS.
+
+## Task: Fix PackageConfig::default() so enabled defaults to true
+
+**Timestamp:**
+
+2026-04-08T11:25:30Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies — it's a standalone bug fix in the data model.
+
+**What was done:**
+
+Replaced `#[derive(Default)]` on `PackageConfig` with a manual `impl Default` that sets `enabled` to `true` (instead of `false`, the default for `bool`). The serde `default_enabled` function already handled deserialization correctly, but code using `PackageConfig::default()` or `..Default::default()` (e.g., `package add`) was getting `enabled: false`. Added 1 new test (`test_package_config_default_enabled_is_true`) verifying all default field values.
+
+**What was changed:**
+
+- src/config.rs (replaced `#[derive(Default)]` with manual `impl Default`, added 1 new test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 402 tests pass (1 new test added).
+- All existing `..Default::default()` usages either explicitly set `enabled` or expect it to be `true`, so the fix is fully backward-compatible.
+- The `package add` function in `registry.rs` uses `..Default::default()` without setting `enabled`, which means previously added packages were getting `enabled: false`. This is now fixed.
+
+---
+
+# Ralph Loop — 2026-04-08T11:23:50Z
+
+
