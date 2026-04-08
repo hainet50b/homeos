@@ -134,10 +134,11 @@ pub enum PackageCommands {
         #[arg(long, num_args = 1.., value_parser = parse_key_value)]
         params: Vec<(String, String)>,
     },
-    /// Remove a package
+    /// Remove package entries from homeos.yml
     Remove {
-        /// Package name
-        package: String,
+        /// Package names
+        #[arg(required = true)]
+        packages: Vec<String>,
     },
     /// Add dependencies to an existing package
     AddDep {
@@ -306,6 +307,12 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+            PackageCommands::Remove { packages } => {
+                if let Err(e) = commands::package::remove(&ctx, &packages) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::AddDep {
                 package,
                 dependency,
@@ -320,12 +327,6 @@ fn main() {
                 dependency,
             } => {
                 if let Err(e) = commands::package::remove_dep(&ctx, &package, &dependency) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Remove { package } => {
-                if let Err(e) = commands::package::remove(&ctx, &package) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

@@ -2298,3 +2298,29 @@ Added a check in `add()` that returns an error if the package directory already 
 - The `generate_skeleton_scripts` function still has an `if !path.exists()` guard per script file, which is now redundant but harmless. Left it as-is since removing it would be a separate cleanup.
 - The reordering aligns code with README order: list, add, remove, add-dep, remove-dep, enable, disable, cat, cd.
 
+## Task: Enhance `homeos package remove` to accept multiple packages
+
+**Timestamp:**
+
+2026-04-08T09:43:50Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed `remove` to accept `&[String]` instead of `&str`. All validation (not found, installed, depended on) runs upfront before any removal. The dependency check excludes packages that are part of the removal set, so mutually dependent packages can be removed together. Updated CLI definition to accept `Vec<String>` with `#[arg(required = true)]` and changed help text to "Remove package entries from homeos.yml". Fixed match arm ordering in `main.rs` to place `Remove` after `Add` (matching README order). Updated all 12 existing tests to use the new slice-based signature and added 4 new tests: multiple removal, first-not-found stops, installed-check stops, and mutual dependency removal.
+
+**What was changed:**
+
+- src/main.rs (changed `Remove` variant to `packages: Vec<String>`, updated match arm and reordered to match README)
+- src/commands/package/registry.rs (changed `remove` signature to `&[String]`, upfront validation, updated 12 existing tests, added 4 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 372 tests pass (4 new tests added, no test count decreased since existing tests were updated in-place).
+- The dependency check filters out packages in the removal set so that e.g. removing `git` and `neovim` (where neovim depends on git) succeeds — only external dependents block removal.
+
