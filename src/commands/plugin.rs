@@ -353,6 +353,41 @@ fn cat_to<W: Write>(
     Ok(())
 }
 
+pub fn cd(ctx: &Context, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = resolve_cd_target(ctx, name)?;
+    let shell = crate::commands::detect_shell();
+
+    let status = Command::new(&shell).current_dir(&dir).status()?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+fn resolve_cd_target(
+    ctx: &Context,
+    name: Option<&str>,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    let dir = match name {
+        Some(plugin_name) => {
+            if !config.plugins.contains_key(plugin_name) {
+                return Err(format!("Plugin '{plugin_name}' not found").into());
+            }
+            ctx.plugins_dir().join(plugin_name)
+        }
+        None => ctx.plugins_dir(),
+    };
+
+    if !dir.exists() {
+        return Err(format!("Directory not found at {}", dir.display()).into());
+    }
+
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1407,6 +1442,108 @@ mod tests {
 
         // Act
         let result = cat_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_cd_target_returns_plugins_dir_when_no_name() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        std::fs::create_dir_all(ctx.plugins_dir()).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, None).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.plugins_dir());
+    }
+
+    #[test]
+    fn test_resolve_cd_target_returns_plugin_dir_when_name_given() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("dnf")).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.plugins_dir().join("dnf"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_errors_when_plugin_not_found() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("nonexistent"));
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Plugin 'nonexistent' not found"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_errors_when_plugins_dir_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act
+        let result = resolve_cd_target(&ctx, None);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Directory not found"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_errors_when_plugin_dir_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("dnf"));
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Directory not found"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_errors_when_not_initialized() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = resolve_cd_target(&ctx, None);
 
         // Assert
         assert!(result.is_err());

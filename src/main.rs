@@ -91,6 +91,11 @@ pub enum PluginCommands {
         /// Plugin name
         name: String,
     },
+    /// Launch a shell in the plugins root or specific plugin directory
+    Cd {
+        /// Plugin name (optional — defaults to plugins root)
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -245,6 +250,12 @@ fn main() {
             }
             PluginCommands::Cat { name } => {
                 if let Err(e) = commands::plugin::cat(&ctx, &name) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Cd { name } => {
+                if let Err(e) = commands::plugin::cd(&ctx, name.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

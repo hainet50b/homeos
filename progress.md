@@ -2156,3 +2156,32 @@ Implemented `homeos plugin cat <name>` command that displays `plugin.yml` and al
 - Template files are only shown if they exist on disk, avoiding clutter for plugins that only support one OS.
 - The ordering of plugin commands (list, list-remote, add, remove, cat) matches the README reference section.
 
+---
+
+## Task: Implement `homeos plugin cd [<name>]`
+
+**Timestamp:**
+
+2026-04-08T07:57:22Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Implemented `homeos plugin cd [<name>]` command that launches a shell in the plugins root directory (no argument) or in a specific plugin directory (with name). Added `Cd` variant to `PluginCommands` enum with optional `name` argument, wired it into the main match dispatch. Implemented `cd` and `resolve_cd_target` functions in `plugin.rs`, following the same pattern as `package cd`. The `resolve_cd_target` function validates the plugin exists in config (when name given) and that the target directory exists on disk.
+
+**What was changed:**
+
+- src/main.rs (added `Cd` variant to `PluginCommands`, added match arm to dispatch `commands::plugin::cd`)
+- src/commands/plugin.rs (added `cd` and `resolve_cd_target` functions, added 6 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 359 tests pass (6 new tests added).
+- Function ordering in plugin.rs matches README reference order: list, list-remote, add, remove, cat, cd.
+- The implementation mirrors the `package cd` pattern: separate `resolve_cd_target` for testability, `cd` for shell launch.
+

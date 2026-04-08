@@ -148,7 +148,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Ensure all commands produce meaningful stdout output describing what was done. Review every command and add output where missing for consistency.
 - [x] Rename plugin config file from `params.yml` to `plugin.yml`. Update all references: `plugin add --local` skeleton generation, `plugin add` validation check, `package add` manifest loading, `config.rs` PluginManifest, and all related tests.
 - [x] Implement `homeos plugin cat <name>` — display all template files and `plugin.yml` for the specified plugin with filename headers.
-- [ ] Implement `homeos plugin cd [<name>]` — launch a shell in the plugins root directory, or in the specific plugin directory if name is given.
+- [x] Implement `homeos plugin cd [<name>]` — launch a shell in the plugins root directory, or in the specific plugin directory if name is given.
 - [ ] Fix `homeos plugin add --local` to generate all template files (.sh.tmpl and .ps1.tmpl) regardless of the current OS. OS-specific selection happens at `package add` time, not plugin creation time.
 - [ ] Unify plan display format — change `Skipping <pkg> (reason)` to `The following packages will be skipped:` with `<pkg> (reason)` listed underneath, matching the style of install/update/uninstall sections.
 - [ ] Show plugin name in plan display — append `(plugin: <name>)` to packages that use a plugin.
