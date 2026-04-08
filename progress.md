@@ -2512,3 +2512,31 @@ Verified that the implementation was already completed in the previous session (
 
 - No code changes needed — implementation was already complete from the previous task's session.
 - The previous progress entry documented both `add-alias` and `remove-alias` implementation together, but only the `add-alias` PRD checkbox was marked at that time.
+
+## Task: Change `homeos package add` to generate skeleton scripts for all OS
+
+**Timestamp:**
+
+2026-04-08T10:37:12Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed `skeleton_scripts()` to return all 6 combinations (3 actions × 2 extensions: `.sh` and `.ps1`) instead of only the current OS extension. Added `all_script_extensions()` helper to `mod.rs` returning `&["sh", "ps1"]`. Updated existing tests to assert both extensions. Added new test `test_add_generates_skeleton_scripts_for_all_os` verifying `.sh` files have shebangs and `.ps1` files don't. Updated README description for `package add`.
+
+**What was changed:**
+
+- src/commands/package/mod.rs (added `all_script_extensions()` helper)
+- src/commands/package/registry.rs (changed `skeleton_scripts()` to use all extensions, updated 2 tests, added 1 new test)
+- README.md (updated `package add` description)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 400 tests pass (1 new test added).
+- Plugin-based script generation remains OS-specific (templates are selected by current OS extension) — this is correct since plugin templates are OS-specific by design.
+- The `skeleton_script_content()` function already handled both `sh` and `ps1` content generation correctly (shebang for sh, comment-only for ps1).

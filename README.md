@@ -235,7 +235,7 @@ docker      no        no
 
 #### `homeos package add`
 
-Add a new package. Creates a package directory under `packages/` and adds an entry to `homeos.yml`. Skeleton scripts are generated with OS-appropriate extensions (`.sh` for Linux/macOS, `.ps1` for Windows).
+Add a new package. Creates a package directory under `packages/` and adds an entry to `homeos.yml`. Skeleton scripts are generated for all OS (both `.sh` and `.ps1`).
 
 ```
 Usage: homeos package add [OPTIONS] <PACKAGE>

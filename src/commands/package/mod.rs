@@ -11,6 +11,11 @@ pub(crate) fn script_extension() -> &'static str {
     if cfg!(windows) { "ps1" } else { "sh" }
 }
 
+/// Returns all script file extensions across all supported OS.
+pub(crate) fn all_script_extensions() -> &'static [&'static str] {
+    &["sh", "ps1"]
+}
+
 /// Returns the OS-appropriate shell command for executing scripts.
 pub(crate) fn shell_command() -> &'static str {
     if cfg!(windows) { "pwsh" } else { "sh" }
