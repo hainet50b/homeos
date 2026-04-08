@@ -155,7 +155,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `homeos package add` to deny if the package directory already exists, instead of adding only missing scripts. Show a clear error message suggesting to remove the existing directory first.
 - [x] Enhance `homeos package remove` to accept multiple packages (`<packages>...`). Update help message to "Remove package entries from homeos.yml".
 - [x] Rename CLI argument placeholders and variable names: plugin commands `name` → `plugin`, repo commands `name` → `repo`. Update help output, variable names, and call sites.
-- [ ] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
+- [x] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
 - [ ] Guard `homeos repo remove` against deleting the `default` repository. Error with a clear message.
 - [ ] Rename `actions_overrides` to `script_aliases` in `PackageConfig`, `homeos.yml` serde, and all related code and tests.
 - [ ] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).

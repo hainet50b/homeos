@@ -292,13 +292,7 @@ pub fn remove(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Err
         );
     }
 
-    // Remove plugin directory
-    let plugin_dir = ctx.plugins_dir().join(plugin);
-    if plugin_dir.exists() {
-        std::fs::remove_dir_all(&plugin_dir)?;
-    }
-
-    // Remove from config
+    // Remove from config (plugin directory is kept, consistent with package remove)
     config.plugins.remove(plugin);
     config.save(&ctx.config_path())?;
 
@@ -1027,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_deletes_directory_and_config_entry() {
+    fn test_remove_keeps_directory_and_removes_config_entry() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
@@ -1047,7 +1041,7 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        assert!(!plugin_dir.exists());
+        assert!(plugin_dir.exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.plugins.contains_key("dnf"));
     }
@@ -1146,7 +1140,7 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
-        assert!(!ctx.plugins_dir().join("dnf").exists());
+        assert!(ctx.plugins_dir().join("dnf").exists());
         assert!(ctx.plugins_dir().join("mise").exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.plugins.contains_key("dnf"));

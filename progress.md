@@ -2355,3 +2355,27 @@ Renamed CLI argument placeholders and variable names across plugin and repo comm
 - All 378 tests pass (6 new tests added).
 - Iteration variables in `list_to` functions (e.g., `for (name, plugin) in &config.plugins`) were left unchanged since they are BTreeMap iteration keys, not CLI argument names.
 
+## Task: Change `homeos plugin remove` to keep the plugin directory
+
+**Timestamp:**
+
+2026-04-08T10:20:14Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Removed the `remove_dir_all` call from `plugin::remove` so it only removes the entry from `homeos.yml` and keeps the plugin directory on disk, consistent with how `package remove` behaves. Updated 2 tests: renamed `test_remove_deletes_directory_and_config_entry` to `test_remove_keeps_directory_and_removes_config_entry` and flipped the directory existence assertion, and updated `test_remove_does_not_affect_other_plugins` to assert the removed plugin's directory still exists.
+
+**What was changed:**
+
+- src/commands/plugin.rs (removed directory deletion in `remove`, updated 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 378 tests pass (no new tests added, 2 existing tests updated).
+- The `test_remove_without_directory` test still passes — removing a plugin whose directory doesn't exist is fine since we no longer attempt deletion.
