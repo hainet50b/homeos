@@ -2020,3 +2020,36 @@ For example, if `neovim` depends on `git` and both are installed, `homeos packag
 
 - All 347 tests pass (342 existing + 5 new).
 - The 5 new tests cover: reverse order for simple dependency, chain dependency (c→b→a), skipping not-installed dependencies, circular dependency error, and state removal of expanded dependencies.
+
+---
+
+# Ralph Loop — 2026-04-08T07:33:44Z
+
+## Task: Move check_unmodified_scripts into Plan::build
+
+**Timestamp:**
+
+2026-04-08T07:37:19Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Moved the `check_unmodified_scripts` logic into `Plan::build` by adding an optional `packages_dir: Option<&Path>` parameter. When provided, `build` checks enabled packages for unmodified skeleton scripts and populates warnings at construction time. Removed the `&mut self` method `check_unmodified_scripts`, making `Plan` immutable after construction. Updated all call sites in `action.rs` to pass `Some(&ctx.packages_dir())` and changed `let mut plan` to `let plan`. Updated all tests: warning-related tests now pass `packages_dir` directly to `build`, and non-warning tests pass `None`.
+
+**What was changed:**
+
+- src/plan.rs (merged `check_unmodified_scripts` into `build`, added `packages_dir` param, removed `&mut self` method, updated all tests)
+- src/commands/package/action.rs (updated 3 call sites to pass `packages_dir`, removed `check_unmodified_scripts` calls, changed `mut` bindings to immutable)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 347 tests pass (no new tests added — existing tests were refactored to use the new `build` signature).
+- Added explicit type annotation `BTreeMap<String, Vec<String>>` for the `warnings` variable inside `build` to satisfy type inference when `packages_dir` is `None`.
+- The `resolve_script_name` function remains a private helper in `plan.rs`, used by the build logic. It is still duplicated in `action.rs` for script execution.
+
+

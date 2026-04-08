@@ -89,15 +89,25 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .collect();
 
     let install_plan = if !install_names.is_empty() {
-        let mut plan = Plan::build(&config, &install_names, Action::Install, &installed)?;
-        plan.check_unmodified_scripts(&ctx.packages_dir(), &config);
+        let plan = Plan::build(
+            &config,
+            &install_names,
+            Action::Install,
+            &installed,
+            Some(&ctx.packages_dir()),
+        )?;
         Some(plan)
     } else {
         None
     };
     let update_plan = if !update_names.is_empty() {
-        let mut plan = Plan::build(&config, &update_names, Action::Update, &installed)?;
-        plan.check_unmodified_scripts(&ctx.packages_dir(), &config);
+        let plan = Plan::build(
+            &config,
+            &update_names,
+            Action::Update,
+            &installed,
+            Some(&ctx.packages_dir()),
+        )?;
         Some(plan)
     } else {
         None
@@ -272,8 +282,13 @@ pub fn run_action<R: BufRead, W: Write>(
         Vec::new()
     };
 
-    let mut plan = Plan::build(&config, &ordered_packages, action, &installed)?;
-    plan.check_unmodified_scripts(&ctx.packages_dir(), &config);
+    let plan = Plan::build(
+        &config,
+        &ordered_packages,
+        action,
+        &installed,
+        Some(&ctx.packages_dir()),
+    )?;
 
     if plan.is_empty() {
         let display = plan.display();
