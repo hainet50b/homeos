@@ -80,3 +80,15 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-08T07:57:43Z,76d9c18,"Implement homeos plugin cd command",137,28,5897,0.95466525
 2026-04-08T08:10:06Z,9cd07d6,"Fix plugin add --local to generate templates for all OS",738,31,4697,0.8574490000000001
 2026-04-08T08:15:32Z,f9147e1,"Unify plan display format to group skipped packages under a single header",322,66,11725,2.27582275
+2026-04-08T09:36:41Z,b1d3423,"Show plugin name in plan display",224,44,8879,1.6917815000000003
+2026-04-08T09:40:46Z,1dcaf0d,"Deny package add when directory already exists",241,108,16205,1.5005865000000003
+2026-04-08T09:44:27Z,0a6fcc1,"Enhance package remove to accept multiple packages",216,38,7779,1.2855109999999998
+2026-04-08T10:18:41Z,8acc72f,"Rename CLI argument placeholders: plugin name→plugin, repo name→repo",2050,41,14558,2.0928188000000003
+2026-04-08T10:20:39Z,0d0d2d7,"Keep plugin directory on remove, consistent with package remove",113,26,4393,0.68636575
+2026-04-08T10:22:02Z,2a271f2,"Guard repo remove against deleting the default repository",80,104,2778,0.5815692499999999
+2026-04-08T10:24:36Z,71acabc,"Rename actions_overrides to script_aliases across the codebase",150,28,5669,0.9554927500000001
+2026-04-08T10:28:48Z,3ef46a6,"Add --script-aliases option to homeos package add",246,121,9522,1.7726217500000008
+2026-04-08T10:32:59Z,b20bdf8,"Implement homeos package add-alias and remove-alias commands",247,41,10356,1.4118730000000002
+2026-04-08T10:34:36Z,f3b943b,"Mark homeos package remove-alias task as complete",94,94,3305,0.5814547499999999
+2026-04-08T10:37:41Z,cda35d3,"Generate skeleton scripts for all OS in package add",180,40,7093,0.9835927499999996
+2026-04-08T10:40:24Z,c844079,"Change package cat to display all script files for all OS",160,31,7418,0.881893
