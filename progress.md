@@ -2459,3 +2459,32 @@ Added `--script-aliases` option to `homeos package add` CLI definition, using th
 - All 383 tests pass (4 new tests added, 22 existing tests updated with new parameter).
 - The `--script-aliases` option is ordered between `--depends-on` and `--plugin` in the CLI definition, matching the README specification.
 - Empty `script_aliases` is omitted from YAML output via existing `skip_serializing_if = "BTreeMap::is_empty"` on `PackageConfig`.
+
+## Task: Implement `homeos package add-alias <pkg> <alias>...`
+
+**Timestamp:**
+
+2026-04-08T10:32:25Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Implemented `homeos package add-alias` and prepared `remove-alias` (next task) in the same pattern as `add-dep`/`remove-dep`. The `add-alias` command accepts a package name and one or more `target=source` pairs, adds them to `script_aliases` in `homeos.yml`, and skips duplicates with a message. The `remove-alias` command accepts a package name and one or more alias target names, removes them from `script_aliases`, and skips nonexistent aliases with a message. Both commands are wired into the CLI with proper dispatch ordering matching the README. Added 16 new tests total: 2 CLI tests in `main.rs` (help argument verification), 7 tests for `add_alias` and 7 tests for `remove_alias` in `registry.rs` (covering add/remove single/multiple, duplicates/nonexistent, package not found, not initialized, persistence, and clearing).
+
+**What was changed:**
+
+- src/main.rs (added `AddAlias` and `RemoveAlias` CLI variants, dispatch cases, 2 CLI tests)
+- src/commands/package/registry.rs (added `add_alias` and `remove_alias` functions, 14 tests)
+- src/commands/package/mod.rs (added re-exports for `add_alias` and `remove_alias`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 399 tests pass (16 new tests added).
+- Both functions follow the exact same pattern as `add_dep`/`remove_dep` for consistency.
+- `add_alias` uses `parse_key_value` for CLI parsing (same as `--script-aliases` on `package add`).
+- `remove_alias` takes plain target names (not key=value pairs) since only the target is needed for removal, matching the README spec.

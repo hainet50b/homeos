@@ -159,6 +159,22 @@ pub enum PackageCommands {
         #[arg(required = true)]
         dependency: Vec<String>,
     },
+    /// Add script aliases to an existing package
+    AddAlias {
+        /// Package name
+        package: String,
+        /// Aliases as target=source pairs (e.g., update=install)
+        #[arg(required = true, value_parser = parse_key_value)]
+        alias: Vec<(String, String)>,
+    },
+    /// Remove script aliases from a package
+    RemoveAlias {
+        /// Package name
+        package: String,
+        /// Alias targets to remove (e.g., update)
+        #[arg(required = true)]
+        alias: Vec<String>,
+    },
     /// Enable packages
     Enable {
         /// Package names
@@ -338,6 +354,18 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+            PackageCommands::AddAlias { package, alias } => {
+                if let Err(e) = commands::package::add_alias(&ctx, &package, &alias) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::RemoveAlias { package, alias } => {
+                if let Err(e) = commands::package::remove_alias(&ctx, &package, &alias) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
             PackageCommands::Enable { packages } => {
                 if let Err(e) = commands::package::enable(&ctx, &packages) {
                     eprintln!("Error: {e}");
@@ -450,6 +478,42 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_add_alias_help_shows_alias_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let package_cmd = cmd.find_subcommand("package").unwrap();
+        let add_alias_cmd = package_cmd.find_subcommand("add-alias").unwrap();
+
+        // Act
+        let args: Vec<&str> = add_alias_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "alias")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["alias"]);
+    }
+
+    #[test]
+    fn test_remove_alias_help_shows_alias_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let package_cmd = cmd.find_subcommand("package").unwrap();
+        let remove_alias_cmd = package_cmd.find_subcommand("remove-alias").unwrap();
+
+        // Act
+        let args: Vec<&str> = remove_alias_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "alias")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["alias"]);
     }
 
     #[test]

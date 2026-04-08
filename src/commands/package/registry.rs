@@ -289,6 +289,57 @@ pub fn remove_dep(
     Ok(())
 }
 
+pub fn add_alias(
+    ctx: &Context,
+    package: &str,
+    aliases: &[(String, String)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let pkg = config.packages.get_mut(package).unwrap();
+
+    for (target, source) in aliases {
+        if pkg.script_aliases.contains_key(target) {
+            println!("Package '{package}' already has alias '{target}'");
+        } else {
+            pkg.script_aliases.insert(target.clone(), source.clone());
+            println!("Added alias '{target}={source}' to package '{package}'");
+        }
+    }
+
+    config.save(&ctx.config_path())?;
+    Ok(())
+}
+
+pub fn remove_alias(
+    ctx: &Context,
+    package: &str,
+    targets: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let pkg = config.packages.get_mut(package).unwrap();
+
+    for target in targets {
+        if pkg.script_aliases.remove(target).is_some() {
+            println!("Removed alias '{target}' from package '{package}'");
+        } else {
+            println!("Package '{package}' does not have alias '{target}'");
+        }
+    }
+
+    config.save(&ctx.config_path())?;
+    Ok(())
+}
+
 pub fn enable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
@@ -1618,6 +1669,281 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_alias_adds_alias_to_existing_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "neovim",
+            &[("update".to_string(), "install".to_string())],
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_add_alias_adds_multiple_aliases() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "neovim",
+            &[
+                ("update".to_string(), "install".to_string()),
+                ("uninstall".to_string(), "install".to_string()),
+            ],
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+        assert_eq!(
+            config.packages["neovim"].script_aliases["uninstall"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_add_alias_skips_duplicate_alias() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "neovim",
+            &[
+                ("update".to_string(), "install".to_string()),
+                ("uninstall".to_string(), "install".to_string()),
+            ],
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].script_aliases.len(), 2);
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_add_alias_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n");
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "nonexistent",
+            &[("update".to_string(), "install".to_string())],
+        );
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_add_alias_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "neovim",
+            &[("update".to_string(), "install".to_string())],
+        );
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_alias_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        add_alias(
+            &ctx,
+            "neovim",
+            &[("update".to_string(), "install".to_string())],
+        )
+        .unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_add_alias_appends_to_existing_aliases() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
+
+        // Act
+        let result = add_alias(
+            &ctx,
+            "neovim",
+            &[("uninstall".to_string(), "install".to_string())],
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].script_aliases.len(), 2);
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+        assert_eq!(
+            config.packages["neovim"].script_aliases["uninstall"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_remove_alias_removes_alias_from_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    script_aliases:\n      update: install\n      uninstall: install\n",
+        );
+
+        // Act
+        let result = remove_alias(&ctx, "neovim", &["update".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].script_aliases.len(), 1);
+        assert_eq!(
+            config.packages["neovim"].script_aliases["uninstall"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_remove_alias_removes_multiple_aliases() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    script_aliases:\n      update: install\n      uninstall: install\n",
+        );
+
+        // Act
+        let result = remove_alias(
+            &ctx,
+            "neovim",
+            &["update".to_string(), "uninstall".to_string()],
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].script_aliases.is_empty());
+    }
+
+    #[test]
+    fn test_remove_alias_skips_nonexistent_alias() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
+
+        // Act
+        let result = remove_alias(&ctx, "neovim", &["uninstall".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(
+            config.packages["neovim"].script_aliases["update"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_remove_alias_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n");
+
+        // Act
+        let result = remove_alias(&ctx, "nonexistent", &["update".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_remove_alias_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = remove_alias(&ctx, "neovim", &["update".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_alias_persists_after_reload() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    script_aliases:\n      update: install\n      uninstall: install\n",
+        );
+
+        // Act
+        remove_alias(&ctx, "neovim", &["update".to_string()]).unwrap();
+        let config = Config::load(&ctx.config_path()).unwrap();
+
+        // Assert
+        assert_eq!(config.packages["neovim"].script_aliases.len(), 1);
+        assert_eq!(
+            config.packages["neovim"].script_aliases["uninstall"],
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_remove_alias_removes_all_aliases_clears_map() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    script_aliases:\n      update: install\n");
+
+        // Act
+        let result = remove_alias(&ctx, "neovim", &["update".to_string()]);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].script_aliases.is_empty());
     }
 
     #[test]
