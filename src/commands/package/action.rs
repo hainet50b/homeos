@@ -249,12 +249,20 @@ pub fn run_action<R: BufRead, W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    // For install, expand to include transitive dependencies and sort topologically
-    let ordered_packages = if action == Action::Install {
-        let expanded = expand_dependencies(&config, packages);
-        topological_sort(&config, &expanded)?
-    } else {
-        packages.to_vec()
+    // For install, expand to include transitive dependencies and sort topologically.
+    // For uninstall, do the same but reverse the order (dependents first, then dependencies).
+    let ordered_packages = match action {
+        Action::Install => {
+            let expanded = expand_dependencies(&config, packages);
+            topological_sort(&config, &expanded)?
+        }
+        Action::Uninstall => {
+            let expanded = expand_dependencies(&config, packages);
+            let mut sorted = topological_sort(&config, &expanded)?;
+            sorted.reverse();
+            sorted
+        }
+        Action::Update => packages.to_vec(),
     };
 
     let state_path = ctx.state_path();
@@ -1997,6 +2005,200 @@ mod tests {
                 .to_string()
                 .contains("Circular dependency")
         );
+    }
+
+    #[test]
+    fn test_uninstall_includes_dependencies_in_reverse_order() {
+        // Arrange — neovim depends on git; uninstall neovim should include git,
+        // but neovim (dependent) must be uninstalled before git (dependency).
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["neovim", "git"] {
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["git".to_string(), "neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — only request neovim, git should be pulled in as dependency
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — neovim uninstalled before git (reverse dependency order)
+        let written = String::from_utf8(output).unwrap();
+        let neovim_pos = written
+            .find("Uninstalling neovim")
+            .expect("neovim should be uninstalled");
+        let git_pos = written
+            .find("Uninstalling git")
+            .expect("git should be uninstalled");
+        assert!(
+            neovim_pos < git_pos,
+            "neovim (dependent) must be uninstalled before git (dependency)"
+        );
+    }
+
+    #[test]
+    fn test_uninstall_chain_dependency_reverse_order() {
+        // Arrange — c depends on b, b depends on a. Uninstall order: c, b, a.
+        let yaml = "packages:\n  c:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n  a: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["a", "b", "c"] {
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}_UNINSTALL'\n"),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["c".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — c before b before a
+        let written = String::from_utf8(output).unwrap();
+        let c_pos = written.find("Uninstalling c").unwrap();
+        let b_pos = written.find("Uninstalling b").unwrap();
+        let a_pos = written.find("Uninstalling a").unwrap();
+        assert!(c_pos < b_pos, "c must be uninstalled before b");
+        assert!(b_pos < a_pos, "b must be uninstalled before a");
+    }
+
+    #[test]
+    fn test_uninstall_skips_not_installed_dependencies() {
+        // Arrange — neovim depends on git; git is not in state
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::write(
+            neovim_dir.join(format!("uninstall.{ext}")),
+            "#!/usr/bin/env sh\necho 'NEOVIM_UNINSTALL'\n",
+        )
+        .unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — neovim uninstalled, git skipped as not installed
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Skipping git (not installed)"));
+    }
+
+    #[test]
+    fn test_uninstall_circular_dependency_errors() {
+        // Arrange — a depends on b, b depends on a
+        let yaml =
+            "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let state = State {
+            installed: vec!["a".to_string(), "b".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["a".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
+    }
+
+    #[test]
+    fn test_uninstall_dependencies_removed_from_state() {
+        // Arrange — neovim depends on git; both installed
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["neovim", "git"] {
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\necho '{pkg}'\n"),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["git".to_string(), "neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — both removed from state
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(!state.installed.contains(&"git".to_string()));
+        assert!(!state.installed.contains(&"neovim".to_string()));
     }
 
     #[test]

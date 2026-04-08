@@ -1991,3 +1991,32 @@ Implementation details:
 - All 342 tests pass (333 existing + 9 new).
 - `PackageConfig::Default` sets `enabled` to `false` (Rust `bool::default()`), not `true` (the serde default). Tests creating `PackageConfig` with `..Default::default()` must explicitly set `enabled: true` if they need the package to be enabled.
 - The `resolve_script_name` function is duplicated between `plan.rs` and `action.rs`. Both need it: `plan.rs` for warning checks, `action.rs` for script execution. A future refactor could extract it to a shared location.
+
+---
+
+## Task: Respect dependency order in `homeos package uninstall`
+
+**Timestamp:**
+
+2026-04-08T07:18:21Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Extended `run_action` to expand dependencies and topologically sort for `Action::Uninstall`, then reverse the order so dependents are uninstalled before their dependencies. Previously, dependency expansion only applied to `Action::Install`. Now the match on action uses three arms: `Install` (expand + topo sort), `Uninstall` (expand + topo sort + reverse), and `Update` (pass through as-is).
+
+For example, if `neovim` depends on `git` and both are installed, `homeos package uninstall neovim` will expand to include `git`, sort to `[git, neovim]`, reverse to `[neovim, git]`, and uninstall neovim first. Dependencies not in `state.yml` are skipped via the existing plan logic.
+
+**What was changed:**
+
+- src/commands/package/action.rs (changed `if/else` to `match` for dependency expansion in `run_action`, added 5 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 347 tests pass (342 existing + 5 new).
+- The 5 new tests cover: reverse order for simple dependency, chain dependency (c→b→a), skipping not-installed dependencies, circular dependency error, and state removal of expanded dependencies.
