@@ -2091,3 +2091,39 @@ Updated 3 existing tests that expected empty output to expect the new messages.
 - Commands that launch interactive shells (`cd`, `package cd`) intentionally produce no output, which is appropriate for their behavior.
 - All other commands already had meaningful output: init prints path, add/remove/enable/disable print confirmation, install/update/uninstall show plans and progress, cat shows scripts.
 
+---
+
+## Task: Rename plugin config file from params.yml to plugin.yml
+
+**Timestamp:**
+
+2026-04-08T07:51:54Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Renamed all references to `params.yml` to `plugin.yml` across the codebase:
+- `plugin add --local` skeleton generation now creates `plugin.yml`
+- `plugin add` clone validation now checks for `plugin.yml`
+- `package add` manifest loading now reads `plugin.yml`
+- Updated comment in config.rs test from `params.yml` to `plugin.yml`
+- Renamed test helper `create_local_plugin_repo` to write and commit `plugin.yml`
+- Renamed 4 test functions that referenced `params_yml` to use `plugin_yml`
+- Updated all test assertions and fixture file references
+
+**What was changed:**
+
+- src/config.rs (updated test path reference from `params.yml` to `plugin.yml`)
+- src/commands/plugin.rs (updated `add_local` skeleton generation, `add_with` validation check, `create_local_plugin_repo` test helper, renamed 3 test functions, updated all test assertions)
+- src/commands/package/registry.rs (updated manifest loading path, renamed 1 test function, updated test fixture file references)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 347 tests pass (no new tests added — existing tests were updated to reference `plugin.yml`).
+- The `PluginManifest` struct name in config.rs was not renamed as it already reflects its purpose (loading plugin manifests) and the task only called for renaming the file, not the struct.
+

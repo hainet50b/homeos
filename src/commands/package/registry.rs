@@ -124,7 +124,7 @@ fn generate_plugin_scripts(
         .into());
     }
 
-    let manifest_path = plugin_dir.join("params.yml");
+    let manifest_path = plugin_dir.join("plugin.yml");
     if manifest_path.exists() {
         let manifest = PluginManifest::load(&manifest_path)?;
         let missing: Vec<&String> = manifest
@@ -947,7 +947,7 @@ mod tests {
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
-            plugin_dir.join("params.yml"),
+            plugin_dir.join("plugin.yml"),
             "params:\n  - name\n  - repo\n",
         )
         .unwrap();
@@ -977,7 +977,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            plugin_dir.join("params.yml"),
+            plugin_dir.join("plugin.yml"),
             "params:\n  - name\n  - repo\n",
         )
         .unwrap();
@@ -1025,7 +1025,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_with_plugin_no_params_yml_skips_validation() {
+    fn test_add_with_plugin_no_plugin_yml_skips_validation() {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
@@ -1037,7 +1037,7 @@ mod tests {
             "#!/usr/bin/env sh\necho hello\n",
         )
         .unwrap();
-        // No params.yml
+        // No plugin.yml
 
         // Act
         let result = add(&ctx, "mypkg", &[], Some("simple"), &BTreeMap::new());

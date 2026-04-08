@@ -551,7 +551,7 @@ plugins:
     #[test]
     fn test_load_plugin_manifest_nonexistent_file() {
         // Arrange
-        let path = Path::new("/nonexistent/params.yml");
+        let path = Path::new("/nonexistent/plugin.yml");
 
         // Act
         let result = PluginManifest::load(path);

@@ -174,8 +174,8 @@ fn add_local(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>
 
     std::fs::create_dir_all(&target)?;
 
-    // Create params.yml
-    std::fs::write(target.join("params.yml"), "params: []\n")?;
+    // Create plugin.yml
+    std::fs::write(target.join("plugin.yml"), "params: []\n")?;
 
     // Create OS-appropriate template files
     let ext = script_extension();
@@ -245,7 +245,7 @@ where
         return Err(format!("git clone failed: {}", stderr.trim()).into());
     }
 
-    if !target.join("params.yml").exists() {
+    if !target.join("plugin.yml").exists() {
         std::fs::remove_dir_all(&target)?;
         return Err("Not a valid homeos plugin".into());
     }
@@ -346,9 +346,9 @@ mod tests {
 
     fn create_local_plugin_repo(dir: &std::path::Path) {
         create_local_git_repo(dir);
-        std::fs::write(dir.join("params.yml"), "name: test\n").unwrap();
+        std::fs::write(dir.join("plugin.yml"), "name: test\n").unwrap();
         Command::new("git")
-            .args(["-C", &dir.to_string_lossy(), "add", "params.yml"])
+            .args(["-C", &dir.to_string_lossy(), "add", "plugin.yml"])
             .output()
             .unwrap();
         Command::new("git")
@@ -357,7 +357,7 @@ mod tests {
                 &dir.to_string_lossy(),
                 "commit",
                 "-m",
-                "add params.yml",
+                "add plugin.yml",
             ])
             .output()
             .unwrap();
@@ -726,7 +726,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_rejects_repo_without_params_yml() {
+    fn test_add_rejects_repo_without_plugin_yml() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_rejects_repo_without_params_yml_cleans_up() {
+    fn test_add_rejects_repo_without_plugin_yml_cleans_up() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
@@ -1097,7 +1097,7 @@ mod tests {
         assert!(result.is_ok());
         let plugin_dir = ctx.plugins_dir().join("custom");
         assert!(plugin_dir.exists());
-        assert!(plugin_dir.join("params.yml").exists());
+        assert!(plugin_dir.join("plugin.yml").exists());
         let ext = crate::commands::package::script_extension();
         assert!(plugin_dir.join(format!("install.{}.tmpl", ext)).exists());
         assert!(plugin_dir.join(format!("update.{}.tmpl", ext)).exists());
@@ -1120,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_local_params_yml_content() {
+    fn test_add_local_plugin_yml_content() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = fixture_with_config(&base_dir);
@@ -1129,7 +1129,7 @@ mod tests {
         add(&ctx, "custom", None, true).unwrap();
 
         // Assert
-        let content = std::fs::read_to_string(ctx.plugins_dir().join("custom/params.yml")).unwrap();
+        let content = std::fs::read_to_string(ctx.plugins_dir().join("custom/plugin.yml")).unwrap();
         assert_eq!(content, "params: []\n");
     }
 
@@ -1201,7 +1201,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let plugin_dir = ctx.plugins_dir().join("custom");
-        assert!(plugin_dir.join("params.yml").exists());
+        assert!(plugin_dir.join("plugin.yml").exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.plugins["custom"].url, "");
     }
