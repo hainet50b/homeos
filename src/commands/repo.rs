@@ -31,6 +31,10 @@ pub fn add(ctx: &Context, repo: &str, url: &str) -> Result<(), Box<dyn std::erro
 }
 
 pub fn remove(ctx: &Context, repo: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if repo == "default" {
+        return Err("Cannot remove the default repository.".into());
+    }
+
     let target = ctx.repos_dir().join(repo);
 
     if !target.exists() {
@@ -244,6 +248,22 @@ mod tests {
         // Assert
         let err = result.unwrap_err();
         assert_eq!(err.to_string(), "Repository 'existing' already exists");
+    }
+
+    #[test]
+    fn test_remove_rejects_default_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir().join("default")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "default");
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Cannot remove the default repository.");
+        assert!(ctx.repos_dir().join("default").exists());
     }
 
     #[test]

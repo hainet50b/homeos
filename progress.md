@@ -2379,3 +2379,28 @@ Removed the `remove_dir_all` call from `plugin::remove` so it only removes the e
 
 - All 378 tests pass (no new tests added, 2 existing tests updated).
 - The `test_remove_without_directory` test still passes — removing a plugin whose directory doesn't exist is fine since we no longer attempt deletion.
+
+## Task: Guard `homeos repo remove` against deleting the `default` repository
+
+**Timestamp:**
+
+2026-04-08T10:21:39Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added an early guard in `repo::remove` that checks if the repo name is `"default"` and returns an error with "Cannot remove the default repository." before any filesystem operations. Added 1 new test (`test_remove_rejects_default_repo`) verifying the error message and that the directory is not deleted.
+
+**What was changed:**
+
+- src/commands/repo.rs (added default repo guard in `remove`, added 1 test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 379 tests pass (1 new test added).
+- The guard is placed before the directory existence check, so it rejects "default" even if the directory doesn't exist — this is intentional since the error is about the name, not the filesystem state.
