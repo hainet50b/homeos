@@ -306,6 +306,53 @@ pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
+pub fn cat(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    cat_to(ctx, name, &mut std::io::stdout())
+}
+
+fn cat_to<W: Write>(
+    ctx: &Context,
+    name: &str,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    if !config.plugins.contains_key(name) {
+        return Err(format!("Plugin '{name}' not found").into());
+    }
+
+    let plugin_dir = ctx.plugins_dir().join(name);
+
+    // Display plugin.yml
+    let plugin_yml_path = plugin_dir.join("plugin.yml");
+    writeln!(writer, "=== plugin.yml ===")?;
+    if plugin_yml_path.is_file() {
+        let content = std::fs::read_to_string(&plugin_yml_path)?;
+        write!(writer, "{content}")?;
+    } else {
+        writeln!(writer, "(not found)")?;
+    }
+
+    // Display template files for each action and extension
+    let actions = ["install", "update", "uninstall"];
+    let extensions = ["sh", "ps1"];
+
+    for action in &actions {
+        for ext in &extensions {
+            let filename = format!("{action}.{ext}.tmpl");
+            let file_path = plugin_dir.join(&filename);
+            if file_path.is_file() {
+                writeln!(writer)?;
+                writeln!(writer, "=== {filename} ===")?;
+                let content = std::fs::read_to_string(&file_path)?;
+                write!(writer, "{content}")?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1204,5 +1251,164 @@ mod tests {
         assert!(plugin_dir.join("plugin.yml").exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.plugins["custom"].url, "");
+    }
+
+    #[test]
+    fn test_cat_displays_plugin_yml_and_templates() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.yml"), "params:\n  - name\n").unwrap();
+        std::fs::write(
+            plugin_dir.join("install.sh.tmpl"),
+            "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            plugin_dir.join("uninstall.sh.tmpl"),
+            "#!/usr/bin/env sh\nsudo dnf remove -y {{name}}\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        cat_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("=== plugin.yml ==="));
+        assert!(text.contains("params:\n  - name"));
+        assert!(text.contains("=== install.sh.tmpl ==="));
+        assert!(text.contains("sudo dnf install -y {{name}}"));
+        assert!(text.contains("=== uninstall.sh.tmpl ==="));
+        assert!(text.contains("sudo dnf remove -y {{name}}"));
+    }
+
+    #[test]
+    fn test_cat_plugin_not_found() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Plugin 'nonexistent' not found"
+        );
+    }
+
+    #[test]
+    fn test_cat_missing_plugin_yml_shows_not_found() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        cat_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("=== plugin.yml ==="));
+        assert!(text.contains("(not found)"));
+    }
+
+    #[test]
+    fn test_cat_only_shows_existing_templates() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.yml"), "params: []\n").unwrap();
+        std::fs::write(plugin_dir.join("install.sh.tmpl"), "echo install\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        cat_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("=== install.sh.tmpl ==="));
+        assert!(!text.contains("update.sh.tmpl"));
+        assert!(!text.contains("uninstall.sh.tmpl"));
+    }
+
+    #[test]
+    fn test_cat_shows_both_sh_and_ps1_templates() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://example.com".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.yml"), "params: []\n").unwrap();
+        std::fs::write(plugin_dir.join("install.sh.tmpl"), "sh install\n").unwrap();
+        std::fs::write(plugin_dir.join("install.ps1.tmpl"), "ps1 install\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        cat_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("=== install.sh.tmpl ==="));
+        assert!(text.contains("sh install"));
+        assert!(text.contains("=== install.ps1.tmpl ==="));
+        assert!(text.contains("ps1 install"));
+    }
+
+    #[test]
+    fn test_cat_error_when_not_initialized() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_err());
     }
 }

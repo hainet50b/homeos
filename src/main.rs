@@ -86,6 +86,11 @@ pub enum PluginCommands {
         /// Plugin name
         name: String,
     },
+    /// Display plugin.yml and all template files for a plugin
+    Cat {
+        /// Plugin name
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -234,6 +239,12 @@ fn main() {
             }
             PluginCommands::Remove { name } => {
                 if let Err(e) = commands::plugin::remove(&ctx, &name) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Cat { name } => {
+                if let Err(e) = commands::plugin::cat(&ctx, &name) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

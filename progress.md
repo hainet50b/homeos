@@ -2127,3 +2127,32 @@ Renamed all references to `params.yml` to `plugin.yml` across the codebase:
 - All 347 tests pass (no new tests added — existing tests were updated to reference `plugin.yml`).
 - The `PluginManifest` struct name in config.rs was not renamed as it already reflects its purpose (loading plugin manifests) and the task only called for renaming the file, not the struct.
 
+---
+
+## Task: Implement `homeos plugin cat <name>`
+
+**Timestamp:**
+
+2026-04-08T07:54:43Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Implemented `homeos plugin cat <name>` command that displays `plugin.yml` and all template files for a specified plugin with filename headers (`=== filename ===`). Shows `(not found)` if `plugin.yml` is missing. Only displays template files that exist on disk, checking all combinations of actions (install, update, uninstall) and extensions (.sh.tmpl, .ps1.tmpl). Added `Cat` variant to `PluginCommands` enum and wired it into the main match.
+
+**What was changed:**
+
+- src/main.rs (added `Cat` variant to `PluginCommands`, added match arm to dispatch `commands::plugin::cat`)
+- src/commands/plugin.rs (added `cat` and `cat_to` functions, added 6 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 353 tests pass (6 new tests added).
+- Template files are only shown if they exist on disk, avoiding clutter for plugins that only support one OS.
+- The ordering of plugin commands (list, list-remote, add, remove, cat) matches the README reference section.
+
