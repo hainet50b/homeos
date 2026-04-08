@@ -57,6 +57,8 @@ pub struct Plan {
     pub not_installed: Vec<String>,
     /// Warnings per package (e.g., unmodified skeleton scripts).
     pub warnings: BTreeMap<String, Vec<String>>,
+    /// Plugin name per package (only for packages that use a plugin).
+    pub plugins: BTreeMap<String, String>,
 }
 
 impl Plan {
@@ -114,6 +116,20 @@ impl Plan {
             }
         }
 
+        let mut plugins: BTreeMap<String, String> = BTreeMap::new();
+        for name in enabled
+            .iter()
+            .chain(disabled.iter())
+            .chain(already_installed.iter())
+            .chain(not_installed.iter())
+        {
+            if let Some(pkg) = config.packages.get(name)
+                && let Some(ref plugin_name) = pkg.plugin
+            {
+                plugins.insert(name.clone(), plugin_name.clone());
+            }
+        }
+
         let mut warnings: BTreeMap<String, Vec<String>> = BTreeMap::new();
         if let Some(dir) = packages_dir {
             for name in &enabled {
@@ -139,6 +155,7 @@ impl Plan {
             already_installed,
             not_installed,
             warnings,
+            plugins,
         })
     }
 
@@ -151,24 +168,46 @@ impl Plan {
         if !self.enabled.is_empty() {
             lines.push(format!("The following packages will be {verb}:"));
             for name in &self.enabled {
+                let mut annotations = Vec::new();
+                if let Some(plugin_name) = self.plugins.get(name) {
+                    annotations.push(format!("plugin: {plugin_name}"));
+                }
                 if let Some(warns) = self.warnings.get(name) {
-                    let warn_str = warns.join(", ");
-                    lines.push(format!("  {name} ({warn_str})"));
-                } else {
+                    annotations.extend(warns.iter().cloned());
+                }
+                if annotations.is_empty() {
                     lines.push(format!("  {name}"));
+                } else {
+                    let annotation_str = annotations.join(", ");
+                    lines.push(format!("  {name} ({annotation_str})"));
                 }
             }
         }
 
         let mut skipped: Vec<String> = Vec::new();
         for name in &self.disabled {
-            skipped.push(format!("  {name} (disabled)"));
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!("  {name} (disabled{plugin_suffix})"));
         }
         for name in &self.already_installed {
-            skipped.push(format!("  {name} (already installed)"));
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!("  {name} (already installed{plugin_suffix})"));
         }
         for name in &self.not_installed {
-            skipped.push(format!("  {name} (not installed)"));
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!("  {name} (not installed{plugin_suffix})"));
         }
         if !skipped.is_empty() {
             lines.push("The following packages will be skipped:".to_string());
@@ -318,6 +357,7 @@ mod tests {
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -343,6 +383,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -365,6 +406,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -384,6 +426,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -469,6 +512,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
         let mut input = Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -495,6 +539,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act & Assert
@@ -511,6 +556,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act & Assert
@@ -565,6 +611,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -653,6 +700,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -675,6 +723,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -700,6 +749,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -720,6 +770,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec!["ripgrep".to_string()],
             warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -1109,6 +1160,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             warnings,
+            plugins: BTreeMap::new(),
         };
 
         // Act
@@ -1148,5 +1200,210 @@ The following packages will be skipped:
 
         // Assert — disabled packages are not in enabled list, so no warnings
         assert!(sut.warnings.is_empty());
+    }
+
+    // --- Plugin display tests ---
+
+    #[test]
+    fn test_display_shows_plugin_name_for_enabled_package() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be installed:\n  neovim (plugin: dnf)"
+        );
+    }
+
+    #[test]
+    fn test_display_shows_plugin_name_for_disabled_package() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["neovim".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  neovim (disabled, plugin: dnf)"
+        );
+    }
+
+    #[test]
+    fn test_display_shows_plugin_name_for_already_installed_package() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec!["neovim".to_string()],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  neovim (already installed, plugin: dnf)"
+        );
+    }
+
+    #[test]
+    fn test_display_shows_plugin_name_for_not_installed_package() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Update,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec!["neovim".to_string()],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  neovim (not installed, plugin: dnf)"
+        );
+    }
+
+    #[test]
+    fn test_display_shows_plugin_and_warning_together() {
+        // Arrange
+        let mut warnings = BTreeMap::new();
+        warnings.insert(
+            "neovim".to_string(),
+            vec!["warning: install.sh is unmodified".to_string()],
+        );
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings,
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert!(sut.contains("neovim (plugin: dnf, warning: install.sh is unmodified)"));
+    }
+
+    #[test]
+    fn test_display_mixed_packages_with_and_without_plugin() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string(), "zed".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be installed:
+  neovim (plugin: dnf)
+  zed";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_build_populates_plugin_for_enabled_package() {
+        // Arrange
+        let mut packages = BTreeMap::new();
+        packages.insert(
+            "neovim".to_string(),
+            PackageConfig {
+                plugin: Some("dnf".to_string()),
+                ..Default::default()
+            },
+        );
+        packages.insert(
+            "zed".to_string(),
+            PackageConfig {
+                ..Default::default()
+            },
+        );
+        let config = Config {
+            packages,
+            ..Default::default()
+        };
+
+        // Act
+        let sut = Plan::build(
+            &config,
+            &["neovim".to_string(), "zed".to_string()],
+            Action::Install,
+            &[],
+            None,
+        )
+        .unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins.get("neovim"), Some(&"dnf".to_string()));
+        assert!(!sut.plugins.contains_key("zed"));
+    }
+
+    #[test]
+    fn test_build_populates_plugin_for_disabled_package() {
+        // Arrange
+        let mut packages = BTreeMap::new();
+        packages.insert(
+            "neovim".to_string(),
+            PackageConfig {
+                enabled: false,
+                plugin: Some("dnf".to_string()),
+                ..Default::default()
+            },
+        );
+        let config = Config {
+            packages,
+            ..Default::default()
+        };
+
+        // Act
+        let sut =
+            Plan::build(&config, &["neovim".to_string()], Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins.get("neovim"), Some(&"dnf".to_string()));
     }
 }

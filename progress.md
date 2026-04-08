@@ -2241,3 +2241,34 @@ Changed the plan display format from individual `Skipping <pkg> (reason)` lines 
 - The `apply()` function had two locations that printed `Skipping <pkg> (disabled)` directly — both were updated to use the grouped format with the `The following packages will be skipped:` header.
 - The new format matches the README's example output for `homeos apply`.
 
+
+---
+
+# Ralph Loop — 2026-04-08T09:32:54Z
+
+## Task: Show plugin name in plan display
+
+**Timestamp:**
+
+2026-04-08T09:36:06Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a `plugins` field (`BTreeMap<String, String>`) to `Plan` that maps package names to their plugin names. `Plan::build()` now populates this field by checking each package's `plugin` field in the config. `Plan::display()` appends `(plugin: <name>)` to enabled packages that use a plugin, and appends `, plugin: <name>` to skipped packages (disabled, already installed, not installed). Plugin annotations are combined with existing warning annotations when both are present.
+
+**What was changed:**
+
+- src/plan.rs (added `plugins` field to `Plan`, populated in `build()`, displayed in `display()`, updated all existing test Plan constructions, added 8 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 370 tests pass (8 new tests added, no existing tests modified beyond adding the new `plugins` field).
+- Plugin name appears in parentheses after the package name: `neovim (plugin: dnf)` for enabled packages, `neovim (disabled, plugin: dnf)` for skipped packages.
+- When a package has both a plugin and a warning, they are combined: `neovim (plugin: dnf, warning: install.sh is unmodified)`.
+
