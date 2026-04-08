@@ -154,6 +154,12 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Enhance `homeos package remove` to accept multiple packages (`<packages>...`). Update help message to "Remove package entries from homeos.yml".
 - [ ] Rename CLI argument placeholders and variable names: plugin commands `name` → `plugin`, repo commands `name` → `repo`. Update help output, variable names, and call sites.
 - [ ] Change `homeos plugin remove` to keep the plugin directory (only remove the entry from `homeos.yml`), consistent with `package remove`.
+- [ ] Guard `homeos repo remove` against deleting the `default` repository. Error with a clear message.
+- [ ] Rename plugin config file from `params.yml` to `plugin.yml`. Update all references: `plugin add --local` skeleton generation, `plugin add` validation check, `package add` manifest loading, `config.rs` PluginManifest, and all related tests.
+- [ ] Rename `actions_overrides` to `script_aliases` in `PackageConfig`, `homeos.yml` serde, and all related code and tests.
+- [ ] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).
+- [ ] Implement `homeos package add-alias <pkg> <alias>...` — add script aliases to an existing package (e.g., `update=install`).
+- [ ] Implement `homeos package remove-alias <pkg> <alias>...` — remove script aliases from a package by target name (e.g., `update`).
 
 ## Completion Criteria
 

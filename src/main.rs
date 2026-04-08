@@ -67,7 +67,7 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum PluginCommands {
-    /// List registered plugins
+    /// List all plugins
     List,
     /// List official plugins available from GitHub
     ListRemote,
@@ -90,7 +90,7 @@ pub enum PluginCommands {
 
 #[derive(Subcommand)]
 pub enum RepoCommands {
-    /// List registered repositories
+    /// List all repositories
     List,
     /// Clone a remote repository
     Add {
@@ -99,7 +99,7 @@ pub enum RepoCommands {
         /// Remote URL to clone
         url: String,
     },
-    /// Remove the local repository directory
+    /// Delete a local repository
     Remove {
         /// Repository name
         name: String,
