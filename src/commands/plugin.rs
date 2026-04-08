@@ -13,6 +13,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     let config = Config::load(&ctx.config_path())?;
 
     if config.plugins.is_empty() {
+        writeln!(writer, "No plugins.")?;
         return Ok(());
     }
 
@@ -375,7 +376,7 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "");
+        assert_eq!(String::from_utf8(output).unwrap(), "No plugins.\n");
     }
 
     #[test]

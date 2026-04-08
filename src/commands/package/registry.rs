@@ -19,6 +19,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     };
 
     if config.packages.is_empty() {
+        writeln!(writer, "No packages.")?;
         return Ok(());
     }
 
@@ -457,7 +458,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let text = String::from_utf8(output).unwrap();
-        assert!(text.is_empty());
+        assert_eq!(text, "No packages.\n");
     }
 
     #[test]

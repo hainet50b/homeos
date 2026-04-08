@@ -58,6 +58,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     let repos_dir = ctx.repos_dir();
 
     if !repos_dir.exists() {
+        writeln!(writer, "No repositories.")?;
         return Ok(());
     }
 
@@ -73,6 +74,11 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         .collect();
 
     repos.sort();
+
+    if repos.is_empty() {
+        writeln!(writer, "No repositories.")?;
+        return Ok(());
+    }
 
     for repo in &repos {
         writeln!(writer, "{repo}")?;
@@ -120,7 +126,7 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "");
+        assert_eq!(String::from_utf8(output).unwrap(), "No repositories.\n");
     }
 
     #[test]
@@ -135,7 +141,7 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "");
+        assert_eq!(String::from_utf8(output).unwrap(), "No repositories.\n");
     }
 
     #[test]

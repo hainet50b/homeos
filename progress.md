@@ -2053,3 +2053,41 @@ Moved the `check_unmodified_scripts` logic into `Plan::build` by adding an optio
 - The `resolve_script_name` function remains a private helper in `plan.rs`, used by the build logic. It is still duplicated in `action.rs` for script execution.
 
 
+
+---
+
+# Ralph Loop — 2026-04-08T07:42:52Z
+
+## Task: Ensure all commands produce meaningful stdout output
+
+**Timestamp:**
+
+2026-04-08T07:46:46Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Reviewed all commands for stdout output. Most commands already had meaningful output. Three list commands were silent when their collections were empty, inconsistent with `plugin list-remote` which prints "No remote plugins found." Added empty-state messages:
+- `package list` → "No packages."
+- `plugin list` → "No plugins."
+- `repo list` → "No repositories." (both when repos dir doesn't exist and when it exists but is empty)
+
+Updated 3 existing tests that expected empty output to expect the new messages.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added "No packages." for empty list, updated test)
+- src/commands/plugin.rs (added "No plugins." for empty list, updated test)
+- src/commands/repo.rs (added "No repositories." for empty list in two branches, updated 2 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 347 tests pass (no new tests added — existing tests were updated to match new behavior).
+- Commands that launch interactive shells (`cd`, `package cd`) intentionally produce no output, which is appropriate for their behavior.
+- All other commands already had meaningful output: init prints path, add/remove/enable/disable print confirmation, install/update/uninstall show plans and progress, cat shows scripts.
+
