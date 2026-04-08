@@ -2540,3 +2540,29 @@ Changed `skeleton_scripts()` to return all 6 combinations (3 actions × 2 extens
 - All 400 tests pass (1 new test added).
 - Plugin-based script generation remains OS-specific (templates are selected by current OS extension) — this is correct since plugin templates are OS-specific by design.
 - The `skeleton_script_content()` function already handled both `sh` and `ps1` content generation correctly (shebang for sh, comment-only for ps1).
+
+## Task: Change `homeos package cat` to display all script files for all OS
+
+**Timestamp:**
+
+2026-04-08T10:40:03Z
+
+**Why this task:**
+
+Only remaining unchecked task in the Tasks section. No dependencies.
+
+**What was done:**
+
+Changed `cat_to` to iterate over all extensions (`all_script_extensions()`) instead of just the current OS extension (`script_extension()`). Scripts are grouped by action (install, update, uninstall), with `.sh` shown before `.ps1` within each action. Updated 3 existing tests to assert both extensions. Added 1 new test (`test_cat_displays_both_sh_and_ps1_in_order`) verifying ordering and mixed presence/absence. Updated README example for `package cat` to show both `.sh` and `.ps1` output.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (changed `cat_to` to use `all_script_extensions()`, updated 3 tests, added 1 new test, added import)
+- README.md (updated `package cat` example to show both `.sh` and `.ps1`)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 401 tests pass (1 new test added).
+- The ordering is action-grouped: install.sh, install.ps1, update.sh, update.ps1, uninstall.sh, uninstall.ps1 — consistent with how `package add` generates skeleton scripts for all OS.

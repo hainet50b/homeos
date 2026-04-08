@@ -400,21 +400,25 @@ fn cat_to<W: Write>(
     }
 
     let actions = ["install", "update", "uninstall"];
-    let ext = super::script_extension();
+    let extensions = super::all_script_extensions();
     let pkg_dir = ctx.packages_dir().join(package);
 
-    for (i, action) in actions.iter().enumerate() {
-        if i > 0 {
-            writeln!(writer)?;
-        }
-        let filename = format!("{action}.{ext}");
-        writeln!(writer, "=== {filename} ===")?;
-        let script_path = pkg_dir.join(&filename);
-        if script_path.is_file() {
-            let content = std::fs::read_to_string(&script_path)?;
-            write!(writer, "{content}")?;
-        } else {
-            writeln!(writer, "(not found)")?;
+    let mut first = true;
+    for action in &actions {
+        for ext in extensions {
+            if !first {
+                writeln!(writer)?;
+            }
+            first = false;
+            let filename = format!("{action}.{ext}");
+            writeln!(writer, "=== {filename} ===")?;
+            let script_path = pkg_dir.join(&filename);
+            if script_path.is_file() {
+                let content = std::fs::read_to_string(&script_path)?;
+                write!(writer, "{content}")?;
+            } else {
+                writeln!(writer, "(not found)")?;
+            }
         }
     }
 
@@ -481,7 +485,7 @@ fn skeleton_script_content(action: &str, ext: &str, package: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::package::script_extension;
+    use crate::commands::package::{all_script_extensions, script_extension};
     use crate::state::State;
     use std::collections::BTreeMap;
     use tempfile::TempDir;
@@ -2218,22 +2222,23 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
-        std::fs::write(
-            pkg_dir.join(format!("install.{ext}")),
-            "#!/usr/bin/env sh\necho install\n",
-        )
-        .unwrap();
-        std::fs::write(
-            pkg_dir.join(format!("update.{ext}")),
-            "#!/usr/bin/env sh\necho update\n",
-        )
-        .unwrap();
-        std::fs::write(
-            pkg_dir.join(format!("uninstall.{ext}")),
-            "#!/usr/bin/env sh\necho uninstall\n",
-        )
-        .unwrap();
+        for ext in all_script_extensions() {
+            std::fs::write(
+                pkg_dir.join(format!("install.{ext}")),
+                format!("echo install-{ext}\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                pkg_dir.join(format!("update.{ext}")),
+                format!("echo update-{ext}\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                format!("echo uninstall-{ext}\n"),
+            )
+            .unwrap();
+        }
         let mut output = Vec::new();
 
         // Act
@@ -2242,12 +2247,14 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains(&format!("=== install.{ext} ===")));
-        assert!(written.contains("echo install"));
-        assert!(written.contains(&format!("=== update.{ext} ===")));
-        assert!(written.contains("echo update"));
-        assert!(written.contains(&format!("=== uninstall.{ext} ===")));
-        assert!(written.contains("echo uninstall"));
+        for ext in all_script_extensions() {
+            assert!(written.contains(&format!("=== install.{ext} ===")));
+            assert!(written.contains(&format!("echo install-{ext}")));
+            assert!(written.contains(&format!("=== update.{ext} ===")));
+            assert!(written.contains(&format!("echo update-{ext}")));
+            assert!(written.contains(&format!("=== uninstall.{ext} ===")));
+            assert!(written.contains(&format!("echo uninstall-{ext}")));
+        }
     }
 
     #[test]
@@ -2256,9 +2263,8 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
         std::fs::write(
-            pkg_dir.join(format!("install.{ext}")),
+            pkg_dir.join("install.sh"),
             "#!/usr/bin/env sh\necho install\n",
         )
         .unwrap();
@@ -2270,10 +2276,13 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains(&format!("=== install.{ext} ===")));
+        assert!(written.contains("=== install.sh ==="));
         assert!(written.contains("echo install"));
-        assert!(written.contains(&format!("=== update.{ext} ===\n(not found)")));
-        assert!(written.contains(&format!("=== uninstall.{ext} ===\n(not found)")));
+        assert!(written.contains("=== install.ps1 ===\n(not found)"));
+        assert!(written.contains("=== update.sh ===\n(not found)"));
+        assert!(written.contains("=== update.ps1 ===\n(not found)"));
+        assert!(written.contains("=== uninstall.sh ===\n(not found)"));
+        assert!(written.contains("=== uninstall.ps1 ===\n(not found)"));
     }
 
     #[test]
@@ -2290,10 +2299,43 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        let ext = script_extension();
-        assert!(written.contains(&format!("=== install.{ext} ===\n(not found)")));
-        assert!(written.contains(&format!("=== update.{ext} ===\n(not found)")));
-        assert!(written.contains(&format!("=== uninstall.{ext} ===\n(not found)")));
+        for ext in all_script_extensions() {
+            assert!(written.contains(&format!("=== install.{ext} ===\n(not found)")));
+            assert!(written.contains(&format!("=== update.{ext} ===\n(not found)")));
+            assert!(written.contains(&format!("=== uninstall.{ext} ===\n(not found)")));
+        }
+    }
+
+    #[test]
+    fn test_cat_displays_both_sh_and_ps1_in_order() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "echo install-sh\n").unwrap();
+        std::fs::write(pkg_dir.join("install.ps1"), "echo install-ps1\n").unwrap();
+        std::fs::write(pkg_dir.join("update.sh"), "echo update-sh\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        let sh_pos = written.find("=== install.sh ===").unwrap();
+        let ps1_pos = written.find("=== install.ps1 ===").unwrap();
+        let update_sh_pos = written.find("=== update.sh ===").unwrap();
+        let update_ps1_pos = written.find("=== update.ps1 ===").unwrap();
+        // sh comes before ps1 within each action
+        assert!(sh_pos < ps1_pos);
+        // install group comes before update group
+        assert!(ps1_pos < update_sh_pos);
+        assert!(update_sh_pos < update_ps1_pos);
+        // missing scripts show (not found)
+        assert!(written.contains("=== update.ps1 ===\n(not found)"));
+        assert!(written.contains("=== uninstall.sh ===\n(not found)"));
+        assert!(written.contains("=== uninstall.ps1 ===\n(not found)"));
     }
 
     #[test]

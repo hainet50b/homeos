@@ -348,7 +348,7 @@ Arguments:
   <PACKAGE>  Package name
 ```
 
-If a script does not exist, `(not found)` is shown.
+Displays all script files for both Linux/macOS (`.sh`) and Windows (`.ps1`) regardless of the current OS. If a script does not exist, `(not found)` is shown.
 
 ```
 $ homeos package cat rustup
@@ -356,11 +356,20 @@ $ homeos package cat rustup
 #!/usr/bin/env sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
+=== install.ps1 ===
+(not found)
+
 === update.sh ===
 #!/usr/bin/env sh
 rustup update
 
+=== update.ps1 ===
+(not found)
+
 === uninstall.sh ===
+(not found)
+
+=== uninstall.ps1 ===
 (not found)
 ```
 
