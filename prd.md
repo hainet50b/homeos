@@ -160,6 +160,8 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [ ] Add `--script-aliases` option to `homeos package add` to specify script aliases at creation time (e.g., `--script-aliases update=install`).
 - [ ] Implement `homeos package add-alias <pkg> <alias>...` — add script aliases to an existing package (e.g., `update=install`).
 - [ ] Implement `homeos package remove-alias <pkg> <alias>...` — remove script aliases from a package by target name (e.g., `update`).
+- [ ] Change `homeos package add` to generate skeleton scripts for all OS (both `.sh` and `.ps1`) regardless of the current OS.
+- [ ] Change `homeos package cat` to display all script files (both `.sh` and `.ps1`) regardless of the current OS.
 
 ## Completion Criteria
 
