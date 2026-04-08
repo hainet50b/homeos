@@ -2681,3 +2681,29 @@ Implemented `homeos repo cd [<repo>]` to launch a shell in the specified reposit
 
 - All 412 tests pass (5 new tests added).
 - Function and test ordering in `repo.rs` now follows README order: list, add, cd, remove.
+
+## Task: Change `homeos cd` to launch a shell in the base directory
+
+**Timestamp:**
+
+2026-04-08T12:26:18Z
+
+**Why this task:**
+
+Only remaining task in the PRD — all other Tasks and Post Tasks are already checked.
+
+**What was done:**
+
+Changed `homeos cd` to launch a shell in the base directory (`<data_dir>/homeos`) instead of the default repository directory. Added a `base_dir()` accessor to `Context`. Updated `resolve_target` in `cd.rs` to use `ctx.base_dir()` instead of `ctx.repo_dir()`, with updated error message ("Base directory not found" instead of "Repository not found"). Updated the CLI help text from "Launch a shell in the repo directory" to "Launch a shell in the base directory". Fixed the test fixture to use a subdirectory (`tmp.path().join("homeos")`) so the "not initialized" test still works (since `TempDir` itself always exists, but the subdirectory won't until `init` creates it).
+
+**What was changed:**
+
+- src/context.rs (added `base_dir()` public accessor method)
+- src/commands/cd.rs (changed `resolve_target` to use `base_dir()`, updated error message, updated tests)
+- src/main.rs (updated help text for `Cd` command)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 412 tests pass, no new tests needed beyond updating existing ones.
