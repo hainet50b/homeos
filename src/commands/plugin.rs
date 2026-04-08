@@ -129,10 +129,10 @@ where
     Ok(())
 }
 
-fn check_repo_exists(name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn check_repo_exists(plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
     let api_url = format!(
         "https://api.github.com/repos/hainet50b/homeos-plugin-{}",
-        name
+        plugin
     );
     let client = reqwest::blocking::Client::new();
     let response = client.get(&api_url).header("User-Agent", "homeos").send()?;
@@ -140,7 +140,7 @@ fn check_repo_exists(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(format!(
             "Plugin '{}' not found on GitHub (homeos-plugin-{})",
-            name, name
+            plugin, plugin
         )
         .into());
     }
@@ -150,25 +150,25 @@ fn check_repo_exists(name: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 pub fn add(
     ctx: &Context,
-    name: &str,
+    plugin: &str,
     url: Option<&str>,
     local: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    add_with(ctx, name, url, local, check_repo_exists)
+    add_with(ctx, plugin, url, local, check_repo_exists)
 }
 
-fn add_local(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn add_local(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    if config.plugins.contains_key(name) {
-        return Err(format!("Plugin '{}' already exists", name).into());
+    if config.plugins.contains_key(plugin) {
+        return Err(format!("Plugin '{}' already exists", plugin).into());
     }
 
     let plugins_dir = ctx.plugins_dir();
-    let target = plugins_dir.join(name);
+    let target = plugins_dir.join(plugin);
 
     if target.exists() {
-        return Err(format!("Plugin directory '{}' already exists", name).into());
+        return Err(format!("Plugin directory '{}' already exists", plugin).into());
     }
 
     std::fs::create_dir_all(&target)?;
@@ -191,16 +191,16 @@ fn add_local(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>
     let mut config = config;
     config
         .plugins
-        .insert(name.to_string(), PluginConfig { url: String::new() });
+        .insert(plugin.to_string(), PluginConfig { url: String::new() });
     config.save(&ctx.config_path())?;
 
-    println!("Plugin '{}' created locally", name);
+    println!("Plugin '{}' created locally", plugin);
     Ok(())
 }
 
 fn add_with<F>(
     ctx: &Context,
-    name: &str,
+    plugin: &str,
     url: Option<&str>,
     local: bool,
     repo_checker: F,
@@ -209,29 +209,29 @@ where
     F: FnOnce(&str) -> Result<(), Box<dyn std::error::Error>>,
 {
     if local {
-        return add_local(ctx, name);
+        return add_local(ctx, plugin);
     }
 
     let config = Config::load(&ctx.config_path())?;
 
-    if config.plugins.contains_key(name) {
-        return Err(format!("Plugin '{}' already exists", name).into());
+    if config.plugins.contains_key(plugin) {
+        return Err(format!("Plugin '{}' already exists", plugin).into());
     }
 
     let auto_resolved = url.is_none();
     let url = url
         .map(|u| u.to_string())
-        .unwrap_or_else(|| format!("https://github.com/hainet50b/homeos-plugin-{}", name));
+        .unwrap_or_else(|| format!("https://github.com/hainet50b/homeos-plugin-{}", plugin));
 
     let plugins_dir = ctx.plugins_dir();
-    let target = plugins_dir.join(name);
+    let target = plugins_dir.join(plugin);
 
     if target.exists() {
-        return Err(format!("Plugin directory '{}' already exists", name).into());
+        return Err(format!("Plugin directory '{}' already exists", plugin).into());
     }
 
     if auto_resolved {
-        repo_checker(name)?;
+        repo_checker(plugin)?;
     }
 
     std::fs::create_dir_all(&plugins_dir)?;
@@ -258,25 +258,25 @@ where
     let mut config = config;
     config
         .plugins
-        .insert(name.to_string(), PluginConfig { url: url.clone() });
+        .insert(plugin.to_string(), PluginConfig { url: url.clone() });
     config.save(&ctx.config_path())?;
 
-    println!("Plugin '{}' added successfully", name);
+    println!("Plugin '{}' added successfully", plugin);
     Ok(())
 }
 
-pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
-    if !config.plugins.contains_key(name) {
-        return Err(format!("Plugin '{}' not found", name).into());
+    if !config.plugins.contains_key(plugin) {
+        return Err(format!("Plugin '{}' not found", plugin).into());
     }
 
     // Warn if packages reference this plugin
     let referencing: Vec<&String> = config
         .packages
         .iter()
-        .filter(|(_, pkg)| pkg.plugin.as_deref() == Some(name))
+        .filter(|(_, pkg)| pkg.plugin.as_deref() == Some(plugin))
         .map(|(pkg_name, _)| pkg_name)
         .collect();
 
@@ -288,40 +288,40 @@ pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error
             .join(", ");
         eprintln!(
             "Warning: the following packages reference plugin '{}': {}",
-            name, names
+            plugin, names
         );
     }
 
     // Remove plugin directory
-    let plugin_dir = ctx.plugins_dir().join(name);
+    let plugin_dir = ctx.plugins_dir().join(plugin);
     if plugin_dir.exists() {
         std::fs::remove_dir_all(&plugin_dir)?;
     }
 
     // Remove from config
-    config.plugins.remove(name);
+    config.plugins.remove(plugin);
     config.save(&ctx.config_path())?;
 
-    println!("Plugin '{}' removed successfully", name);
+    println!("Plugin '{}' removed successfully", plugin);
     Ok(())
 }
 
-pub fn cat(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    cat_to(ctx, name, &mut std::io::stdout())
+pub fn cat(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
+    cat_to(ctx, plugin, &mut std::io::stdout())
 }
 
 fn cat_to<W: Write>(
     ctx: &Context,
-    name: &str,
+    plugin: &str,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    if !config.plugins.contains_key(name) {
-        return Err(format!("Plugin '{name}' not found").into());
+    if !config.plugins.contains_key(plugin) {
+        return Err(format!("Plugin '{plugin}' not found").into());
     }
 
-    let plugin_dir = ctx.plugins_dir().join(name);
+    let plugin_dir = ctx.plugins_dir().join(plugin);
 
     // Display plugin.yml
     let plugin_yml_path = plugin_dir.join("plugin.yml");
@@ -353,8 +353,8 @@ fn cat_to<W: Write>(
     Ok(())
 }
 
-pub fn cd(ctx: &Context, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = resolve_cd_target(ctx, name)?;
+pub fn cd(ctx: &Context, plugin: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = resolve_cd_target(ctx, plugin)?;
     let shell = crate::commands::detect_shell();
 
     let status = Command::new(&shell).current_dir(&dir).status()?;
@@ -367,11 +367,11 @@ pub fn cd(ctx: &Context, name: Option<&str>) -> Result<(), Box<dyn std::error::E
 
 fn resolve_cd_target(
     ctx: &Context,
-    name: Option<&str>,
+    plugin: Option<&str>,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let dir = match name {
+    let dir = match plugin {
         Some(plugin_name) => {
             if !config.plugins.contains_key(plugin_name) {
                 return Err(format!("Plugin '{plugin_name}' not found").into());

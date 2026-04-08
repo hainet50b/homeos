@@ -2324,3 +2324,34 @@ Changed `remove` to accept `&[String]` instead of `&str`. All validation (not fo
 - All 372 tests pass (4 new tests added, no test count decreased since existing tests were updated in-place).
 - The dependency check filters out packages in the removal set so that e.g. removing `git` and `neovim` (where neovim depends on git) succeeds — only external dependents block removal.
 
+## Task: Rename CLI argument placeholders and variable names
+
+**Timestamp:**
+
+2026-04-08T10:18:07Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Renamed CLI argument placeholders and variable names across plugin and repo commands:
+- Plugin commands: `name` → `plugin` in `PluginCommands` enum fields (Add, Remove, Cat, Cd), match arms in `main()`, and all function signatures/bodies in `plugin.rs` (`add`, `add_with`, `add_local`, `remove`, `cat`, `cat_to`, `cd`, `resolve_cd_target`, `check_repo_exists`).
+- Repo commands: `name` → `repo` in `RepoCommands` enum fields (Add, Remove), match arms in `main()`, and all function signatures/bodies in `repo.rs` (`add`, `remove`).
+- Added 6 new tests verifying the renamed argument placeholders appear in CLI help output for plugin add/remove/cat/cd and repo add/remove.
+- Updated 1 existing test (`test_plugin_add_local_flag`) to use the renamed field.
+
+**What was changed:**
+
+- src/main.rs (renamed enum fields, match arms, added 6 tests, updated 1 test)
+- src/commands/plugin.rs (renamed function parameters and internal variable usage)
+- src/commands/repo.rs (renamed function parameters and internal variable usage)
+- prd.md (marked task as checked)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 378 tests pass (6 new tests added).
+- Iteration variables in `list_to` functions (e.g., `for (name, plugin) in &config.plugins`) were left unchanged since they are BTreeMap iteration keys, not CLI argument names.
+

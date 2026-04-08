@@ -7,12 +7,12 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
 }
 
-pub fn add(ctx: &Context, name: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(ctx: &Context, repo: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let repos_dir = ctx.repos_dir();
-    let target = repos_dir.join(name);
+    let target = repos_dir.join(repo);
 
     if target.exists() {
-        return Err(format!("Repository '{}' already exists", name).into());
+        return Err(format!("Repository '{}' already exists", repo).into());
     }
 
     std::fs::create_dir_all(&repos_dir)?;
@@ -26,15 +26,15 @@ pub fn add(ctx: &Context, name: &str, url: &str) -> Result<(), Box<dyn std::erro
         return Err(format!("git clone failed: {}", stderr.trim()).into());
     }
 
-    println!("Repository '{}' cloned successfully", name);
+    println!("Repository '{}' cloned successfully", repo);
     Ok(())
 }
 
-pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let target = ctx.repos_dir().join(name);
+pub fn remove(ctx: &Context, repo: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let target = ctx.repos_dir().join(repo);
 
     if !target.exists() {
-        return Err(format!("Repository '{}' does not exist", name).into());
+        return Err(format!("Repository '{}' does not exist", repo).into());
     }
 
     let state_path = target.join("state.yml");
@@ -43,14 +43,14 @@ pub fn remove(ctx: &Context, name: &str) -> Result<(), Box<dyn std::error::Error
         if !state.installed.is_empty() {
             return Err(format!(
                 "Repository '{}' has installed packages. Uninstall them first.",
-                name
+                repo
             )
             .into());
         }
     }
 
     std::fs::remove_dir_all(&target)?;
-    println!("Repository '{}' removed", name);
+    println!("Repository '{}' removed", repo);
     Ok(())
 }
 

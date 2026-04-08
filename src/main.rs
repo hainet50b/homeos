@@ -74,7 +74,7 @@ pub enum PluginCommands {
     /// Register a plugin
     Add {
         /// Plugin name
-        name: String,
+        plugin: String,
         /// Remote URL to clone (defaults to official repository)
         url: Option<String>,
         /// Create an empty plugin skeleton for local development
@@ -84,17 +84,17 @@ pub enum PluginCommands {
     /// Remove a plugin
     Remove {
         /// Plugin name
-        name: String,
+        plugin: String,
     },
     /// Display plugin.yml and all template files for a plugin
     Cat {
         /// Plugin name
-        name: String,
+        plugin: String,
     },
     /// Launch a shell in the plugins root or specific plugin directory
     Cd {
         /// Plugin name (optional — defaults to plugins root)
-        name: Option<String>,
+        plugin: Option<String>,
     },
 }
 
@@ -105,14 +105,14 @@ pub enum RepoCommands {
     /// Clone a remote repository
     Add {
         /// Repository name
-        name: String,
+        repo: String,
         /// Remote URL to clone
         url: String,
     },
     /// Delete a local repository
     Remove {
         /// Repository name
-        name: String,
+        repo: String,
     },
 }
 
@@ -237,26 +237,26 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Add { name, url, local } => {
-                if let Err(e) = commands::plugin::add(&ctx, &name, url.as_deref(), local) {
+            PluginCommands::Add { plugin, url, local } => {
+                if let Err(e) = commands::plugin::add(&ctx, &plugin, url.as_deref(), local) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Remove { name } => {
-                if let Err(e) = commands::plugin::remove(&ctx, &name) {
+            PluginCommands::Remove { plugin } => {
+                if let Err(e) = commands::plugin::remove(&ctx, &plugin) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Cat { name } => {
-                if let Err(e) = commands::plugin::cat(&ctx, &name) {
+            PluginCommands::Cat { plugin } => {
+                if let Err(e) = commands::plugin::cat(&ctx, &plugin) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Cd { name } => {
-                if let Err(e) = commands::plugin::cd(&ctx, name.as_deref()) {
+            PluginCommands::Cd { plugin } => {
+                if let Err(e) = commands::plugin::cd(&ctx, plugin.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -269,14 +269,14 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            RepoCommands::Add { name, url } => {
-                if let Err(e) = commands::repo::add(&ctx, &name, &url) {
+            RepoCommands::Add { repo, url } => {
+                if let Err(e) = commands::repo::add(&ctx, &repo, &url) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            RepoCommands::Remove { name } => {
-                if let Err(e) = commands::repo::remove(&ctx, &name) {
+            RepoCommands::Remove { repo } => {
+                if let Err(e) = commands::repo::remove(&ctx, &repo) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -452,10 +452,10 @@ mod tests {
 
         // Assert
         if let Commands::Plugin {
-            command: PluginCommands::Add { name, url, local },
+            command: PluginCommands::Add { plugin, url, local },
         } = cli.command
         {
-            assert_eq!(name, "custom");
+            assert_eq!(plugin, "custom");
             assert!(url.is_none());
             assert!(local);
         } else {
@@ -527,6 +527,114 @@ mod tests {
         } else {
             panic!("Expected PackageCommands::Add");
         }
+    }
+
+    #[test]
+    fn test_plugin_add_help_shows_plugin_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let plugin_cmd = cmd.find_subcommand("plugin").unwrap();
+        let add_cmd = plugin_cmd.find_subcommand("add").unwrap();
+
+        // Act
+        let args: Vec<&str> = add_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "plugin")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["plugin"]);
+    }
+
+    #[test]
+    fn test_plugin_remove_help_shows_plugin_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let plugin_cmd = cmd.find_subcommand("plugin").unwrap();
+        let remove_cmd = plugin_cmd.find_subcommand("remove").unwrap();
+
+        // Act
+        let args: Vec<&str> = remove_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "plugin")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["plugin"]);
+    }
+
+    #[test]
+    fn test_plugin_cat_help_shows_plugin_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let plugin_cmd = cmd.find_subcommand("plugin").unwrap();
+        let cat_cmd = plugin_cmd.find_subcommand("cat").unwrap();
+
+        // Act
+        let args: Vec<&str> = cat_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "plugin")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["plugin"]);
+    }
+
+    #[test]
+    fn test_plugin_cd_help_shows_plugin_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let plugin_cmd = cmd.find_subcommand("plugin").unwrap();
+        let cd_cmd = plugin_cmd.find_subcommand("cd").unwrap();
+
+        // Act
+        let args: Vec<&str> = cd_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "plugin")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["plugin"]);
+    }
+
+    #[test]
+    fn test_repo_add_help_shows_repo_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let repo_cmd = cmd.find_subcommand("repo").unwrap();
+        let add_cmd = repo_cmd.find_subcommand("add").unwrap();
+
+        // Act
+        let args: Vec<&str> = add_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "repo")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["repo"]);
+    }
+
+    #[test]
+    fn test_repo_remove_help_shows_repo_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let repo_cmd = cmd.find_subcommand("repo").unwrap();
+        let remove_cmd = repo_cmd.find_subcommand("remove").unwrap();
+
+        // Act
+        let args: Vec<&str> = remove_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "repo")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["repo"]);
     }
 
     #[test]
