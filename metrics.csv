@@ -92,3 +92,5 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-08T10:34:36Z,f3b943b,"Mark homeos package remove-alias task as complete",94,94,3305,0.5814547499999999
 2026-04-08T10:37:41Z,cda35d3,"Generate skeleton scripts for all OS in package add",180,40,7093,0.9835927499999996
 2026-04-08T10:40:24Z,c844079,"Change package cat to display all script files for all OS",160,31,7418,0.881893
+2026-04-08T11:26:12Z,479f4d0,"Fix PackageConfig::default() to set enabled to true",139,102,5523,0.8080115000000001
+2026-04-08T11:28:40Z,9898033,"Add confirmation prompt to homeos repo remove",144,24,6928,0.7491207499999999
