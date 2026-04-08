@@ -15,10 +15,6 @@ impl Context {
         Self { base_dir, repo }
     }
 
-    pub fn base_dir(&self) -> &PathBuf {
-        &self.base_dir
-    }
-
     pub fn repos_dir(&self) -> PathBuf {
         self.base_dir.join("repos")
     }

@@ -4,17 +4,17 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Resolve and validate the target directory for `homeos cd`.
-/// Returns the base directory path if it exists, or an error if not.
+/// Returns the repos directory path if it exists, or an error if not.
 pub fn resolve_target(ctx: &Context) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let dir = ctx.base_dir();
+    let dir = ctx.repos_dir();
     if !dir.exists() {
         return Err(format!(
-            "Base directory not found at {}. Run `homeos init` first.",
+            "Repos directory not found at {}. Run `homeos init` first.",
             dir.display()
         )
         .into());
     }
-    Ok(dir.clone())
+    Ok(dir)
 }
 
 pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
@@ -42,7 +42,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_target_returns_base_dir() {
+    fn test_resolve_target_returns_repos_dir() {
         // Arrange
         let (_tmp, ctx) = fixture();
         init::run(&ctx, None, false).unwrap();
@@ -51,7 +51,7 @@ mod tests {
         let result = resolve_target(&ctx).unwrap();
 
         // Assert
-        assert_eq!(result, *ctx.base_dir());
+        assert_eq!(result, ctx.repos_dir());
     }
 
     #[test]
@@ -79,7 +79,7 @@ mod tests {
         // Assert
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Base directory not found"));
+        assert!(err.contains("Repos directory not found"));
         assert!(err.contains("homeos init"));
     }
 }

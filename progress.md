@@ -2707,3 +2707,38 @@ Changed `homeos cd` to launch a shell in the base directory (`<data_dir>/homeos`
 **Remarks:**
 
 - All 412 tests pass, no new tests needed beyond updating existing ones.
+
+---
+
+## Task: Change `homeos cd` to launch a shell in the repos directory
+
+**Timestamp:**
+
+2026-04-08T13:24:45Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD — all other Tasks are already checked.
+
+**What was done:**
+
+Changed `homeos cd` to launch a shell in the repos directory (`<data_dir>/homeos/repos`) instead of the base directory. Updated `resolve_target` in `cd.rs` to use `ctx.repos_dir()` instead of `ctx.base_dir()`, with updated error message ("Repos directory not found" instead of "Base directory not found"). Updated the CLI help text from "Launch a shell in the base directory" to "Launch a shell in the repos directory". Removed the now-unused `base_dir()` accessor from `Context` to fix a clippy warning. Updated existing tests to assert against `repos_dir()`.
+
+**What was changed:**
+
+- src/context.rs (removed unused `base_dir()` public accessor method)
+- src/commands/cd.rs (changed `resolve_target` to use `repos_dir()`, updated error message, updated tests)
+- src/main.rs (updated help text for `Cd` command)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 412 tests pass. No new tests needed — existing tests were updated to match the new target directory.
+- Removed the `base_dir()` method from Context since it became unused after this change, which fixed a clippy dead_code warning.
+
+---
+
+# Ralph Loop — 2026-04-08T13:22:55Z
+
+

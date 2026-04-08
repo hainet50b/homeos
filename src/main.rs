@@ -44,7 +44,7 @@ pub enum Commands {
         #[arg(long)]
         strip_git: bool,
     },
-    /// Launch a shell in the base directory
+    /// Launch a shell in the repos directory
     Cd,
     /// Install new packages and update installed ones
     Apply,
