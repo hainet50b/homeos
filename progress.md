@@ -2272,3 +2272,29 @@ Added a `plugins` field (`BTreeMap<String, String>`) to `Plan` that maps package
 - Plugin name appears in parentheses after the package name: `neovim (plugin: dnf)` for enabled packages, `neovim (disabled, plugin: dnf)` for skipped packages.
 - When a package has both a plugin and a warning, they are combined: `neovim (plugin: dnf, warning: install.sh is unmodified)`.
 
+## Task: Change `homeos package add` to deny if the package directory already exists
+
+**Timestamp:**
+
+2026-04-08T09:40:14Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a check in `add()` that returns an error if the package directory already exists, with a message suggesting to remove it first. Replaced three tests that verified the old "preserve existing scripts" behavior with two new error tests (one for plain add, one for plugin add). Reordered `remove` function to appear before `add_dep`/`remove_dep` in both code and tests to match README command definition order.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added directory existence check in `add()`, replaced 3 old tests with 2 new error tests, reordered `remove`/`add_dep`/`remove_dep` functions and tests to match README order)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 368 tests pass (3 tests removed that tested old preserve-existing-scripts behavior, 2 new error tests added).
+- The `generate_skeleton_scripts` function still has an `if !path.exists()` guard per script file, which is now redundant but harmless. Left it as-is since removing it would be a separate cleanup.
+- The reordering aligns code with README order: list, add, remove, add-dep, remove-dep, enable, disable, cat, cd.
+

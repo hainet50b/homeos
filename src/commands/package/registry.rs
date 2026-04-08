@@ -83,6 +83,12 @@ pub fn add(
     config.save(&ctx.config_path())?;
 
     let pkg_dir = ctx.packages_dir().join(package);
+    if pkg_dir.exists() {
+        return Err(format!(
+            "Package directory '{package}' already exists. Remove it first to re-create."
+        )
+        .into());
+    }
     std::fs::create_dir_all(&pkg_dir)?;
 
     if let Some(plugin_name) = plugin {
@@ -176,6 +182,50 @@ fn render_template(template: &str, params: &BTreeMap<String, String>) -> String 
     result
 }
 
+pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(package) {
+        return Err(format!("Package '{package}' not found").into());
+    }
+
+    let state_path = ctx.state_path();
+    if state_path.exists() {
+        let state = State::load(&state_path)?;
+        if state.installed.contains(&package.to_string()) {
+            return Err(format!(
+                "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+            )
+            .into());
+        }
+    }
+
+    let dependents: Vec<&String> = config
+        .packages
+        .iter()
+        .filter(|(_, pkg)| pkg.depends_on.contains(&package.to_string()))
+        .map(|(name, _)| name)
+        .collect();
+
+    if !dependents.is_empty() {
+        let list = dependents
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Cannot remove package '{package}' because it is depended on by: {list}"
+        )
+        .into());
+    }
+
+    config.packages.remove(package);
+    config.save(&ctx.config_path())?;
+
+    println!("Removed package '{package}'");
+    Ok(())
+}
+
 pub fn add_dep(
     ctx: &Context,
     package: &str,
@@ -225,50 +275,6 @@ pub fn remove_dep(
     }
 
     config.save(&ctx.config_path())?;
-    Ok(())
-}
-
-pub fn remove(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut config = Config::load(&ctx.config_path())?;
-
-    if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
-    }
-
-    let state_path = ctx.state_path();
-    if state_path.exists() {
-        let state = State::load(&state_path)?;
-        if state.installed.contains(&package.to_string()) {
-            return Err(format!(
-                "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
-            )
-            .into());
-        }
-    }
-
-    let dependents: Vec<&String> = config
-        .packages
-        .iter()
-        .filter(|(_, pkg)| pkg.depends_on.contains(&package.to_string()))
-        .map(|(name, _)| name)
-        .collect();
-
-    if !dependents.is_empty() {
-        let list = dependents
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(format!(
-            "Cannot remove package '{package}' because it is depended on by: {list}"
-        )
-        .into());
-    }
-
-    config.packages.remove(package);
-    config.save(&ctx.config_path())?;
-
-    println!("Removed package '{package}'");
     Ok(())
 }
 
@@ -648,76 +654,19 @@ mod tests {
     }
 
     #[test]
-    fn test_add_preserves_existing_scripts() {
+    fn test_add_errors_when_package_directory_exists() {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
-        let custom_content = "#!/usr/bin/env sh\napt install neovim\n";
-        std::fs::write(pkg_dir.join(format!("install.{ext}")), custom_content).unwrap();
 
         // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
+        let result = add(&ctx, "neovim", &[], None, &BTreeMap::new());
 
         // Assert
-        let install_content =
-            std::fs::read_to_string(pkg_dir.join(format!("install.{ext}"))).unwrap();
-        assert_eq!(install_content, custom_content);
-        assert!(pkg_dir.join(format!("update.{ext}")).is_file());
-        assert!(pkg_dir.join(format!("uninstall.{ext}")).is_file());
-    }
-
-    #[test]
-    fn test_add_generates_only_missing_scripts() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages: {}\n");
-        let pkg_dir = ctx.packages_dir().join("neovim");
-        std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
-        let custom_update = "#!/usr/bin/env sh\napt upgrade neovim\n";
-        let custom_uninstall = "#!/usr/bin/env sh\napt remove neovim\n";
-        std::fs::write(pkg_dir.join(format!("update.{ext}")), custom_update).unwrap();
-        std::fs::write(pkg_dir.join(format!("uninstall.{ext}")), custom_uninstall).unwrap();
-
-        // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
-
-        // Assert
-        let install_content =
-            std::fs::read_to_string(pkg_dir.join(format!("install.{ext}"))).unwrap();
-        assert!(install_content.contains("Generated by homeos"));
-        let update_content =
-            std::fs::read_to_string(pkg_dir.join(format!("update.{ext}"))).unwrap();
-        assert_eq!(update_content, custom_update);
-        let uninstall_content =
-            std::fs::read_to_string(pkg_dir.join(format!("uninstall.{ext}"))).unwrap();
-        assert_eq!(uninstall_content, custom_uninstall);
-    }
-
-    #[test]
-    fn test_add_preserves_all_existing_scripts() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages: {}\n");
-        let pkg_dir = ctx.packages_dir().join("neovim");
-        std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
-        for action in &["install", "update", "uninstall"] {
-            std::fs::write(
-                pkg_dir.join(format!("{action}.{ext}")),
-                format!("# custom {action}\n"),
-            )
-            .unwrap();
-        }
-
-        // Act
-        add(&ctx, "neovim", &[], None, &BTreeMap::new()).unwrap();
-
-        // Assert
-        for action in &["install", "update", "uninstall"] {
-            let content = std::fs::read_to_string(pkg_dir.join(format!("{action}.{ext}"))).unwrap();
-            assert_eq!(content, format!("# custom {action}\n"));
-        }
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("already exists"));
+        assert!(err.contains("Remove it first"));
     }
 
     #[test]
@@ -999,15 +948,14 @@ mod tests {
     }
 
     #[test]
-    fn test_add_with_plugin_preserves_existing_scripts() {
+    fn test_add_with_plugin_errors_when_package_directory_exists() {
         // Arrange
         let (_tmp, ctx) = fixture("packages: {}\n");
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
-        let ext = script_extension();
-        std::fs::write(pkg_dir.join(format!("install.{ext}")), "existing content").unwrap();
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
+        let ext = script_extension();
         std::fs::write(
             plugin_dir.join(format!("install.{ext}.tmpl")),
             "#!/usr/bin/env sh\nsudo dnf install -y {{name}}\n",
@@ -1017,11 +965,12 @@ mod tests {
         params.insert("name".to_string(), "neovim.x86_64".to_string());
 
         // Act
-        add(&ctx, "neovim", &[], Some("dnf"), &params).unwrap();
+        let result = add(&ctx, "neovim", &[], Some("dnf"), &params);
 
         // Assert
-        let content = std::fs::read_to_string(pkg_dir.join(format!("install.{ext}"))).unwrap();
-        assert_eq!(content, "existing content");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("already exists"));
+        assert!(err.contains("Remove it first"));
     }
 
     #[test]
@@ -1072,6 +1021,169 @@ mod tests {
         assert!(!pkg_dir.join(format!("install.{ext}")).exists());
         assert!(!pkg_dir.join(format!("update.{ext}")).exists());
         assert!(!pkg_dir.join(format!("uninstall.{ext}")).exists());
+    }
+
+    #[test]
+    fn test_remove_deletes_config_entry() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = remove(&ctx, "nonexistent");
+
+        // Assert
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_remove_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_rejects_installed_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("currently installed"));
+        assert!(err.contains("Uninstall it first"));
+        // Config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_allows_uninstalled_package() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let state = State {
+            installed: vec!["ripgrep".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_works_without_state_file() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        // No state.yml exists
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_last_package_leaves_empty_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = remove(&ctx, "neovim");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.is_empty());
+    }
+
+    #[test]
+    fn test_remove_rejects_package_depended_on_by_others() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
+
+        // Act
+        let result = remove(&ctx, "git");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot remove package 'git'"));
+        assert!(err.contains("depended on by"));
+        assert!(err.contains("neovim"));
+        // Config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("git"));
+    }
+
+    #[test]
+    fn test_remove_rejects_package_depended_on_by_multiple() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep:\n    depends_on:\n      - git\n",
+        );
+
+        // Act
+        let result = remove(&ctx, "git");
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("neovim"));
+        assert!(err.contains("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_allows_package_not_depended_on() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep: {}\n",
+        );
+
+        // Act
+        let result = remove(&ctx, "ripgrep");
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("ripgrep"));
     }
 
     #[test]
@@ -1272,169 +1384,6 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].depends_on.is_empty());
-    }
-
-    #[test]
-    fn test_remove_deletes_config_entry() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages.contains_key("neovim"));
-        assert!(config.packages.contains_key("ripgrep"));
-    }
-
-    #[test]
-    fn test_remove_errors_when_package_not_found() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-
-        // Act
-        let result = remove(&ctx, "nonexistent");
-
-        // Assert
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[test]
-    fn test_remove_errors_when_not_initialized() {
-        // Arrange
-        let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_remove_rejects_installed_package() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-        let state = State {
-            installed: vec!["neovim".to_string()],
-        };
-        state.save(&ctx.state_path()).unwrap();
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("currently installed"));
-        assert!(err.contains("Uninstall it first"));
-        // Config should be unchanged
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(config.packages.contains_key("neovim"));
-    }
-
-    #[test]
-    fn test_remove_allows_uninstalled_package() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
-        let state = State {
-            installed: vec!["ripgrep".to_string()],
-        };
-        state.save(&ctx.state_path()).unwrap();
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages.contains_key("neovim"));
-    }
-
-    #[test]
-    fn test_remove_works_without_state_file() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-        // No state.yml exists
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages.contains_key("neovim"));
-    }
-
-    #[test]
-    fn test_remove_last_package_leaves_empty_packages() {
-        // Arrange
-        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
-
-        // Act
-        let result = remove(&ctx, "neovim");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(config.packages.is_empty());
-    }
-
-    #[test]
-    fn test_remove_rejects_package_depended_on_by_others() {
-        // Arrange
-        let (_tmp, ctx) =
-            fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
-
-        // Act
-        let result = remove(&ctx, "git");
-
-        // Assert
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("Cannot remove package 'git'"));
-        assert!(err.contains("depended on by"));
-        assert!(err.contains("neovim"));
-        // Config should be unchanged
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(config.packages.contains_key("git"));
-    }
-
-    #[test]
-    fn test_remove_rejects_package_depended_on_by_multiple() {
-        // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep:\n    depends_on:\n      - git\n",
-        );
-
-        // Act
-        let result = remove(&ctx, "git");
-
-        // Assert
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("neovim"));
-        assert!(err.contains("ripgrep"));
-    }
-
-    #[test]
-    fn test_remove_allows_package_not_depended_on() {
-        // Arrange
-        let (_tmp, ctx) = fixture(
-            "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep: {}\n",
-        );
-
-        // Act
-        let result = remove(&ctx, "ripgrep");
-
-        // Assert
-        assert!(result.is_ok());
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages.contains_key("ripgrep"));
     }
 
     #[test]
