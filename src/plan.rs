@@ -160,16 +160,19 @@ impl Plan {
             }
         }
 
+        let mut skipped: Vec<String> = Vec::new();
         for name in &self.disabled {
-            lines.push(format!("Skipping {name} (disabled)"));
+            skipped.push(format!("  {name} (disabled)"));
         }
-
         for name in &self.already_installed {
-            lines.push(format!("Skipping {name} (already installed)"));
+            skipped.push(format!("  {name} (already installed)"));
         }
-
         for name in &self.not_installed {
-            lines.push(format!("Skipping {name} (not installed)"));
+            skipped.push(format!("  {name} (not installed)"));
+        }
+        if !skipped.is_empty() {
+            lines.push("The following packages will be skipped:".to_string());
+            lines.extend(skipped);
         }
 
         lines.join("\n")
@@ -325,7 +328,8 @@ mod tests {
 The following packages will be installed:
   neovim
   zed
-Skipping docker (disabled)";
+The following packages will be skipped:
+  docker (disabled)";
         assert_eq!(sut, expected);
     }
 
@@ -345,7 +349,10 @@ Skipping docker (disabled)";
         let sut = plan.display();
 
         // Assert
-        assert_eq!(sut, "Skipping docker (disabled)");
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  docker (disabled)"
+        );
     }
 
     #[test]
@@ -473,7 +480,8 @@ Skipping docker (disabled)";
         assert!(sut);
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim"));
-        assert!(written.contains("Skipping docker (disabled)"));
+        assert!(written.contains("docker (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("Proceed? [y/N]"));
     }
 
@@ -563,7 +571,8 @@ Skipping docker (disabled)";
         let sut = plan.display();
 
         // Assert
-        assert!(sut.contains("Skipping neovim (already installed)"));
+        assert!(sut.contains("neovim (already installed)"));
+        assert!(sut.contains("will be skipped"));
         assert!(sut.contains("will be installed"));
         assert!(sut.contains("zed"));
     }
@@ -650,9 +659,79 @@ Skipping docker (disabled)";
         let sut = plan.display();
 
         // Assert
-        assert!(sut.contains("Skipping neovim (not installed)"));
+        assert!(sut.contains("neovim (not installed)"));
+        assert!(sut.contains("will be skipped"));
         assert!(sut.contains("will be updated"));
         assert!(sut.contains("zed"));
+    }
+
+    #[test]
+    fn test_display_groups_mixed_skip_reasons_under_single_header() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["zed".to_string()],
+            disabled: vec!["docker".to_string()],
+            already_installed: vec!["neovim".to_string()],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be installed:
+  zed
+The following packages will be skipped:
+  docker (disabled)
+  neovim (already installed)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_no_skip_header_when_no_skipped_packages() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert!(!sut.contains("will be skipped"));
+        assert_eq!(sut, "The following packages will be installed:\n  neovim");
+    }
+
+    #[test]
+    fn test_display_all_skip_reasons_combined() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["docker".to_string()],
+            already_installed: vec!["neovim".to_string()],
+            not_installed: vec!["ripgrep".to_string()],
+            warnings: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be skipped:
+  docker (disabled)
+  neovim (already installed)
+  ripgrep (not installed)";
+        assert_eq!(sut, expected);
     }
 
     // --- Behavior matrix tests ---

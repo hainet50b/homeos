@@ -2212,3 +2212,32 @@ Fixed `add_local` in `plugin.rs` to generate template files for all OS (both `.s
 - All 359 tests pass (no new tests needed — existing tests were updated to cover the new behavior).
 - OS-specific selection now correctly happens only at `package add` time when templates are rendered, not at plugin creation time.
 
+---
+
+## Task: Unify plan display format
+
+**Timestamp:**
+
+2026-04-08T08:14:56Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed the plan display format from individual `Skipping <pkg> (reason)` lines to a grouped `The following packages will be skipped:` header with `  <pkg> (reason)` listed underneath, matching the style of install/update/uninstall sections. Updated `Plan::display()` in `plan.rs` to collect all skipped packages (disabled, already installed, not installed) into a single section. Also updated the `apply()` function in `action.rs` which had its own inline "Skipping" messages for disabled packages. Updated 17 existing test assertions and added 3 new tests: mixed skip reasons grouped under a single header, no skip header when no skipped packages, and all skip reasons combined.
+
+**What was changed:**
+
+- src/plan.rs (changed `display()` method to group skipped packages under a single header, updated 5 existing tests, added 3 new tests)
+- src/commands/package/action.rs (changed apply's disabled package display to use grouped format, updated 12 existing test assertions)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 362 tests pass (3 new tests added, 17 existing tests updated).
+- The `apply()` function had two locations that printed `Skipping <pkg> (disabled)` directly — both were updated to use the grouped format with the `The following packages will be skipped:` header.
+- The new format matches the README's example output for `homeos apply`.
+

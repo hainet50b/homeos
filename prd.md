@@ -150,7 +150,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos plugin cat <name>` — display all template files and `plugin.yml` for the specified plugin with filename headers.
 - [x] Implement `homeos plugin cd [<name>]` — launch a shell in the plugins root directory, or in the specific plugin directory if name is given.
 - [x] Fix `homeos plugin add --local` to generate all template files (.sh.tmpl and .ps1.tmpl) regardless of the current OS. OS-specific selection happens at `package add` time, not plugin creation time.
-- [ ] Unify plan display format — change `Skipping <pkg> (reason)` to `The following packages will be skipped:` with `<pkg> (reason)` listed underneath, matching the style of install/update/uninstall sections.
+- [x] Unify plan display format — change `Skipping <pkg> (reason)` to `The following packages will be skipped:` with `<pkg> (reason)` listed underneath, matching the style of install/update/uninstall sections.
 - [ ] Show plugin name in plan display — append `(plugin: <name>)` to packages that use a plugin.
 - [ ] Change `homeos package add` to deny if the package directory already exists, instead of adding only missing scripts. Show a clear error message suggesting to remove the existing directory first.
 - [ ] Enhance `homeos package remove` to accept multiple packages (`<packages>...`). Update help message to "Remove package entries from homeos.yml".

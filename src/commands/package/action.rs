@@ -41,8 +41,11 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     if to_install.is_empty() && to_update.is_empty() {
-        for name in &disabled_packages {
-            writeln!(writer, "Skipping {name} (disabled)")?;
+        if !disabled_packages.is_empty() {
+            writeln!(writer, "The following packages will be skipped:")?;
+            for name in &disabled_packages {
+                writeln!(writer, "  {name} (disabled)")?;
+            }
         }
         writeln!(writer, "Nothing to do.")?;
         return Ok(());
@@ -126,8 +129,11 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             writeln!(writer, "{display}")?;
         }
     }
-    for name in &disabled_packages {
-        writeln!(writer, "Skipping {name} (disabled)")?;
+    if !disabled_packages.is_empty() {
+        writeln!(writer, "The following packages will be skipped:")?;
+        for name in &disabled_packages {
+            writeln!(writer, "  {name} (disabled)")?;
+        }
     }
 
     writeln!(writer)?;
@@ -566,7 +572,8 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("No packages to install."));
         assert!(!written.contains("Installing"));
     }
@@ -721,7 +728,8 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("No packages to update."));
         assert!(!written.contains("Updating"));
     }
@@ -820,7 +828,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(!written.contains("Skipping neovim (disabled)"));
+        assert!(!written.contains("neovim (disabled)"));
         assert!(written.contains("Uninstalling neovim"));
     }
 
@@ -1193,7 +1201,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (already installed)"));
+        assert!(written.contains("neovim (already installed)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("No packages to install."));
         assert!(!written.contains("Installing"));
     }
@@ -1235,7 +1244,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (already installed)"));
+        assert!(written.contains("neovim (already installed)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("Installing zed... done"));
         assert!(!written.contains("Installing neovim"));
     }
@@ -1268,8 +1278,9 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (already installed)"));
-        assert!(written.contains("Skipping zed (already installed)"));
+        assert!(written.contains("neovim (already installed)"));
+        assert!(written.contains("zed (already installed)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("No packages to install."));
     }
 
@@ -1990,7 +2001,8 @@ mod tests {
 
         // Assert — git skipped as already installed, neovim installed
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping git (already installed)"));
+        assert!(written.contains("git (already installed)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("Installing neovim... done"));
     }
 
@@ -2143,7 +2155,8 @@ mod tests {
         // Assert — neovim uninstalled, git skipped as not installed
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Uninstalling neovim... done"));
-        assert!(written.contains("Skipping git (not installed)"));
+        assert!(written.contains("git (not installed)"));
+        assert!(written.contains("will be skipped"));
     }
 
     #[test]
@@ -2311,7 +2324,8 @@ mod tests {
         // Assert
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Installing zed... done"));
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(!written.contains("Installing neovim"));
     }
 
@@ -2328,7 +2342,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("Nothing to do."));
     }
 
@@ -2601,7 +2616,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
+        assert!(written.contains("will be skipped"));
         assert!(written.contains("Installing zed... done"));
         assert!(written.contains("Updating ripgrep... done"));
     }
@@ -2621,8 +2637,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Skipping docker (disabled)"));
-        assert!(written.contains("Skipping neovim (disabled)"));
+        assert!(written.contains("docker (disabled)"));
+        assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("Installing zed... done"));
     }
 
@@ -2732,7 +2748,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        let skip_pos = written.find("Skipping docker (disabled)").unwrap();
+        let skip_pos = written.find("docker (disabled)").unwrap();
         let prompt_pos = written.find("Proceed? [y/N]").unwrap();
         assert!(
             skip_pos < prompt_pos,
