@@ -1,6 +1,7 @@
 use crate::context::Context;
+use crate::plan::prompt_confirm;
 use crate::state::State;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::process::Command;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
@@ -31,6 +32,18 @@ pub fn add(ctx: &Context, repo: &str, url: &str) -> Result<(), Box<dyn std::erro
 }
 
 pub fn remove(ctx: &Context, repo: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+    let mut writer = std::io::stdout();
+    remove_to(ctx, repo, &mut reader, &mut writer)
+}
+
+fn remove_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    repo: &str,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     if repo == "default" {
         return Err("Cannot remove the default repository.".into());
     }
@@ -53,8 +66,14 @@ pub fn remove(ctx: &Context, repo: &str) -> Result<(), Box<dyn std::error::Error
         }
     }
 
+    writeln!(writer, "Remove repository '{}'?", repo)?;
+    if !prompt_confirm(reader, writer) {
+        writeln!(writer, "Aborted.")?;
+        return Ok(());
+    }
+
     std::fs::remove_dir_all(&target)?;
-    println!("Repository '{}' removed", repo);
+    writeln!(writer, "Repository '{}' removed", repo)?;
     Ok(())
 }
 
@@ -94,6 +113,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
     use tempfile::TempDir;
 
     fn setup_context(base_dir: &TempDir) -> Context {
@@ -256,9 +276,11 @@ mod tests {
         let base_dir = TempDir::new().unwrap();
         let ctx = setup_context(&base_dir);
         std::fs::create_dir_all(ctx.repos_dir().join("default")).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "default");
+        let result = remove_to(&ctx, "default", &mut reader, &mut output);
 
         // Assert
         let err = result.unwrap_err();
@@ -267,20 +289,48 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_existing_repo() {
+    fn test_remove_existing_repo_confirmed() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
         let ctx = setup_context(&base_dir);
         let repo_dir = ctx.repos_dir().join("my-repo");
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(repo_dir.join("somefile.txt"), "data").unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "my-repo");
+        let result = remove_to(&ctx, "my-repo", &mut reader, &mut output);
 
         // Assert
         assert!(result.is_ok());
         assert!(!repo_dir.exists());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Remove repository 'my-repo'?"));
+        assert!(written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Repository 'my-repo' removed"));
+    }
+
+    #[test]
+    fn test_remove_existing_repo_declined() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        let repo_dir = ctx.repos_dir().join("my-repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(repo_dir.join("somefile.txt"), "data").unwrap();
+        let mut reader = Cursor::new(b"n\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "my-repo", &mut reader, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(repo_dir.exists());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        assert!(!written.contains("Repository 'my-repo' removed"));
     }
 
     #[test]
@@ -289,9 +339,11 @@ mod tests {
         let base_dir = TempDir::new().unwrap();
         let ctx = setup_context(&base_dir);
         std::fs::create_dir_all(ctx.repos_dir()).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "no-such-repo");
+        let result = remove_to(&ctx, "no-such-repo", &mut reader, &mut output);
 
         // Assert
         let err = result.unwrap_err();
@@ -306,9 +358,11 @@ mod tests {
         let repos_dir = ctx.repos_dir();
         std::fs::create_dir_all(repos_dir.join("repo-a")).unwrap();
         std::fs::create_dir_all(repos_dir.join("repo-b")).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "repo-a");
+        let result = remove_to(&ctx, "repo-a", &mut reader, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -327,9 +381,11 @@ mod tests {
             installed: vec!["neovim".to_string(), "zed".to_string()],
         };
         state.save(&repo_dir.join("state.yml")).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "my-repo");
+        let result = remove_to(&ctx, "my-repo", &mut reader, &mut output);
 
         // Assert
         let err = result.unwrap_err();
@@ -349,9 +405,11 @@ mod tests {
         std::fs::create_dir_all(&repo_dir).unwrap();
         let state = crate::state::State { installed: vec![] };
         state.save(&repo_dir.join("state.yml")).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "my-repo");
+        let result = remove_to(&ctx, "my-repo", &mut reader, &mut output);
 
         // Assert
         assert!(result.is_ok());
@@ -365,9 +423,11 @@ mod tests {
         let ctx = setup_context(&base_dir);
         let repo_dir = ctx.repos_dir().join("my-repo");
         std::fs::create_dir_all(&repo_dir).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, "my-repo");
+        let result = remove_to(&ctx, "my-repo", &mut reader, &mut output);
 
         // Assert
         assert!(result.is_ok());

@@ -2598,3 +2598,28 @@ Replaced `#[derive(Default)]` on `PackageConfig` with a manual `impl Default` th
 # Ralph Loop — 2026-04-08T11:23:50Z
 
 
+
+## Task: Add confirmation prompt to `homeos repo remove`
+
+**Timestamp:**
+
+2026-04-08T11:28:16Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. No dependencies.
+
+**What was done:**
+
+Added a confirmation prompt to `homeos repo remove` that displays "Remove repository '<name>'?" followed by "Proceed? [y/N]" before deleting. If the user declines, prints "Aborted." and returns without deleting. Refactored `remove` to delegate to `remove_to` (with reader/writer parameters) for testability, reusing `prompt_confirm` from `plan.rs`. Updated all existing `remove` tests to use `remove_to` with a `Cursor` reader providing "y" input. Added a new test (`test_remove_existing_repo_declined`) verifying that declining the prompt preserves the repository directory.
+
+**What was changed:**
+
+- src/commands/repo.rs (added `remove_to` with confirmation prompt, updated `remove` to delegate, updated all remove tests, added declined test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 403 tests pass (1 new test added, existing tests updated to use `remove_to`).
+- The confirmation prompt reuses `prompt_confirm` from `plan.rs` for consistency with other confirmation prompts in the codebase.

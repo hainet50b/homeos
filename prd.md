@@ -164,7 +164,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `homeos package add` to generate skeleton scripts for all OS (both `.sh` and `.ps1`) regardless of the current OS.
 - [x] Change `homeos package cat` to display all script files (both `.sh` and `.ps1`) regardless of the current OS.
 - [x] Fix `PackageConfig::default()` so that `enabled` defaults to `true`. Currently `#[derive(Default)]` sets it to `false`. Implement `Default` manually or adjust the struct to ensure `enabled` is `true` by default.
-- [ ] Add confirmation prompt to `homeos repo remove` before deleting the repository directory.
+- [x] Add confirmation prompt to `homeos repo remove` before deleting the repository directory.
 
 ## Completion Criteria
 
