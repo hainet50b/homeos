@@ -166,7 +166,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Fix `PackageConfig::default()` so that `enabled` defaults to `true`. Currently `#[derive(Default)]` sets it to `false`. Implement `Default` manually or adjust the struct to ensure `enabled` is `true` by default.
 - [x] Add confirmation prompt to `homeos repo remove` before deleting the repository directory.
 - [x] Allow `homeos repo add <name>` without URL to create an empty local repository (same structure as `init`).
-- [ ] Implement `homeos repo cd [<repo>]` — launch a shell in the specified repository directory (defaults to `default`).
+- [x] Implement `homeos repo cd [<repo>]` — launch a shell in the specified repository directory (defaults to `default`).
 - [ ] Change `homeos cd` to launch a shell in the base directory (`<data_dir>/homeos`) instead of the default repository.
 
 ## Completion Criteria

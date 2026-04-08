@@ -1,12 +1,47 @@
+use crate::commands::detect_shell;
 use crate::config::Config;
 use crate::context::Context;
 use crate::plan::prompt_confirm;
 use crate::state::State;
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::process::Command;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
+}
+
+fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
+    let repos_dir = ctx.repos_dir();
+
+    if !repos_dir.exists() {
+        writeln!(writer, "No repositories.")?;
+        return Ok(());
+    }
+
+    let mut repos: Vec<String> = std::fs::read_dir(&repos_dir)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            if entry.file_type().ok()?.is_dir() {
+                Some(entry.file_name().to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    repos.sort();
+
+    if repos.is_empty() {
+        writeln!(writer, "No repositories.")?;
+        return Ok(());
+    }
+
+    for repo in &repos {
+        writeln!(writer, "{repo}")?;
+    }
+
+    Ok(())
 }
 
 pub fn add(ctx: &Context, repo: &str, url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +79,32 @@ pub fn add(ctx: &Context, repo: &str, url: Option<&str>) -> Result<(), Box<dyn s
     }
 
     Ok(())
+}
+
+pub fn cd(ctx: &Context, repo: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = resolve_cd_target(ctx, repo)?;
+    let shell = detect_shell();
+
+    let status = Command::new(&shell).current_dir(&dir).status()?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+fn resolve_cd_target(
+    ctx: &Context,
+    repo: Option<&str>,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let repo_name = repo.unwrap_or("default");
+    let dir = ctx.repos_dir().join(repo_name);
+
+    if !dir.exists() {
+        return Err(format!("Repository '{}' does not exist", repo_name).into());
+    }
+
+    Ok(dir)
 }
 
 pub fn remove(ctx: &Context, repo: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -89,39 +150,6 @@ fn remove_to<R: BufRead, W: Write>(
 
     std::fs::remove_dir_all(&target)?;
     writeln!(writer, "Repository '{}' removed", repo)?;
-    Ok(())
-}
-
-fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
-    let repos_dir = ctx.repos_dir();
-
-    if !repos_dir.exists() {
-        writeln!(writer, "No repositories.")?;
-        return Ok(());
-    }
-
-    let mut repos: Vec<String> = std::fs::read_dir(&repos_dir)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_dir() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    repos.sort();
-
-    if repos.is_empty() {
-        writeln!(writer, "No repositories.")?;
-        return Ok(());
-    }
-
-    for repo in &repos {
-        writeln!(writer, "{repo}")?;
-    }
-
     Ok(())
 }
 
@@ -349,6 +377,79 @@ mod tests {
     }
 
     #[test]
+    fn test_add_invalid_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+
+        // Act
+        let result = add(&ctx, "bad-repo", Some("not-a-valid-url"));
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.starts_with("git clone failed:"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_defaults_to_default() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir().join("default")).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, None).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.repos_dir().join("default"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_with_named_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir().join("work")).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("work")).unwrap();
+
+        // Assert
+        assert_eq!(result, ctx.repos_dir().join("work"));
+    }
+
+    #[test]
+    fn test_resolve_cd_target_nonexistent_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir()).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, Some("no-such-repo"));
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Repository 'no-such-repo' does not exist");
+    }
+
+    #[test]
+    fn test_resolve_cd_target_nonexistent_default() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir()).unwrap();
+
+        // Act
+        let result = resolve_cd_target(&ctx, None);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Repository 'default' does not exist");
+    }
+
+    #[test]
     fn test_remove_rejects_default_repo() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
@@ -510,20 +611,5 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         assert!(!repo_dir.exists());
-    }
-
-    #[test]
-    fn test_add_invalid_url() {
-        // Arrange
-        let base_dir = TempDir::new().unwrap();
-        let ctx = setup_context(&base_dir);
-
-        // Act
-        let result = add(&ctx, "bad-repo", Some("not-a-valid-url"));
-
-        // Assert
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.starts_with("git clone failed:"));
     }
 }

@@ -109,6 +109,11 @@ pub enum RepoCommands {
         /// Remote URL to clone
         url: Option<String>,
     },
+    /// Launch a shell in the specified repository directory
+    Cd {
+        /// Repository name (default: "default")
+        repo: Option<String>,
+    },
     /// Delete a local repository
     Remove {
         /// Repository name
@@ -290,6 +295,12 @@ fn main() {
             }
             RepoCommands::Add { repo, url } => {
                 if let Err(e) = commands::repo::add(&ctx, &repo, url.as_deref()) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            RepoCommands::Cd { repo } => {
+                if let Err(e) = commands::repo::cd(&ctx, repo.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -724,6 +735,24 @@ mod tests {
 
         // Act
         let args: Vec<&str> = add_cmd
+            .get_positionals()
+            .filter(|a| a.get_id() == "repo")
+            .map(|a| a.get_id().as_str())
+            .collect();
+
+        // Assert
+        assert_eq!(args, vec!["repo"]);
+    }
+
+    #[test]
+    fn test_repo_cd_help_shows_repo_argument() {
+        // Arrange
+        let cmd = Cli::command();
+        let repo_cmd = cmd.find_subcommand("repo").unwrap();
+        let cd_cmd = repo_cmd.find_subcommand("cd").unwrap();
+
+        // Act
+        let args: Vec<&str> = cd_cmd
             .get_positionals()
             .filter(|a| a.get_id() == "repo")
             .map(|a| a.get_id().as_str())

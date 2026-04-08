@@ -2655,3 +2655,29 @@ Made the `url` argument optional in `homeos repo add`. When URL is omitted, crea
 
 - All 407 tests pass (4 new tests added, 4 existing tests updated).
 - The scaffold logic mirrors `init.rs` but operates on `repos/<name>/` instead of the default repo directory.
+
+## Task: Implement `homeos repo cd [<repo>]`
+
+**Timestamp:**
+
+2026-04-08T12:24:02Z
+
+**Why this task:**
+
+Next unchecked task in dependency order. Independent of the remaining `homeos cd` change.
+
+**What was done:**
+
+Implemented `homeos repo cd [<repo>]` to launch a shell in the specified repository directory, defaulting to `default` if no repo name is given. Added `Cd` variant to `RepoCommands` enum, added `cd` and `resolve_cd_target` functions to `repo.rs`, and wired the handler in `main.rs`. Reordered functions and tests in `repo.rs` to match README command order (list, add, cd, remove), moving `list_to` next to `list` and relocating the misplaced `test_add_invalid_url` test. Added a CLI argument test for the `repo cd` subcommand.
+
+**What was changed:**
+
+- src/main.rs (added `Cd` variant to `RepoCommands`, added handler, added CLI argument test)
+- src/commands/repo.rs (added `cd` and `resolve_cd_target` functions, added 4 unit tests, reordered functions and tests to match README order)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 412 tests pass (5 new tests added).
+- Function and test ordering in `repo.rs` now follows README order: list, add, cd, remove.
