@@ -2623,3 +2623,35 @@ Added a confirmation prompt to `homeos repo remove` that displays "Remove reposi
 
 - All 403 tests pass (1 new test added, existing tests updated to use `remove_to`).
 - The confirmation prompt reuses `prompt_confirm` from `plan.rs` for consistency with other confirmation prompts in the codebase.
+
+---
+
+# Ralph Loop — 2026-04-08T12:16:29Z
+
+
+
+## Task: Allow `homeos repo add <name>` without URL
+
+**Timestamp:**
+
+2026-04-08T12:19:09Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies.
+
+**What was done:**
+
+Made the `url` argument optional in `homeos repo add`. When URL is omitted, creates an empty local repository with the same structure as `homeos init` (packages directory, empty `homeos.yml`, `.gitignore` excluding `state.yml`). When URL is provided, behavior is unchanged (git clone). Updated CLI help text from "Clone a remote repository" to "Add a repository". Added 4 new tests for the no-URL path: creates empty repo structure, creates `.gitignore`, creates repos dir when missing, and rejects if already exists.
+
+**What was changed:**
+
+- src/main.rs (changed `RepoCommands::Add` url from `String` to `Option<String>`, updated help text, updated match arm)
+- src/commands/repo.rs (changed `add` signature to `Option<&str>`, added scaffold logic for no-URL case, updated 4 existing tests to use `Some(...)`, added 4 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 407 tests pass (4 new tests added, 4 existing tests updated).
+- The scaffold logic mirrors `init.rs` but operates on `repos/<name>/` instead of the default repo directory.

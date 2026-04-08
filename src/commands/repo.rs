@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::context::Context;
 use crate::plan::prompt_confirm;
 use crate::state::State;
@@ -8,7 +9,7 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
 }
 
-pub fn add(ctx: &Context, repo: &str, url: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn add(ctx: &Context, repo: &str, url: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let repos_dir = ctx.repos_dir();
     let target = repos_dir.join(repo);
 
@@ -18,16 +19,30 @@ pub fn add(ctx: &Context, repo: &str, url: &str) -> Result<(), Box<dyn std::erro
 
     std::fs::create_dir_all(&repos_dir)?;
 
-    let output = Command::new("git")
-        .args(["clone", url, &target.to_string_lossy()])
-        .output()?;
+    if let Some(url) = url {
+        let output = Command::new("git")
+            .args(["clone", url, &target.to_string_lossy()])
+            .output()?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {}", stderr.trim()).into());
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git clone failed: {}", stderr.trim()).into());
+        }
+
+        println!("Repository '{}' cloned successfully", repo);
+    } else {
+        let packages_dir = target.join("packages");
+        std::fs::create_dir_all(&packages_dir)?;
+
+        let config = Config::default();
+        config.save(&target.join("homeos.yml"))?;
+
+        let gitignore_path = target.join(".gitignore");
+        std::fs::write(&gitignore_path, "state.yml\n")?;
+
+        println!("Repository '{}' created", repo);
     }
 
-    println!("Repository '{}' cloned successfully", repo);
     Ok(())
 }
 
@@ -230,7 +245,7 @@ mod tests {
         create_local_git_repo(source_dir.path());
 
         // Act
-        let result = add(&ctx, "my-repo", &source_dir.path().to_string_lossy());
+        let result = add(&ctx, "my-repo", Some(&source_dir.path().to_string_lossy()));
 
         // Assert
         assert!(result.is_ok());
@@ -248,7 +263,7 @@ mod tests {
         assert!(!ctx.repos_dir().exists());
 
         // Act
-        let result = add(&ctx, "new-repo", &source_dir.path().to_string_lossy());
+        let result = add(&ctx, "new-repo", Some(&source_dir.path().to_string_lossy()));
 
         // Assert
         assert!(result.is_ok());
@@ -263,7 +278,70 @@ mod tests {
         std::fs::create_dir_all(ctx.repos_dir().join("existing")).unwrap();
 
         // Act
-        let result = add(&ctx, "existing", "https://example.com/repo.git");
+        let result = add(&ctx, "existing", Some("https://example.com/repo.git"));
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Repository 'existing' already exists");
+    }
+
+    #[test]
+    fn test_add_without_url_creates_empty_repo() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+
+        // Act
+        let result = add(&ctx, "local-repo", None);
+
+        // Assert
+        assert!(result.is_ok());
+        let repo_dir = ctx.repos_dir().join("local-repo");
+        assert!(repo_dir.join("packages").exists());
+        assert!(repo_dir.join("homeos.yml").exists());
+        let config = Config::load(&repo_dir.join("homeos.yml")).unwrap();
+        assert!(config.packages.is_empty());
+    }
+
+    #[test]
+    fn test_add_without_url_creates_gitignore() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+
+        // Act
+        add(&ctx, "local-repo", None).unwrap();
+
+        // Assert
+        let gitignore =
+            std::fs::read_to_string(ctx.repos_dir().join("local-repo/.gitignore")).unwrap();
+        assert_eq!(gitignore, "state.yml\n");
+    }
+
+    #[test]
+    fn test_add_without_url_creates_repos_dir() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        assert!(!ctx.repos_dir().exists());
+
+        // Act
+        let result = add(&ctx, "local-repo", None);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.repos_dir().join("local-repo").exists());
+    }
+
+    #[test]
+    fn test_add_without_url_already_exists() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = setup_context(&base_dir);
+        std::fs::create_dir_all(ctx.repos_dir().join("existing")).unwrap();
+
+        // Act
+        let result = add(&ctx, "existing", None);
 
         // Assert
         let err = result.unwrap_err();
@@ -441,7 +519,7 @@ mod tests {
         let ctx = setup_context(&base_dir);
 
         // Act
-        let result = add(&ctx, "bad-repo", "not-a-valid-url");
+        let result = add(&ctx, "bad-repo", Some("not-a-valid-url"));
 
         // Assert
         assert!(result.is_err());

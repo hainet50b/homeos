@@ -102,12 +102,12 @@ pub enum PluginCommands {
 pub enum RepoCommands {
     /// List all repositories
     List,
-    /// Clone a remote repository
+    /// Add a repository
     Add {
         /// Repository name
         repo: String,
         /// Remote URL to clone
-        url: String,
+        url: Option<String>,
     },
     /// Delete a local repository
     Remove {
@@ -289,7 +289,7 @@ fn main() {
                 }
             }
             RepoCommands::Add { repo, url } => {
-                if let Err(e) = commands::repo::add(&ctx, &repo, &url) {
+                if let Err(e) = commands::repo::add(&ctx, &repo, url.as_deref()) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
