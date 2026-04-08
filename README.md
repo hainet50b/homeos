@@ -176,7 +176,7 @@ Options:
 
 #### `homeos cd`
 
-Launch a shell in the repo directory.
+Launch a shell in the base directory.
 
 ```
 Usage: homeos cd
@@ -549,14 +549,25 @@ Usage: homeos repo list
 
 #### `homeos repo add`
 
-Clone a remote repository.
+Add a repository. Without a URL, creates an empty local repository. With a URL, clones the remote repository.
 
 ```
-Usage: homeos repo add <REPO> <URL>
+Usage: homeos repo add <REPO> [URL]
 
 Arguments:
   <REPO>  Repository name
-  <URL>   Remote URL to clone
+  [URL]   Remote URL to clone
+```
+
+#### `homeos repo cd`
+
+Launch a shell in the specified repository directory.
+
+```
+Usage: homeos repo cd [REPO]
+
+Arguments:
+  [REPO]  Repository name (default: "default")
 ```
 
 #### `homeos repo remove`
