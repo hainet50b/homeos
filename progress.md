@@ -2488,3 +2488,27 @@ Implemented `homeos package add-alias` and prepared `remove-alias` (next task) i
 - Both functions follow the exact same pattern as `add_dep`/`remove_dep` for consistency.
 - `add_alias` uses `parse_key_value` for CLI parsing (same as `--script-aliases` on `package add`).
 - `remove_alias` takes plain target names (not key=value pairs) since only the target is needed for removal, matching the README spec.
+
+## Task: Implement `homeos package remove-alias <pkg> <alias>...`
+
+**Timestamp:**
+
+2026-04-08T10:34:10Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Verified that the implementation was already completed in the previous session (alongside `add-alias`). The `remove-alias` command, CLI wiring, dispatch, and 7 unit tests were all implemented but the PRD checkbox was not marked. Confirmed: all 399 tests pass, `cargo fmt` and `cargo clippy` are clean, function/command ordering matches README.
+
+**What was changed:**
+
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- No code changes needed — implementation was already complete from the previous task's session.
+- The previous progress entry documented both `add-alias` and `remove-alias` implementation together, but only the `add-alias` PRD checkbox was marked at that time.
