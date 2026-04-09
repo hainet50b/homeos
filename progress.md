@@ -2742,3 +2742,33 @@ Changed `homeos cd` to launch a shell in the repos directory (`<data_dir>/homeos
 # Ralph Loop — 2026-04-08T13:22:55Z
 
 
+
+---
+
+# Ralph Loop — 2026-04-09T02:08:17Z
+
+## Task: Change `execute_script` from `.output()` to `.status()`
+
+**Timestamp:**
+
+2026-04-09T02:20:28Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD — all other Tasks are already checked.
+
+**What was done:**
+
+Changed `execute_script` from `.output()` to `.status()` so that scripts interact with the user's terminal (stdin/stdout/stderr inherited) instead of being captured. Updated the return type from `Result<std::process::Output, ...>` to `Result<(), ...>`. Error messages now report exit codes instead of captured stderr. Updated all ~50 tests to use file-based side effects (touch marker files) instead of stdout capture for verification. Test fixtures `fixture_with_script` and `write_script` now accept a `&Path` marker path parameter. Added a new `test_execute_script_returns_error_on_failure` test to verify the new error format. Renamed `test_execute_script_captures_output` to `test_execute_script_creates_side_effect`.
+
+**What was changed:**
+
+- src/commands/package/action.rs (changed `execute_script` to use `.status()`, updated all test scripts to use file-based side effects, updated `fixture_with_script` and `write_script` helpers, added `test_execute_script_returns_error_on_failure` test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 413 tests pass with no new tests needed beyond updating existing ones and adding one new test for error handling.
+- The `_` pattern match at call sites (`Ok(_)`) did not need updating since the callers already discarded the `Output` value.
+- Function ordering in action.rs already matched README order — no reordering needed.
