@@ -176,8 +176,7 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         }
 
         let verb = action.gerund();
-        write!(writer, "{verb} {name}... ")?;
-        writer.flush()?;
+        writeln!(writer, "{verb} {name}...")?;
 
         match execute_script(&script_path) {
             Ok(_) => {
@@ -325,8 +324,7 @@ pub fn run_action<R: BufRead, W: Write>(
             continue;
         }
 
-        write!(writer, "{verb} {name}... ")?;
-        writer.flush()?;
+        writeln!(writer, "{verb} {name}...")?;
 
         match execute_script(&script_path) {
             Ok(_) => {
@@ -569,7 +567,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Installing neovim...\ndone"));
         assert!(marker_path.exists());
     }
 
@@ -702,7 +700,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating neovim...\ndone"));
         assert!(marker_path.exists());
     }
 
@@ -737,7 +735,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating neovim...\ndone"));
         assert!(marker_path.exists());
     }
 
@@ -841,7 +839,7 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
         assert!(marker_path.exists());
     }
 
@@ -948,8 +946,8 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim... done"));
-        assert!(written.contains("Installing ripgrep... done"));
+        assert!(written.contains("Installing neovim...\ndone"));
+        assert!(written.contains("Installing ripgrep...\ndone"));
         assert!(marker_dir.path().join("neovim_marker").exists());
         assert!(marker_dir.path().join("ripgrep_marker").exists());
     }
@@ -1326,7 +1324,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim (already installed)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("Installing zed... done"));
+        assert!(written.contains("Installing zed...\ndone"));
         assert!(!written.contains("Installing neovim"));
         assert!(!neovim_marker.exists());
         assert!(zed_marker.exists());
@@ -1403,7 +1401,7 @@ mod tests {
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["neovim"]);
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Installing neovim...\ndone"));
         assert!(written.contains("Script not found"));
         assert!(neovim_marker.exists());
     }
@@ -1446,8 +1444,8 @@ mod tests {
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["ripgrep"]);
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim... FAILED"));
-        assert!(written.contains("Installing ripgrep... done"));
+        assert!(written.contains("Installing neovim...\nFAILED"));
+        assert!(written.contains("Installing ripgrep...\ndone"));
         assert!(ripgrep_marker.exists());
     }
 
@@ -1527,7 +1525,7 @@ mod tests {
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["ripgrep"]);
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
         assert!(written.contains("Script not found"));
         assert!(neovim_marker.exists());
     }
@@ -1693,7 +1691,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating neovim...\ndone"));
         assert!(!written.contains("already installed"));
     }
 
@@ -1725,8 +1723,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
-        assert!(written.contains("Uninstalling ripgrep... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
+        assert!(written.contains("Uninstalling ripgrep...\ndone"));
         let state = State::load(&ctx.state_path()).unwrap();
         assert!(state.installed.is_empty());
     }
@@ -1823,7 +1821,7 @@ mod tests {
         // Assert — state is loaded but update still executes in-state packages
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating neovim...\ndone"));
     }
 
     #[test]
@@ -1856,7 +1854,7 @@ mod tests {
         // Assert — state is loaded but uninstall still executes in-state packages
         assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
     }
 
     #[test]
@@ -1882,7 +1880,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
     }
 
     // --- expand_dependencies tests ---
@@ -2120,7 +2118,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("git (already installed)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Installing neovim...\ndone"));
         assert!(neovim_marker.exists());
     }
 
@@ -2278,7 +2276,7 @@ mod tests {
 
         // Assert — neovim uninstalled, git skipped as not installed
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Uninstalling neovim... done"));
+        assert!(written.contains("Uninstalling neovim...\ndone"));
         assert!(written.contains("git (not installed)"));
         assert!(written.contains("will be skipped"));
         assert!(neovim_marker.exists());
@@ -2394,7 +2392,7 @@ mod tests {
 
         // Assert — only neovim updated, git not mentioned
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating neovim...\ndone"));
         assert!(!written.contains("git"));
         assert!(neovim_marker.exists());
     }
@@ -2435,8 +2433,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim... done"));
-        assert!(written.contains("Updating zed... done"));
+        assert!(written.contains("Installing neovim...\ndone"));
+        assert!(written.contains("Updating zed...\ndone"));
         let state = State::load(&ctx.state_path()).unwrap();
         assert!(state.installed.contains(&"neovim".to_string()));
         assert!(state.installed.contains(&"zed".to_string()));
@@ -2460,7 +2458,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing zed... done"));
+        assert!(written.contains("Installing zed...\ndone"));
         assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("will be skipped"));
         assert!(!written.contains("Installing neovim"));
@@ -2540,8 +2538,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing git... done"));
-        assert!(written.contains("Installing neovim... done"));
+        assert!(written.contains("Installing git...\ndone"));
+        assert!(written.contains("Installing neovim...\ndone"));
         assert!(!written.contains("Updating"));
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed.len(), 2);
@@ -2569,8 +2567,8 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Updating git... done"));
-        assert!(written.contains("Updating neovim... done"));
+        assert!(written.contains("Updating git...\ndone"));
+        assert!(written.contains("Updating neovim...\ndone"));
         assert!(!written.contains("Installing"));
     }
 
@@ -2643,8 +2641,8 @@ mod tests {
 
         // Assert: git updated before neovim installed
         let written = String::from_utf8(output).unwrap();
-        let git_pos = written.find("Updating git... done").unwrap();
-        let neo_pos = written.find("Installing neovim... done").unwrap();
+        let git_pos = written.find("Updating git...\ndone").unwrap();
+        let neo_pos = written.find("Installing neovim...\ndone").unwrap();
         assert!(
             git_pos < neo_pos,
             "git should be updated before neovim is installed"
@@ -2671,9 +2669,9 @@ mod tests {
 
         // Assert: a before b before c
         let written = String::from_utf8(output).unwrap();
-        let a_pos = written.find("Installing a... done").unwrap();
-        let b_pos = written.find("Installing b... done").unwrap();
-        let c_pos = written.find("Installing c... done").unwrap();
+        let a_pos = written.find("Installing a...\ndone").unwrap();
+        let b_pos = written.find("Installing b...\ndone").unwrap();
+        let c_pos = written.find("Installing c...\ndone").unwrap();
         assert!(a_pos < b_pos, "a should be installed before b");
         assert!(b_pos < c_pos, "b should be installed before c");
     }
@@ -2701,8 +2699,8 @@ mod tests {
 
         // Assert: git updated before neovim
         let written = String::from_utf8(output).unwrap();
-        let git_pos = written.find("Updating git... done").unwrap();
-        let neo_pos = written.find("Updating neovim... done").unwrap();
+        let git_pos = written.find("Updating git...\ndone").unwrap();
+        let neo_pos = written.find("Updating neovim...\ndone").unwrap();
         assert!(git_pos < neo_pos, "git should be updated before neovim");
     }
 
@@ -2725,8 +2723,8 @@ mod tests {
 
         // Assert: both installed, git first
         let written = String::from_utf8(output).unwrap();
-        let git_pos = written.find("Installing git... done").unwrap();
-        let neo_pos = written.find("Installing neovim... done").unwrap();
+        let git_pos = written.find("Installing git...\ndone").unwrap();
+        let neo_pos = written.find("Installing neovim...\ndone").unwrap();
         assert!(git_pos < neo_pos, "git should be installed before neovim");
     }
 
@@ -2757,10 +2755,10 @@ mod tests {
 
         // Assert: a before b and c, b and c before d
         let written = String::from_utf8(output).unwrap();
-        let a_pos = written.find("Updating a... done").unwrap();
-        let b_pos = written.find("Updating b... done").unwrap();
-        let c_pos = written.find("Installing c... done").unwrap();
-        let d_pos = written.find("Installing d... done").unwrap();
+        let a_pos = written.find("Updating a...\ndone").unwrap();
+        let b_pos = written.find("Updating b...\ndone").unwrap();
+        let c_pos = written.find("Installing c...\ndone").unwrap();
+        let d_pos = written.find("Installing d...\ndone").unwrap();
         assert!(a_pos < c_pos, "a should be updated before c is installed");
         assert!(a_pos < b_pos, "a should be updated before b is updated");
         assert!(b_pos < d_pos, "b should be updated before d is installed");
@@ -2791,8 +2789,8 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("Installing zed... done"));
-        assert!(written.contains("Updating ripgrep... done"));
+        assert!(written.contains("Installing zed...\ndone"));
+        assert!(written.contains("Updating ripgrep...\ndone"));
     }
 
     #[test]
@@ -2814,7 +2812,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("docker (disabled)"));
         assert!(written.contains("neovim (disabled)"));
-        assert!(written.contains("Installing zed... done"));
+        assert!(written.contains("Installing zed...\ndone"));
     }
 
     #[test]

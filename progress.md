@@ -2858,3 +2858,35 @@ Added a confirmation prompt to `homeos plugin remove` before removing entries. S
 - All 435 tests pass. No clippy warnings.
 - Function ordering in plugin.rs already matched README order (list, list-remote, add, remove, cat, cd) — no reordering needed.
 - Pattern mirrors the confirmation prompt added to `package remove` in the previous task.
+
+---
+
+# Ralph Loop — 2026-04-09T03:15:20Z
+
+## Task: Add newline before script output and `done` on its own line
+
+**Timestamp:**
+
+2026-04-09T03:18:09Z
+
+**Why this task:**
+
+Only remaining unchecked task in the Tasks section.
+
+**What was done:**
+
+Changed `write!` (no newline) to `writeln!` (with newline) for the `Installing/Updating/Uninstalling <name>...` message in both `run_action` and `apply` functions. This puts a newline after the action header so script output starts on its own line, and `done`/`FAILED` appears on its own line after execution. Removed the now-unnecessary `flush()` calls. Updated all test assertions to match the new `...\ndone` and `...\nFAILED` format.
+
+**What was changed:**
+
+- src/commands/package/action.rs (production code: 2 locations; test assertions: ~50 occurrences)
+- prd.md (marked task as checked)
+- progress.md (this entry)
+
+**Remarks:**
+
+- All 435 tests pass. No clippy warnings.
+- Output now matches the README Quick Tour sample format.
+
+---
+
