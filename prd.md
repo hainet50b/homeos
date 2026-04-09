@@ -169,6 +169,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos repo cd [<repo>]` — launch a shell in the specified repository directory (defaults to `default`).
 - [x] Change `homeos cd` to launch a shell in the base directory (`<data_dir>/homeos`) instead of the default repository.
 - [x] Change `homeos cd` to launch a shell in the repos directory (`<data_dir>/homeos/repos`) instead of the base directory.
+- [ ] Change `execute_script` from `.output()` to `.status()` so that scripts can interact with the user's terminal (stdin/stdout/stderr inherited). Update tests to use file-based side effects instead of stdout capture for verification.
 
 ## Completion Criteria
 
