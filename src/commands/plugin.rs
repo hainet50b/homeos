@@ -1,7 +1,8 @@
 use crate::config::{Config, PluginConfig};
 use crate::context::Context;
+use crate::plan::prompt_confirm;
 use serde::Deserialize;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::process::Command;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
@@ -266,6 +267,19 @@ where
 }
 
 pub fn remove(ctx: &Context, plugin: &str, purge: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+    let mut writer = std::io::stdout();
+    remove_to(ctx, plugin, purge, &mut reader, &mut writer)
+}
+
+fn remove_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    plugin: &str,
+    purge: bool,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.plugins.contains_key(plugin) {
@@ -286,10 +300,30 @@ pub fn remove(ctx: &Context, plugin: &str, purge: bool) -> Result<(), Box<dyn st
             .map(|n| n.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        eprintln!(
+        writeln!(
+            writer,
             "Warning: the following packages reference plugin '{}': {}",
             plugin, names
-        );
+        )?;
+    }
+
+    writeln!(
+        writer,
+        "The following plugins will be removed from homeos.yml:"
+    )?;
+    writeln!(writer, "  {plugin}")?;
+
+    if purge {
+        let plugin_dir = ctx.plugins_dir().join(plugin);
+        if plugin_dir.exists() {
+            writeln!(writer, "\nThe following directories will be deleted:")?;
+            writeln!(writer, "  {}", plugin_dir.display())?;
+        }
+    }
+
+    if !prompt_confirm(reader, writer) {
+        writeln!(writer, "Aborted.")?;
+        return Ok(());
     }
 
     config.plugins.remove(plugin);
@@ -297,12 +331,12 @@ pub fn remove(ctx: &Context, plugin: &str, purge: bool) -> Result<(), Box<dyn st
         let plugin_dir = ctx.plugins_dir().join(plugin);
         if plugin_dir.exists() {
             std::fs::remove_dir_all(&plugin_dir)?;
-            println!("Removed plugin '{}' and deleted directory", plugin);
+            writeln!(writer, "Removed plugin '{}' and deleted directory", plugin)?;
         } else {
-            println!("Removed plugin '{}'", plugin);
+            writeln!(writer, "Removed plugin '{}'", plugin)?;
         }
     } else {
-        println!("Removed plugin '{}'", plugin);
+        writeln!(writer, "Removed plugin '{}'", plugin)?;
     }
     config.save(&ctx.config_path())?;
 
@@ -395,6 +429,7 @@ fn resolve_cd_target(
 mod tests {
     use super::*;
     use crate::config::{Config, PluginConfig};
+    use std::io::Cursor;
     use tempfile::TempDir;
 
     fn fixture(base_dir: &TempDir) -> Context {
@@ -1046,7 +1081,13 @@ mod tests {
         std::fs::create_dir_all(&plugin_dir).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1062,7 +1103,13 @@ mod tests {
         let ctx = fixture_with_config(&base_dir);
 
         // Act
-        let result = remove(&ctx, "nonexistent", false);
+        let result = remove_to(
+            &ctx,
+            "nonexistent",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         let err = result.unwrap_err();
@@ -1084,7 +1131,13 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1114,7 +1167,13 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act — should succeed (warn but not block)
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1145,7 +1204,13 @@ mod tests {
         std::fs::create_dir_all(ctx.plugins_dir().join("mise")).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1163,7 +1228,13 @@ mod tests {
         let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
 
         // Act
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1187,7 +1258,7 @@ mod tests {
         std::fs::write(plugin_dir.join("plugin.yml"), "params: {}").unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", true);
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut Vec::new());
 
         // Assert
         assert!(result.is_ok());
@@ -1211,7 +1282,7 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", true);
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut Vec::new());
 
         // Assert
         assert!(result.is_ok());
@@ -1237,7 +1308,13 @@ mod tests {
         std::fs::write(plugin_dir.join("plugin.yml"), "params: {}").unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", false);
+        let result = remove_to(
+            &ctx,
+            "dnf",
+            false,
+            &mut Cursor::new(b"y\n"),
+            &mut Vec::new(),
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1268,7 +1345,7 @@ mod tests {
         std::fs::create_dir_all(ctx.plugins_dir().join("mise")).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf", true);
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut Vec::new());
 
         // Assert
         assert!(result.is_ok());
@@ -1277,6 +1354,135 @@ mod tests {
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.plugins.contains_key("dnf"));
         assert!(config.plugins.contains_key("mise"));
+    }
+
+    #[test]
+    fn test_remove_prompt_shows_plugin_name() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", false, &mut Cursor::new(b"y\n"), &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("The following plugins will be removed from homeos.yml:"));
+        assert!(output.contains("  dnf"));
+    }
+
+    #[test]
+    fn test_remove_declined_aborts() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", false, &mut Cursor::new(b"n\n"), &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Aborted."));
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_purge_prompt_shows_directory() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("The following directories will be deleted:"));
+        assert!(output.contains(&plugin_dir.display().to_string()));
+    }
+
+    #[test]
+    fn test_remove_purge_no_directory_section_when_dir_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let output = String::from_utf8(output).unwrap();
+        assert!(!output.contains("The following directories will be deleted:"));
+    }
+
+    #[test]
+    fn test_remove_purge_declined_preserves_directory() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"n\n"), &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(plugin_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.plugins.contains_key("dnf"));
     }
 
     #[test]

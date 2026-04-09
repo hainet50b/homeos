@@ -2830,3 +2830,31 @@ Added a confirmation prompt to `homeos package remove` before removing entries. 
 
 - All 430 tests pass. No clippy warnings.
 - Function ordering in registry.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Add confirmation prompt to `homeos plugin remove`
+
+**Timestamp:**
+
+2026-04-09T03:04:49Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. No dependencies — all other tasks are complete.
+
+**What was done:**
+
+Added a confirmation prompt to `homeos plugin remove` before removing entries. Split the `remove` function into a public `remove()` wrapper (locks stdin/stdout) and an internal `remove_to()` that accepts generic `BufRead`/`Write` for testability. The prompt shows which plugins will be removed from `homeos.yml`. When `--purge` is used and the plugin directory exists, it also shows which directories will be deleted. Declining the prompt aborts the operation. Changed the warning about referencing packages from `eprintln\!` to `writeln\!` for consistency and testability. Updated all 10 existing `remove` test calls to use `remove_to` with `Cursor`-based confirmed reader. Added 5 new tests: prompt display, declined removal aborts, purge directory listing, no directory section when dir missing, and purge declined preserves directory.
+
+**What was changed:**
+
+- src/commands/plugin.rs (added `prompt_confirm` import, `BufRead`/`Cursor` imports, split `remove` into `remove`/`remove_to` with confirmation prompt, updated all existing tests, added 5 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 435 tests pass. No clippy warnings.
+- Function ordering in plugin.rs already matched README order (list, list-remote, add, remove, cat, cd) — no reordering needed.
+- Pattern mirrors the confirmation prompt added to `package remove` in the previous task.
