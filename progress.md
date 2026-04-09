@@ -2772,3 +2772,34 @@ Changed `execute_script` from `.output()` to `.status()` so that scripts interac
 - All 413 tests pass with no new tests needed beyond updating existing ones and adding one new test for error handling.
 - The `_` pattern match at call sites (`Ok(_)`) did not need updating since the callers already discarded the `Output` value.
 - Function ordering in action.rs already matched README order — no reordering needed.
+
+---
+
+# Ralph Loop — 2026-04-09T02:44:26Z
+
+## Task: Add `--purge` flag to `homeos plugin remove`
+
+**Timestamp:**
+
+2026-04-09T02:53:39Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. Mirrors the `--purge` flag already implemented for `package remove`. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added `--purge` flag to `homeos plugin remove` CLI definition and integrated it into the `remove` function in `plugin.rs`. When `--purge` is specified and the plugin directory exists, it is deleted via `remove_dir_all`. Without `--purge`, the directory is preserved (existing behavior). Updated all existing test calls to pass `false` for the new parameter. Added 4 new unit tests for purge behavior (deletes directory, succeeds when directory missing, preserves directory without purge, does not affect other plugins) and 2 CLI tests (flag parsing, default to false).
+
+**What was changed:**
+
+- src/main.rs (added `purge` field to `PluginCommands::Remove`, updated match arm, added 2 CLI tests)
+- src/commands/plugin.rs (added `purge` parameter to `remove()`, purge logic, updated existing tests, added 4 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- Cargo toolchain is not available in this environment, so fmt/clippy/test could not be run. Code follows the exact same pattern as the `--purge` flag for `package remove` which was already validated.
+- Function ordering in plugin.rs already matches README order (list, list-remote, add, remove, cat, cd) — no reordering needed.
+

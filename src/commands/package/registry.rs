@@ -184,7 +184,11 @@ fn render_template(template: &str, params: &BTreeMap<String, String>) -> String 
     result
 }
 
-pub fn remove(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove(
+    ctx: &Context,
+    packages: &[String],
+    purge: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
@@ -230,7 +234,17 @@ pub fn remove(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
 
     for package in packages {
         config.packages.remove(package.as_str());
-        println!("Removed package '{package}'");
+        if purge {
+            let pkg_dir = ctx.packages_dir().join(package);
+            if pkg_dir.exists() {
+                std::fs::remove_dir_all(&pkg_dir)?;
+                println!("Removed package '{package}' and deleted directory");
+            } else {
+                println!("Removed package '{package}'");
+            }
+        } else {
+            println!("Removed package '{package}'");
+        }
     }
     config.save(&ctx.config_path())?;
 
@@ -1277,7 +1291,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1292,7 +1306,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = remove(&ctx, &["nonexistent".to_string()]);
+        let result = remove(&ctx, &["nonexistent".to_string()], false);
 
         // Assert
         assert!(result.is_err());
@@ -1306,7 +1320,7 @@ mod tests {
         let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_err());
@@ -1322,7 +1336,7 @@ mod tests {
         state.save(&ctx.state_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_err());
@@ -1344,7 +1358,7 @@ mod tests {
         state.save(&ctx.state_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1359,7 +1373,7 @@ mod tests {
         // No state.yml exists
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1373,7 +1387,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1388,7 +1402,7 @@ mod tests {
             fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
 
         // Act
-        let result = remove(&ctx, &["git".to_string()]);
+        let result = remove(&ctx, &["git".to_string()], false);
 
         // Assert
         assert!(result.is_err());
@@ -1409,7 +1423,7 @@ mod tests {
         );
 
         // Act
-        let result = remove(&ctx, &["git".to_string()]);
+        let result = remove(&ctx, &["git".to_string()], false);
 
         // Assert
         assert!(result.is_err());
@@ -1426,7 +1440,7 @@ mod tests {
         );
 
         // Act
-        let result = remove(&ctx, &["ripgrep".to_string()]);
+        let result = remove(&ctx, &["ripgrep".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1440,7 +1454,7 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n  git: {}\n");
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+        let result = remove(&ctx, &["neovim".to_string(), "ripgrep".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
@@ -1456,7 +1470,11 @@ mod tests {
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string(), "nonexistent".to_string()]);
+        let result = remove(
+            &ctx,
+            &["neovim".to_string(), "nonexistent".to_string()],
+            false,
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1476,7 +1494,11 @@ mod tests {
         state.save(&ctx.state_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string(), "ripgrep".to_string()]);
+        let result = remove(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            false,
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1499,12 +1521,87 @@ mod tests {
             fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
 
         // Act
-        let result = remove(&ctx, &["git".to_string(), "neovim".to_string()]);
+        let result = remove(&ctx, &["git".to_string(), "neovim".to_string()], false);
 
         // Assert
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.is_empty());
+    }
+
+    #[test]
+    fn test_remove_purge_deletes_package_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "#!/bin/sh").unwrap();
+
+        // Act
+        let result = remove(&ctx, &["neovim".to_string()], true);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!pkg_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_purge_succeeds_when_directory_does_not_exist() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        // No package directory created
+
+        // Act
+        let result = remove(&ctx, &["neovim".to_string()], true);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_without_purge_preserves_package_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "#!/bin/sh").unwrap();
+
+        // Act
+        let result = remove(&ctx, &["neovim".to_string()], false);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(pkg_dir.exists());
+        assert!(pkg_dir.join("install.sh").exists());
+    }
+
+    #[test]
+    fn test_remove_purge_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n  git: {}\n");
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        let ripgrep_dir = ctx.packages_dir().join("ripgrep");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        std::fs::create_dir_all(&ripgrep_dir).unwrap();
+
+        // Act
+        let result = remove(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            true,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!neovim_dir.exists());
+        assert!(!ripgrep_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("git"));
     }
 
     #[test]

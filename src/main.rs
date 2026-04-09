@@ -85,6 +85,9 @@ pub enum PluginCommands {
     Remove {
         /// Plugin name
         plugin: String,
+        /// Also delete the plugin directory
+        #[arg(long)]
+        purge: bool,
     },
     /// Display plugin.yml and all template files for a plugin
     Cat {
@@ -147,6 +150,9 @@ pub enum PackageCommands {
         /// Package names
         #[arg(required = true)]
         packages: Vec<String>,
+        /// Also delete the package directory
+        #[arg(long)]
+        purge: bool,
     },
     /// Add dependencies to an existing package
     AddDep {
@@ -267,8 +273,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PluginCommands::Remove { plugin } => {
-                if let Err(e) = commands::plugin::remove(&ctx, &plugin) {
+            PluginCommands::Remove { plugin, purge } => {
+                if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -341,8 +347,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Remove { packages } => {
-                if let Err(e) = commands::package::remove(&ctx, &packages) {
+            PackageCommands::Remove { packages, purge } => {
+                if let Err(e) = commands::package::remove(&ctx, &packages, purge) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -691,6 +697,40 @@ mod tests {
     }
 
     #[test]
+    fn test_plugin_remove_purge_flag() {
+        // Arrange & Act
+        let cli =
+            Cli::try_parse_from(["homeos", "plugin", "remove", "dnf", "--purge"]).unwrap();
+
+        // Assert
+        if let Commands::Plugin {
+            command: PluginCommands::Remove { plugin, purge },
+        } = cli.command
+        {
+            assert_eq!(plugin, "dnf");
+            assert!(purge);
+        } else {
+            panic!("Expected PluginCommands::Remove");
+        }
+    }
+
+    #[test]
+    fn test_plugin_remove_without_purge_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "plugin", "remove", "dnf"]).unwrap();
+
+        // Assert
+        if let Commands::Plugin {
+            command: PluginCommands::Remove { purge, .. },
+        } = cli.command
+        {
+            assert!(!purge);
+        } else {
+            panic!("Expected PluginCommands::Remove");
+        }
+    }
+
+    #[test]
     fn test_plugin_cat_help_shows_plugin_argument() {
         // Arrange
         let cmd = Cli::command();
@@ -794,6 +834,46 @@ mod tests {
             assert!(params.is_empty());
         } else {
             panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_package_remove_purge_flag() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "remove",
+            "neovim",
+            "--purge",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Remove { packages, purge },
+        } = cli.command
+        {
+            assert_eq!(packages, vec!["neovim".to_string()]);
+            assert!(purge);
+        } else {
+            panic!("Expected PackageCommands::Remove");
+        }
+    }
+
+    #[test]
+    fn test_package_remove_without_purge_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "package", "remove", "neovim"]).unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Remove { purge, .. },
+        } = cli.command
+        {
+            assert!(!purge);
+        } else {
+            panic!("Expected PackageCommands::Remove");
         }
     }
 }

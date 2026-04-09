@@ -265,7 +265,7 @@ where
     Ok(())
 }
 
-pub fn remove(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn remove(ctx: &Context, plugin: &str, purge: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.plugins.contains_key(plugin) {
@@ -292,11 +292,20 @@ pub fn remove(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Err
         );
     }
 
-    // Remove from config (plugin directory is kept, consistent with package remove)
     config.plugins.remove(plugin);
+    if purge {
+        let plugin_dir = ctx.plugins_dir().join(plugin);
+        if plugin_dir.exists() {
+            std::fs::remove_dir_all(&plugin_dir)?;
+            println!("Removed plugin '{}' and deleted directory", plugin);
+        } else {
+            println!("Removed plugin '{}'", plugin);
+        }
+    } else {
+        println!("Removed plugin '{}'", plugin);
+    }
     config.save(&ctx.config_path())?;
 
-    println!("Plugin '{}' removed successfully", plugin);
     Ok(())
 }
 
@@ -1037,7 +1046,7 @@ mod tests {
         std::fs::create_dir_all(&plugin_dir).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf");
+        let result = remove(&ctx, "dnf", false);
 
         // Assert
         assert!(result.is_ok());
@@ -1053,7 +1062,7 @@ mod tests {
         let ctx = fixture_with_config(&base_dir);
 
         // Act
-        let result = remove(&ctx, "nonexistent");
+        let result = remove(&ctx, "nonexistent", false);
 
         // Assert
         let err = result.unwrap_err();
@@ -1075,7 +1084,7 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf");
+        let result = remove(&ctx, "dnf", false);
 
         // Assert
         assert!(result.is_ok());
@@ -1105,7 +1114,7 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act — should succeed (warn but not block)
-        let result = remove(&ctx, "dnf");
+        let result = remove(&ctx, "dnf", false);
 
         // Assert
         assert!(result.is_ok());
@@ -1136,7 +1145,7 @@ mod tests {
         std::fs::create_dir_all(ctx.plugins_dir().join("mise")).unwrap();
 
         // Act
-        let result = remove(&ctx, "dnf");
+        let result = remove(&ctx, "dnf", false);
 
         // Assert
         assert!(result.is_ok());
@@ -1154,10 +1163,120 @@ mod tests {
         let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
 
         // Act
-        let result = remove(&ctx, "dnf");
+        let result = remove(&ctx, "dnf", false);
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_remove_purge_deletes_plugin_directory() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.yml"), "params: {}").unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf", true);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!plugin_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_purge_succeeds_when_directory_does_not_exist() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf", true);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_without_purge_preserves_plugin_directory() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.yml"), "params: {}").unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf", false);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(plugin_dir.exists());
+        assert!(plugin_dir.join("plugin.yml").exists());
+    }
+
+    #[test]
+    fn test_remove_purge_does_not_affect_other_plugins() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+            },
+        );
+        config.plugins.insert(
+            "mise".to_string(),
+            PluginConfig {
+                url: "https://github.com/hainet50b/homeos-plugin-mise".to_string(),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("dnf")).unwrap();
+        std::fs::create_dir_all(ctx.plugins_dir().join("mise")).unwrap();
+
+        // Act
+        let result = remove(&ctx, "dnf", true);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(!ctx.plugins_dir().join("dnf").exists());
+        assert!(ctx.plugins_dir().join("mise").exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+        assert!(config.plugins.contains_key("mise"));
     }
 
     #[test]
