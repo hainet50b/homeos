@@ -11,7 +11,7 @@
 
 - **Source of truth in a single Git repo** — Everything in your *home* is visible and under your control. Nothing happens beyond what you write.
 - **One interface, any provider** — Manage custom scripts and package providers alike through one interface and one config file.
-- **Install in the right order** — Define dependencies between packages. homeos respects them in every operation, executing scripts in the correct order.
+- **Install in the right order** — When packages depend on each other, homeos respects dependencies in every operation, executing scripts in the correct order.
 - **Nothing runs without confirmation** — A plan is always shown before execution. If it's not in the plan, it doesn't run.
 - **Run anywhere: Linux, macOS, Windows** — Built with Rust. Works on any OS.
 
@@ -23,14 +23,14 @@
 
 ```sh
 $ homeos init
-TODO
+Initialized homeos at /home/<username>/.local/share/homeos/repos/default
 ```
 
 2. Add a package
 
 ```sh
 $ homeos package add rustup
-TODO
+Added package 'rustup'
 ```
 
 3. Move to a package directory and edit its install scripts
@@ -39,9 +39,9 @@ TODO
 # Open a new shell in the package directory
 $ homeos package cd rustup
 $ ls
-TODO
+install.ps1  install.sh  uninstall.ps1  uninstall.sh  update.ps1  update.sh
 
-# Edit your scripts here
+# Edit the scripts you need, remove the ones you don't
 
 # Return to the previous shell
 $ exit
@@ -51,17 +51,40 @@ $ exit
 
 ```sh
 $ homeos package cat rustup
-TODO
+=== install.sh ===
+#!/usr/bin/env sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+=== install.ps1 ===
+(not found)
+
+=== update.sh ===
+#!/usr/bin/env sh
+rustup update
+
+=== update.ps1 ===
+(not found)
+
+=== uninstall.sh ===
+#!/usr/bin/env sh
+rustup self uninstall
+
+=== uninstall.ps1 ===
+(not found)
 ```
 
 5. Apply, review the plan and install
 
 ```sh
 $ homeos apply
-TODO
+The following packages will be installed:
+  rustup
+
+Proceed? [y/N] y
+Installing rustup... done
 
 $ rustup --version
-TODO
+rustup 1.29.0 (28d1352db 2026-03-05)
 ```
 
 <details>
