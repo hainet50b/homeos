@@ -99,3 +99,7 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-08T12:26:59Z,0f821c0,"Change homeos cd to launch a shell in the base directory",132,28,4615,0.9191214999999999
 2026-04-08T13:25:10Z,8d7f19d,"Change homeos cd target from base directory to repos directory",133,26,5091,0.8976424999999996
 2026-04-09T02:21:10Z,6c19631,"Change execute_script from .output() to .status() for terminal interaction",771,83,57227,6.151466499999998
+2026-04-09T02:50:55Z,0a816d0,"Add confirmation prompts for package and plugin remove to PRD",387,54,14567,1.9715827499999996
+2026-04-09T02:54:44Z,f3d6b97,"Add --purge flag to package remove and plugin remove",225,49,10010,1.3406214999999997
+2026-04-09T03:02:06Z,c897f55,"Add confirmation prompt to package remove",438,55,18258,2.1894187500000006
+2026-04-09T03:05:19Z,9256d60,"Add confirmation prompt to plugin remove",189,109,8870,1.0707264999999997
