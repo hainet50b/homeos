@@ -172,6 +172,8 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `execute_script` from `.output()` to `.status()` so that scripts can interact with the user's terminal (stdin/stdout/stderr inherited). Update tests to use file-based side effects instead of stdout capture for verification.
 - [ ] Add `--purge` flag to `homeos package remove` to delete the package directory in addition to removing the `homeos.yml` entry.
 - [ ] Add `--purge` flag to `homeos plugin remove` to delete the plugin directory in addition to removing the `homeos.yml` entry.
+- [ ] Add confirmation prompt to `homeos package remove` before removing entries. Show which packages will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
+- [ ] Add confirmation prompt to `homeos plugin remove` before removing entries. Show which plugins will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
 
 ## Completion Criteria
 
