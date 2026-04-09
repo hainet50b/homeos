@@ -281,13 +281,16 @@ $ homeos package add neovim --plugin dnf --params name=neovim.x86_64
 
 #### `homeos package remove`
 
-Remove package entries from `homeos.yml`. The package directory is not deleted.
+Remove package entries from `homeos.yml`. The package directory is not deleted unless `--purge` is specified.
 
 ```
-Usage: homeos package remove <PACKAGES>...
+Usage: homeos package remove [OPTIONS] <PACKAGES>...
 
 Arguments:
   <PACKAGES>...  Package names
+
+Options:
+      --purge  Also delete the package directory
 ```
 
 #### `homeos package add-dep`
@@ -503,13 +506,16 @@ Options:
 
 #### `homeos plugin remove`
 
-Remove a plugin.
+Remove a plugin. The plugin directory is not deleted unless `--purge` is specified.
 
 ```
-Usage: homeos plugin remove <PLUGIN>
+Usage: homeos plugin remove [OPTIONS] <PLUGIN>
 
 Arguments:
   <PLUGIN>  Plugin name
+
+Options:
+      --purge  Also delete the plugin directory
 ```
 
 > [!NOTE]
