@@ -53,7 +53,7 @@ $ exit
 $ homeos package cat rustup
 === install.sh ===
 #!/usr/bin/env sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 === install.ps1 ===
 (not found)
@@ -81,7 +81,9 @@ The following packages will be installed:
   rustup
 
 Proceed? [y/N] y
-Installing rustup... done
+Installing rustup...
+(rustup installer output)
+done
 
 $ rustup --version
 rustup 1.29.0 (28d1352db 2026-03-05)

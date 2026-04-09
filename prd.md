@@ -174,6 +174,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add `--purge` flag to `homeos plugin remove` to delete the plugin directory in addition to removing the `homeos.yml` entry.
 - [x] Add confirmation prompt to `homeos package remove` before removing entries. Show which packages will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
 - [x] Add confirmation prompt to `homeos plugin remove` before removing entries. Show which plugins will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
+- [ ] Add a newline after `Installing <name>...` (and `Updating`, `Uninstalling`) before script execution, so that script output starts on its own line. `done` should also be on its own line after execution.
 
 ## Completion Criteria
 
