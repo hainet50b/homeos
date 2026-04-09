@@ -2803,3 +2803,30 @@ Added `--purge` flag to `homeos plugin remove` CLI definition and integrated it 
 - Cargo toolchain is not available in this environment, so fmt/clippy/test could not be run. Code follows the exact same pattern as the `--purge` flag for `package remove` which was already validated.
 - Function ordering in plugin.rs already matches README order (list, list-remote, add, remove, cat, cd) — no reordering needed.
 
+
+---
+
+## Task: Add confirmation prompt to `homeos package remove`
+
+**Timestamp:**
+
+2026-04-09T03:01:17Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a confirmation prompt to `homeos package remove` before removing entries. The prompt shows which packages will be removed from `homeos.yml`. When `--purge` is used and package directories exist, it also shows which directories will be deleted. Declining the prompt aborts the operation. Followed the existing pattern from `repo remove`: public `remove()` locks stdin/stdout and delegates to `remove_to()` which takes generic reader/writer for testability. Updated all 20 existing `remove` tests to use `remove_to` with `Cursor`-based reader (confirmed with `y`). Added 5 new tests: prompt display, declined removal, purge directory listing, no directory section when dirs missing, and purge declined preserves directory.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (split `remove` into public wrapper + `remove_to` with confirmation prompt, added `BufRead`/`Cursor` imports, updated all existing tests, added 5 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 430 tests pass. No clippy warnings.
+- Function ordering in registry.rs already matched README order — no reordering needed.

@@ -1,8 +1,9 @@
 use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
+use crate::plan::prompt_confirm;
 use crate::state::State;
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufRead, Write};
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
@@ -189,6 +190,19 @@ pub fn remove(
     packages: &[String],
     purge: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+    let mut writer = std::io::stdout();
+    remove_to(ctx, packages, purge, &mut reader, &mut writer)
+}
+
+fn remove_to<R: BufRead, W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    purge: bool,
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
@@ -232,18 +246,48 @@ pub fn remove(
         }
     }
 
+    writeln!(
+        writer,
+        "The following packages will be removed from homeos.yml:"
+    )?;
+    for package in packages {
+        writeln!(writer, "  {package}")?;
+    }
+
+    if purge {
+        let dirs_to_delete: Vec<&String> = packages
+            .iter()
+            .filter(|p| ctx.packages_dir().join(p).exists())
+            .collect();
+        if !dirs_to_delete.is_empty() {
+            writeln!(writer, "\nThe following directories will be deleted:")?;
+            for package in &dirs_to_delete {
+                writeln!(
+                    writer,
+                    "  {}",
+                    ctx.packages_dir().join(package.as_str()).display()
+                )?;
+            }
+        }
+    }
+
+    if !prompt_confirm(reader, writer) {
+        writeln!(writer, "Aborted.")?;
+        return Ok(());
+    }
+
     for package in packages {
         config.packages.remove(package.as_str());
         if purge {
             let pkg_dir = ctx.packages_dir().join(package);
             if pkg_dir.exists() {
                 std::fs::remove_dir_all(&pkg_dir)?;
-                println!("Removed package '{package}' and deleted directory");
+                writeln!(writer, "Removed package '{package}' and deleted directory")?;
             } else {
-                println!("Removed package '{package}'");
+                writeln!(writer, "Removed package '{package}'")?;
             }
         } else {
-            println!("Removed package '{package}'");
+            writeln!(writer, "Removed package '{package}'")?;
         }
     }
     config.save(&ctx.config_path())?;
@@ -502,6 +546,7 @@ mod tests {
     use crate::commands::package::{all_script_extensions, script_extension};
     use crate::state::State;
     use std::collections::BTreeMap;
+    use std::io::Cursor;
     use tempfile::TempDir;
 
     fn fixture(yaml: &str) -> (TempDir, Context) {
@@ -1289,9 +1334,17 @@ mod tests {
     fn test_remove_deletes_config_entry() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1304,9 +1357,17 @@ mod tests {
     fn test_remove_errors_when_package_not_found() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["nonexistent".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["nonexistent".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1318,9 +1379,17 @@ mod tests {
         // Arrange
         let tmp = TempDir::new().unwrap();
         let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1334,9 +1403,17 @@ mod tests {
             installed: vec!["neovim".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_err());
@@ -1356,9 +1433,17 @@ mod tests {
             installed: vec!["ripgrep".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1371,9 +1456,17 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         // No state.yml exists
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1385,9 +1478,17 @@ mod tests {
     fn test_remove_last_package_leaves_empty_packages() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1400,9 +1501,11 @@ mod tests {
         // Arrange
         let (_tmp, ctx) =
             fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["git".to_string()], false);
+        let result = remove_to(&ctx, &["git".to_string()], false, &mut reader, &mut output);
 
         // Assert
         assert!(result.is_err());
@@ -1421,9 +1524,11 @@ mod tests {
         let (_tmp, ctx) = fixture(
             "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep:\n    depends_on:\n      - git\n",
         );
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["git".to_string()], false);
+        let result = remove_to(&ctx, &["git".to_string()], false, &mut reader, &mut output);
 
         // Assert
         assert!(result.is_err());
@@ -1438,9 +1543,17 @@ mod tests {
         let (_tmp, ctx) = fixture(
             "packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n  ripgrep: {}\n",
         );
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["ripgrep".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["ripgrep".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1452,9 +1565,17 @@ mod tests {
     fn test_remove_multiple_packages() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n  git: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string(), "ripgrep".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string(), "ripgrep".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1468,12 +1589,16 @@ mod tests {
     fn test_remove_multiple_stops_on_first_not_found() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(
+        let result = remove_to(
             &ctx,
             &["neovim".to_string(), "nonexistent".to_string()],
             false,
+            &mut reader,
+            &mut output,
         );
 
         // Assert
@@ -1492,12 +1617,16 @@ mod tests {
             installed: vec!["ripgrep".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(
+        let result = remove_to(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             false,
+            &mut reader,
+            &mut output,
         );
 
         // Assert
@@ -1519,9 +1648,17 @@ mod tests {
         // Arrange — neovim depends on git; removing both should succeed
         let (_tmp, ctx) =
             fixture("packages:\n  git: {}\n  neovim:\n    depends_on:\n      - git\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["git".to_string(), "neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["git".to_string(), "neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1536,9 +1673,17 @@ mod tests {
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         std::fs::write(pkg_dir.join("install.sh"), "#!/bin/sh").unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], true);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1553,9 +1698,17 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         // No package directory created
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], true);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1570,9 +1723,17 @@ mod tests {
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         std::fs::write(pkg_dir.join("install.sh"), "#!/bin/sh").unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(&ctx, &["neovim".to_string()], false);
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
 
         // Assert
         assert!(result.is_ok());
@@ -1588,12 +1749,16 @@ mod tests {
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::create_dir_all(&ripgrep_dir).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
 
         // Act
-        let result = remove(
+        let result = remove_to(
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             true,
+            &mut reader,
+            &mut output,
         );
 
         // Assert
@@ -1602,6 +1767,131 @@ mod tests {
         assert!(!ripgrep_dir.exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.contains_key("git"));
+    }
+
+    #[test]
+    fn test_remove_shows_confirmation_prompt() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be removed from homeos.yml:"));
+        assert!(written.contains("  neovim"));
+        assert!(written.contains("Proceed? [y/N]"));
+    }
+
+    #[test]
+    fn test_remove_declined_does_not_remove() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let mut reader = Cursor::new(b"n\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        // Config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_purge_shows_directories_in_prompt() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let neovim_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&neovim_dir).unwrap();
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be removed from homeos.yml:"));
+        assert!(written.contains("The following directories will be deleted:"));
+        assert!(written.contains(&neovim_dir.display().to_string()));
+    }
+
+    #[test]
+    fn test_remove_purge_no_directory_section_when_dirs_missing() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        // No package directory created
+        let mut reader = Cursor::new(b"y\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be removed from homeos.yml:"));
+        assert!(!written.contains("The following directories will be deleted:"));
+    }
+
+    #[test]
+    fn test_remove_purge_declined_preserves_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let mut reader = Cursor::new(b"n\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(pkg_dir.exists());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("neovim"));
     }
 
     #[test]

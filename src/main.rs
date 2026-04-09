@@ -699,8 +699,7 @@ mod tests {
     #[test]
     fn test_plugin_remove_purge_flag() {
         // Arrange & Act
-        let cli =
-            Cli::try_parse_from(["homeos", "plugin", "remove", "dnf", "--purge"]).unwrap();
+        let cli = Cli::try_parse_from(["homeos", "plugin", "remove", "dnf", "--purge"]).unwrap();
 
         // Assert
         if let Commands::Plugin {
@@ -840,14 +839,8 @@ mod tests {
     #[test]
     fn test_package_remove_purge_flag() {
         // Arrange & Act
-        let cli = Cli::try_parse_from([
-            "homeos",
-            "package",
-            "remove",
-            "neovim",
-            "--purge",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "remove", "neovim", "--purge"]).unwrap();
 
         // Assert
         if let Commands::Package {
