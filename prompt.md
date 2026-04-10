@@ -1,6 +1,6 @@
-Read the PRD at prd.md and progress.md, then follow these instructions:
+Read the PRD at prd.md, README.md (as the specification), and COMMAND_OUTPUT.md (as the output specification), then follow these instructions:
 
-1. Read all unchecked tasks (- [ ]) in the PRD and review `progress.md` to understand what has been completed and any remarks from previous work.
+1. Read all unchecked tasks (- [ ]) in the PRD and review the last 100 lines of `progress.md` (not the entire file) to understand recent remarks from previous work.
 2. Select the next task to work on, considering dependencies between tasks and current project state. Process Tasks before Post Tasks.
 3. Implement ONLY that one task.
 4. Verify that functions, methods, and CLI subcommands across the affected files are ordered consistently with `README.md`. Fix any ordering inconsistencies, not just in code you added.
