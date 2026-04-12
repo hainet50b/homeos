@@ -36,15 +36,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create the initial repo structure
+    /// Create the initial repository structure
     Init {
-        /// Remote URL to clone as the default repo
+        /// Remote URL to clone
         url: Option<String>,
         /// Remove .git directory after cloning
-        #[arg(long)]
+        #[arg(long, requires = "url")]
         strip_git: bool,
     },
-    /// Launch a shell in the repos directory
+    /// Launch a shell in the repositories directory
     Cd,
     /// Install new packages and update installed ones
     Apply,

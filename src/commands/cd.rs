@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Resolve and validate the target directory for `homeos cd`.
-/// Returns the repos directory path if it exists, or an error if not.
+/// Returns the repositories directory path if it exists, or an error if not.
 pub fn resolve_target(ctx: &Context) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let dir = ctx.repos_dir();
     if !dir.exists() {
         return Err(format!(
-            "Repos directory not found at {}. Run `homeos init` first.",
+            "Repositories directory not found at {}. Run `homeos init` first.",
             dir.display()
         )
         .into());
@@ -79,7 +79,7 @@ mod tests {
         // Assert
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Repos directory not found"));
+        assert!(err.contains("Repositories directory not found"));
         assert!(err.contains("homeos init"));
     }
 }

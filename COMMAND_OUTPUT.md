@@ -8,31 +8,30 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Already initialized | stdout | `Already initialized at {path}` |
 | Scaffold success | stdout | `Initialized homeos at {path}` |
 | Clone success | stdout | `Initialized homeos at {path} (cloned from {url})` |
+| Already initialized (error) | stderr | `Error: Already initialized at {path}` |
+| Repository directory already exists (error) | stderr | `Error: Repository directory already exists at {path}` |
 | git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
-| Cloned repo has no homeos.yml (error) | stderr | `Error: Not a valid homeos repository` |
+| Cloned repository has no homeos.yml (error) | stderr | `Error: Not a valid homeos repository. Cloned directory removed.` |
 
 ## homeos cd
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Repos directory not found (error) | stderr | `Error: Repos directory not found at {path}. Run 'homeos init' first.` |
+| Repositories directory not found (error) | stderr | `Error: Repositories directory not found at {path}. Run 'homeos init' first.` |
 
 ## homeos apply
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Nothing to do | stdout | `Nothing to do.` |
-| Disabled packages skipped | stdout | `The following packages will be skipped:` / `  {name} (disabled)` |
 | Plan display | stdout | (see Plan Display section below) |
 | User confirms | stdout | Executes with progress messages |
 | User declines | stdout | `Aborted.` |
-| Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
-| Script execution fails (error) | stdout | `Error: {details}` |
-| Some packages fail (error) | stderr | `Error: Some packages failed` |
+| Script not found (error) | stdout | `Error: Script not found: {path}` |
+| Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
+| Some packages fail | stdout | `Some packages failed` |
 
 ## homeos package list
 
@@ -133,41 +132,38 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
-| No packages to install | stdout | `No packages to install.` |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 | Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
-| Some packages fail (error) | stderr | `Error: Some packages failed` |
+| Some packages fail | stdout | `Some packages failed` |
 
 ## homeos package update
 
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
-| No packages to update | stdout | `No packages to update.` |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Updating {name}...` / `done` or `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
-| Some packages fail (error) | stderr | `Error: Some packages failed` |
+| Some packages fail | stdout | `Some packages failed` |
 
 ## homeos package uninstall
 
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
-| No packages to uninstall | stdout | `No packages to uninstall.` |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Uninstalling {name}...` / `done` or `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 | Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
-| Some packages fail (error) | stderr | `Error: Some packages failed` |
+| Some packages fail | stdout | `Some packages failed` |
 
 ## homeos plugin list
 
@@ -193,7 +189,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Plugin already in homeos.yml (error) | stderr | `Error: Plugin '{name}' already exists` |
 | Plugin directory already exists (error) | stderr | `Error: Plugin directory '{name}' already exists` |
 | git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
-| Cloned plugin has no plugin.yml (error) | stderr | `Error: Not a valid homeos plugin` |
+| Cloned plugin has no plugin.yml (error) | stderr | `Error: Not a valid homeos plugin. Cloned directory removed.` |
 
 ## homeos plugin remove
 
@@ -259,7 +255,9 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 ## Plan Display
 
-Used by `apply`, `install`, `update`, `uninstall`:
+Used by `apply`, `install`, `update`, `uninstall`. Always displayed regardless of whether there are packages to execute.
+
+When there are packages to execute:
 
 ```
 The following packages will be {installed|updated|uninstalled}:
@@ -272,4 +270,14 @@ The following packages will be skipped:
   {name} (not installed)
 
 Proceed? [y/N]
+```
+
+When all packages are skipped (no confirmation prompt):
+
+```
+The following packages will be skipped:
+  {name} (disabled)
+  {name} (already installed)
+
+Nothing to do.
 ```

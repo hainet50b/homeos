@@ -187,13 +187,13 @@ plugins:
 
 #### `homeos init`
 
-Create the initial repo structure. Without arguments, creates an empty repository with a skeleton `homeos.yml`. With a URL, clones the remote repository as the default repo — use `--repo` to clone it as a named repo.
+Create the initial repository structure. Without arguments, creates an empty repository with a skeleton `homeos.yml`. With a URL, clones the remote repository — use `--repo` to specify a different repository name.
 
 ```
 Usage: homeos init [OPTIONS] [URL]
 
 Arguments:
-  [URL]  Remote URL to clone as the default repo
+  [URL]  Remote URL to clone
 
 Options:
       --strip-git  Remove .git directory after cloning
@@ -201,7 +201,7 @@ Options:
 
 #### `homeos cd`
 
-Launch a shell in the repos directory.
+Launch a shell in the repositories directory.
 
 ```
 Usage: homeos cd
