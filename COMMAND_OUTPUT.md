@@ -2,256 +2,260 @@
 
 This file defines all user-facing output for homeos commands. When adding or changing messages, follow this specification to maintain consistency.
 
-Errors are displayed via `eprintln!("Error: {e}");` in main.rs. In the tables below, conditions marked with `(error)` are sent to stderr with the `Error:` prefix automatically.
+Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **Output**. Errors from main.rs are sent to stderr via `eprintln!("Error: {e}");`. Some errors during script execution are sent to stdout to maintain output flow.
 
 ## homeos init
 
-| Condition | Output |
-|-----------|--------|
-| Already initialized | `Already initialized at {path}` |
-| Scaffold success | `Initialized homeos at {path}` |
-| Clone success | `Initialized homeos at {path} (cloned from {url})` |
-| git clone fails (error) | `git clone failed: {stderr}` |
-| Cloned repo has no homeos.yml (error) | `Not a valid homeos repository` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Already initialized | stdout | `Already initialized at {path}` |
+| Scaffold success | stdout | `Initialized homeos at {path}` |
+| Clone success | stdout | `Initialized homeos at {path} (cloned from {url})` |
+| git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
+| Cloned repo has no homeos.yml (error) | stderr | `Error: Not a valid homeos repository` |
 
 ## homeos cd
 
-| Condition | Output |
-|-----------|--------|
-| Repos directory not found (error) | `Repos directory not found at {path}. Run 'homeos init' first.` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Repos directory not found (error) | stderr | `Error: Repos directory not found at {path}. Run 'homeos init' first.` |
 
 ## homeos apply
 
-| Condition | Output |
-|-----------|--------|
-| Nothing to do | `Nothing to do.` |
-| Disabled packages skipped | `The following packages will be skipped:` / `  {name} (disabled)` |
-| Plan display | (see Plan Display section below) |
-| User confirms | Executes with progress messages |
-| User declines | `Aborted.` |
-| Script not found (error) | `Script not found: {path}` |
-| Script execution | `Installing {name}...` / `done` or `FAILED` |
-| Some packages fail (error) | `Some packages failed` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Nothing to do | stdout | `Nothing to do.` |
+| Disabled packages skipped | stdout | `The following packages will be skipped:` / `  {name} (disabled)` |
+| Plan display | stdout | (see Plan Display section below) |
+| User confirms | stdout | Executes with progress messages |
+| User declines | stdout | `Aborted.` |
+| Script not found (error) | stdout | `Error: Script not found: {path}` |
+| Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
+| Script execution fails (error) | stdout | `Error: {details}` |
+| Some packages fail (error) | stderr | `Error: Some packages failed` |
 
 ## homeos package list
 
-| Condition | Output |
-|-----------|--------|
-| No packages | `No packages.` |
-| Has packages | Table: `Package`, `Enabled`, `Installed` columns |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| No packages | stdout | `No packages.` |
+| Has packages | stdout | Table: `Package`, `Enabled`, `Installed` columns |
 
 ## homeos package add
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Added package '{name}'` |
-| Package already in homeos.yml (error) | `Package '{name}' already exists` |
-| Package directory already exists (error) | `Package directory '{name}' already exists. Remove it first to re-create.` |
-| Plugin not found (error) | `Plugin '{name}' not found. Add it first with: homeos plugin add {name}` |
-| Missing plugin params (error) | `Missing required plugin parameters: {params}` |
-| Invalid key=value pair (error) | `invalid key=value pair: no '=' found in '{input}'` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Added package '{name}'` |
+| Package already in homeos.yml (error) | stderr | `Error: Package '{name}' already exists` |
+| Package directory already exists (error) | stderr | `Error: Package directory '{name}' already exists. Remove it first to re-create.` |
+| Plugin not found (error) | stderr | `Error: Plugin '{name}' not found. Add it first with: homeos plugin add {name}` |
+| Missing plugin params (error) | stderr | `Error: Missing required plugin parameters: {params}` |
+| Invalid key=value pair (error) | stderr | `Error: invalid key=value pair: no '=' found in '{input}'` |
 
 ## homeos package remove
 
-| Condition | Output |
-|-----------|--------|
-| Confirmation prompt | `The following packages will be removed from homeos.yml:` / `  {name}` |
-| With --purge | `The following directories will be deleted:` / `  {path}` |
-| User declines | `Aborted.` |
-| Success | `Removed package '{name}'` |
-| Success with --purge | `Removed package '{name}' and deleted directory` |
-| Package not found (error) | `Package '{name}' not found` |
-| Package is installed (error) | `Package '{name}' is currently installed. Uninstall it first with: homeos package uninstall {name}` |
-| Package is depended on (error) | `Cannot remove package '{name}' because it is depended on by: {dependents}` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Confirmation prompt | stdout | `The following packages will be removed from homeos.yml:` / `  {name}` |
+| With --purge | stdout | `The following directories will be deleted:` / `  {path}` |
+| User declines | stdout | `Aborted.` |
+| Success | stdout | `Removed package '{name}'` |
+| Success with --purge | stdout | `Removed package '{name}' and deleted directory` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+| Package is installed (error) | stderr | `Error: Package '{name}' is currently installed. Uninstall it first with: homeos package uninstall {name}` |
+| Package is depended on (error) | stderr | `Error: Cannot remove package '{name}' because it is depended on by: {dependents}` |
 
 ## homeos package add-dep
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Added dependency '{dependency}' to package '{name}'` |
-| Already depends | `Package '{name}' already depends on '{dependency}'` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Added dependency '{dependency}' to package '{name}'` |
+| Already depends | stdout | `Package '{name}' already depends on '{dependency}'` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package remove-dep
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Removed dependency '{dependency}' from package '{name}'` |
-| Not a dependency | `Package '{name}' does not depend on '{dependency}'` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Removed dependency '{dependency}' from package '{name}'` |
+| Not a dependency | stdout | `Package '{name}' does not depend on '{dependency}'` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package add-alias
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Added alias '{target}={source}' to package '{name}'` |
-| Already has alias | `Package '{name}' already has alias '{target}'` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Added alias '{target}={source}' to package '{name}'` |
+| Already has alias | stdout | `Package '{name}' already has alias '{target}'` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package remove-alias
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Removed alias '{target}' from package '{name}'` |
-| Alias not found | `Package '{name}' does not have alias '{target}'` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Removed alias '{target}' from package '{name}'` |
+| Alias not found | stdout | `Package '{name}' does not have alias '{target}'` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package enable
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Enabled package '{name}'` |
-| Already enabled | `Package '{name}' is already enabled` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Enabled package '{name}'` |
+| Already enabled | stdout | `Package '{name}' is already enabled` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package disable
 
-| Condition | Output |
-|-----------|--------|
-| Success | `Disabled package '{name}'` |
-| Already disabled | `Package '{name}' is already disabled` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Disabled package '{name}'` |
+| Already disabled | stdout | `Package '{name}' is already disabled` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package cat
 
-| Condition | Output |
-|-----------|--------|
-| Script exists | `=== {filename} ===` / `{content}` |
-| Script not found | `=== {filename} ===` / `(not found)` |
-| Package not found (error) | `Package '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Script exists | stdout | `=== {filename} ===` / `{content}` |
+| Script not found | stdout | `=== {filename} ===` / `(not found)` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package cd
 
-| Condition | Output |
-|-----------|--------|
-| Package not found (error) | `Package '{name}' not found` |
-| Directory not found (error) | `Directory not found at {path}` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+| Directory not found (error) | stderr | `Error: Directory not found at {path}` |
 
 ## homeos package install
 
-| Condition | Output |
-|-----------|--------|
-| Plan display | (see Plan Display section below) |
-| No packages to install | `No packages to install.` |
-| User declines | `Aborted.` |
-| Script execution | `Installing {name}...` / `done` or `FAILED` |
-| Package not found (error) | `Package '{name}' not found` |
-| Circular dependency (error) | `Circular dependency detected among packages: {names}` |
-| Script fails (error) | `Script failed with exit code {code}` |
-| Some packages fail (error) | `Some packages failed` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Plan display | stdout | (see Plan Display section below) |
+| No packages to install | stdout | `No packages to install.` |
+| User declines | stdout | `Aborted.` |
+| Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
+| Script not found (error) | stdout | `Error: Script not found: {path}` |
+| Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
+| Some packages fail (error) | stderr | `Error: Some packages failed` |
 
 ## homeos package update
 
-| Condition | Output |
-|-----------|--------|
-| Plan display | (see Plan Display section below) |
-| No packages to update | `No packages to update.` |
-| User declines | `Aborted.` |
-| Script execution | `Updating {name}...` / `done` or `FAILED` |
-| Package not found (error) | `Package '{name}' not found` |
-| Script fails (error) | `Script failed with exit code {code}` |
-| Some packages fail (error) | `Some packages failed` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Plan display | stdout | (see Plan Display section below) |
+| No packages to update | stdout | `No packages to update.` |
+| User declines | stdout | `Aborted.` |
+| Script execution | stdout | `Updating {name}...` / `done` or `FAILED` |
+| Script not found (error) | stdout | `Error: Script not found: {path}` |
+| Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+| Some packages fail (error) | stderr | `Error: Some packages failed` |
 
 ## homeos package uninstall
 
-| Condition | Output |
-|-----------|--------|
-| Plan display | (see Plan Display section below) |
-| No packages to uninstall | `No packages to uninstall.` |
-| User declines | `Aborted.` |
-| Script execution | `Uninstalling {name}...` / `done` or `FAILED` |
-| Package not found (error) | `Package '{name}' not found` |
-| Circular dependency (error) | `Circular dependency detected among packages: {names}` |
-| Script fails (error) | `Script failed with exit code {code}` |
-| Some packages fail (error) | `Some packages failed` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Plan display | stdout | (see Plan Display section below) |
+| No packages to uninstall | stdout | `No packages to uninstall.` |
+| User declines | stdout | `Aborted.` |
+| Script execution | stdout | `Uninstalling {name}...` / `done` or `FAILED` |
+| Script not found (error) | stdout | `Error: Script not found: {path}` |
+| Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
+| Some packages fail (error) | stderr | `Error: Some packages failed` |
 
 ## homeos plugin list
 
-| Condition | Output |
-|-----------|--------|
-| No plugins | `No plugins.` |
-| Has plugins | Table: `Name`, `URL` columns |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| No plugins | stdout | `No plugins.` |
+| Has plugins | stdout | Table: `Name`, `URL` columns |
 
 ## homeos plugin list-remote
 
-| Condition | Output |
-|-----------|--------|
-| No remote plugins | `No remote plugins found.` |
-| Has plugins | Table: `Name`, `Description`, `URL` columns |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| No remote plugins | stdout | `No remote plugins found.` |
+| Has plugins | stdout | Table: `Name`, `Description`, `URL` columns |
 
 ## homeos plugin add
 
-| Condition | Output |
-|-----------|--------|
-| Local success | `Plugin '{name}' created locally` |
-| Clone success | `Plugin '{name}' added successfully` |
-| Plugin not found on GitHub (error) | `Plugin '{name}' not found on GitHub (homeos-plugin-{name})` |
-| Plugin already in homeos.yml (error) | `Plugin '{name}' already exists` |
-| Plugin directory already exists (error) | `Plugin directory '{name}' already exists` |
-| git clone fails (error) | `git clone failed: {stderr}` |
-| Cloned plugin has no plugin.yml (error) | `Not a valid homeos plugin` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Local success | stdout | `Plugin '{name}' created locally` |
+| Clone success | stdout | `Plugin '{name}' added successfully` |
+| Plugin not found on GitHub (error) | stderr | `Error: Plugin '{name}' not found on GitHub (homeos-plugin-{name})` |
+| Plugin already in homeos.yml (error) | stderr | `Error: Plugin '{name}' already exists` |
+| Plugin directory already exists (error) | stderr | `Error: Plugin directory '{name}' already exists` |
+| git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
+| Cloned plugin has no plugin.yml (error) | stderr | `Error: Not a valid homeos plugin` |
 
 ## homeos plugin remove
 
-| Condition | Output |
-|-----------|--------|
-| Warning about referencing packages | `Warning: the following packages reference plugin '{name}': {packages}` |
-| Confirmation prompt | `The following plugins will be removed from homeos.yml:` / `  {name}` |
-| With --purge | `The following directories will be deleted:` / `  {path}` |
-| User declines | `Aborted.` |
-| Success | `Removed plugin '{name}'` |
-| Success with --purge | `Removed plugin '{name}' and deleted directory` |
-| Plugin not found (error) | `Plugin '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Warning about referencing packages | stdout | `Warning: the following packages reference plugin '{name}': {packages}` |
+| Confirmation prompt | stdout | `The following plugins will be removed from homeos.yml:` / `  {name}` |
+| With --purge | stdout | `The following directories will be deleted:` / `  {path}` |
+| User declines | stdout | `Aborted.` |
+| Success | stdout | `Removed plugin '{name}'` |
+| Success with --purge | stdout | `Removed plugin '{name}' and deleted directory` |
+| Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 
 ## homeos plugin cat
 
-| Condition | Output |
-|-----------|--------|
-| plugin.yml exists | `=== plugin.yml ===` / `{content}` |
-| plugin.yml not found | `=== plugin.yml ===` / `(not found)` |
-| Template exists | `=== {filename} ===` / `{content}` |
-| Template not found | `=== {filename} ===` / `(not found)` |
-| Plugin not found (error) | `Plugin '{name}' not found` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| plugin.yml exists | stdout | `=== plugin.yml ===` / `{content}` |
+| plugin.yml not found | stdout | `=== plugin.yml ===` / `(not found)` |
+| Template exists | stdout | `=== {filename} ===` / `{content}` |
+| Template not found | stdout | `=== {filename} ===` / `(not found)` |
+| Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 
 ## homeos plugin cd
 
-| Condition | Output |
-|-----------|--------|
-| Plugin not found (error) | `Plugin '{name}' not found` |
-| Directory not found (error) | `Directory not found at {path}` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
+| Directory not found (error) | stderr | `Error: Directory not found at {path}` |
 
 ## homeos repo list
 
-| Condition | Output |
-|-----------|--------|
-| No repositories | `No repositories.` |
-| Has repositories | One repository name per line |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| No repositories | stdout | `No repositories.` |
+| Has repositories | stdout | One repository name per line |
 
 ## homeos repo add
 
-| Condition | Output |
-|-----------|--------|
-| Clone success | `Repository '{name}' cloned successfully` |
-| Create success | `Repository '{name}' created` |
-| Repository already exists (error) | `Repository '{name}' already exists` |
-| git clone fails (error) | `git clone failed: {stderr}` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Clone success | stdout | `Repository '{name}' cloned successfully` |
+| Create success | stdout | `Repository '{name}' created` |
+| Repository already exists (error) | stderr | `Error: Repository '{name}' already exists` |
+| git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
 
 ## homeos repo cd
 
-| Condition | Output |
-|-----------|--------|
-| Repository not found (error) | `Repository '{name}' does not exist` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Repository not found (error) | stderr | `Error: Repository '{name}' does not exist` |
 
 ## homeos repo remove
 
-| Condition | Output |
-|-----------|--------|
-| Confirmation prompt | `Remove repository '{name}'?` |
-| User declines | `Aborted.` |
-| Success | `Repository '{name}' removed` |
-| Removing default (error) | `Cannot remove the default repository.` |
-| Repository not found (error) | `Repository '{name}' does not exist` |
-| Has installed packages (error) | `Repository '{name}' has installed packages. Uninstall them first.` |
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Confirmation prompt | stdout | `Remove repository '{name}'?` |
+| User declines | stdout | `Aborted.` |
+| Success | stdout | `Repository '{name}' removed` |
+| Removing default (error) | stderr | `Error: Cannot remove the default repository.` |
+| Repository not found (error) | stderr | `Error: Repository '{name}' does not exist` |
+| Has installed packages (error) | stderr | `Error: Repository '{name}' has installed packages. Uninstall them first.` |
 
 ## Plan Display
 
