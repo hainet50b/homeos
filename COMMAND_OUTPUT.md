@@ -37,7 +37,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Any | stdout | Table: `Package`, `Enabled`, `Installed` columns (empty table if no packages) |
+| Any | stdout | Table: `Package`, `Enabled`, `Installed`, `Dependencies` columns (empty table if no packages) |
 
 ## homeos package add
 
@@ -58,7 +58,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | With --purge | stdout | `The following directories will be deleted:` / `  {path}` |
 | User declines | stdout | `Aborted.` |
 | Success | stdout | `Removed package '{name}'` |
-| Success with --purge | stdout | `Removed package '{name}' and deleted directory` |
+| Success with --purge | stdout | `Removed package '{name}' and removed directory` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 | Package is installed (error) | stderr | `Error: Package '{name}' is currently installed. Uninstall it first with: homeos package uninstall {name}` |
 | Package is depended on (error) | stderr | `Error: Cannot remove package '{name}' because it is depended on by: {dependents}` |
@@ -109,6 +109,13 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Success | stdout | `Disabled package '{name}'` |
 | Already disabled | stdout | `Package '{name}' is already disabled` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` |
+
+## homeos package info
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | Package details: enabled, installed, plugin, params, dependencies, dependents, script aliases |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package cat
@@ -198,7 +205,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | With --purge | stdout | `The following directories will be deleted:` / `  {path}` |
 | User declines | stdout | `Aborted.` |
 | Success | stdout | `Removed plugin '{name}'` |
-| Success with --purge | stdout | `Removed plugin '{name}' and deleted directory` |
+| Success with --purge | stdout | `Removed plugin '{name}' and removed directory` |
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 
 ## homeos plugin cat

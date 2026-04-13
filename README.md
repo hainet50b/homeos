@@ -248,14 +248,14 @@ List all packages.
 Usage: homeos package list
 ```
 
-Displays a table with package name, enabled status, and installed status.
+Displays a table with package name, enabled status, installed status, and dependencies.
 
 ```
 $ homeos package list
-Package     Enabled   Installed
-neovim      yes       yes
-zed         yes       no
-docker      no        no
+Package     Enabled   Installed   Dependencies
+neovim      yes       yes         -
+claude      yes       yes         bubblewrap, socat
+docker      no        no          -
 ```
 
 #### `homeos package add`
@@ -363,6 +363,35 @@ Usage: homeos package disable <PACKAGES>...
 
 Arguments:
   <PACKAGES>...  Package names
+```
+
+#### `homeos package info`
+
+Display package details.
+
+```
+Usage: homeos package info <PACKAGE>
+
+Arguments:
+  <PACKAGE>  Package name
+```
+
+Shows enabled/installed status, plugin, dependencies, dependents, and script aliases.
+
+```
+$ homeos package info claude
+Package: claude
+Enabled: yes
+Installed: yes
+Plugin: -
+Dependencies:
+  bubblewrap
+  sandbox-runtime
+  socat
+Dependents:
+  (none)
+Script aliases:
+  update → install
 ```
 
 #### `homeos package cat`
