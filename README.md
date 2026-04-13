@@ -269,16 +269,16 @@ Arguments:
   <PACKAGE>  Package name
 
 Options:
-      --depends-on <DEPENDS_ON>...        Dependencies for this package
-      --script-aliases <ALIAS>...           Script aliases as target=source pairs (e.g., update=install)
-      --plugin <PLUGIN>                   Plugin to use for generating scripts
-      --params <PARAMS>...                Plugin parameters as key=value pairs
+      --depends-on <DEPENDENCY>    Add a dependency (can be repeated)
+      --script-alias <ALIAS>       Add a script alias as target=source (can be repeated)
+      --plugin <PLUGIN>            Plugin to use for generating scripts
+      --param <PARAM>              Plugin parameter as key=value (can be repeated)
 ```
 
 To generate scripts from a plugin instead of default skeletons:
 
 ```
-$ homeos package add neovim --plugin dnf --params name=neovim.x86_64
+$ homeos package add neovim --plugin dnf --param name=neovim.x86_64
 ```
 
 #### `homeos package remove`
@@ -665,10 +665,10 @@ For example, `install.sh.tmpl`:
 sudo dnf install -y {{name}}
 ```
 
-When a user adds a package with `--params name=neovim.x86_64`:
+When a user adds a package with `--param name=neovim.x86_64`:
 
 ```sh
-$ homeos package add neovim --plugin my-provider --params name=neovim.x86_64
+$ homeos package add neovim --plugin my-provider --param name=neovim.x86_64
 
 $ homeos package cat neovim
 === install.sh ===

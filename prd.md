@@ -183,6 +183,9 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Append ". Cloned directory removed." to the error message in `homeos init` when cloned repo has no homeos.yml.
 - [x] Append ". Cloned directory removed." to the error message in `homeos plugin add` when cloned plugin has no plugin.yml.
 - [x] Change `homeos cd` error message from "Repos directory not found" to "Repositories directory not found".
+- [ ] Change `homeos package list`, `homeos plugin list`, and `homeos repo list` to show table headers even when empty, instead of "No packages." / "No plugins." / "No repositories." messages.
+- [ ] Add existence check for `homeos.yml` in `Config::load`. If the file does not exist, return a clear error: `homeos.yml not found at {path}. Run 'homeos init' first.`
+- [ ] Change `--depends-on`, `--script-aliases`, and `--params` in `homeos package add` from `num_args = 1..` to `action = Append` to avoid consuming subsequent options. Rename `--script-aliases` to `--script-alias` and `--params` to `--param` (singular, matching append-per-call semantics).
 
 ## Completion Criteria
 

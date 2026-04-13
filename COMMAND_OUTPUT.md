@@ -37,8 +37,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| No packages | stdout | `No packages.` |
-| Has packages | stdout | Table: `Package`, `Enabled`, `Installed` columns |
+| Any | stdout | Table: `Package`, `Enabled`, `Installed` columns (empty table if no packages) |
 
 ## homeos package add
 
@@ -169,8 +168,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| No plugins | stdout | `No plugins.` |
-| Has plugins | stdout | Table: `Name`, `URL` columns |
+| Any | stdout | Table: `Name`, `URL` columns (empty table if no plugins) |
 
 ## homeos plugin list-remote
 
@@ -224,8 +222,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| No repositories | stdout | `No repositories.` |
-| Has repositories | stdout | One repository name per line |
+| Any | stdout | Table: repository names (empty table if no repositories) |
 
 ## homeos repo add
 
