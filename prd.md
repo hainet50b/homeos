@@ -181,7 +181,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `Some packages failed` to stdout and exit code 0. The message is a summary report, not a fatal error. `run_action` should report individual failures to stdout during execution, print `Some packages failed` to stdout at the end, and return `Ok(())`.
 - [x] Change `homeos init` "Already initialized" from `println!` (stdout) to `eprintln!` (stderr) with `Error:` prefix, and return `Err`.
 - [x] Append ". Cloned directory removed." to the error message in `homeos init` when cloned repo has no homeos.yml.
-- [ ] Append ". Cloned directory removed." to the error message in `homeos plugin add` when cloned plugin has no plugin.yml.
+- [x] Append ". Cloned directory removed." to the error message in `homeos plugin add` when cloned plugin has no plugin.yml.
 - [ ] Change `homeos cd` error message from "Repos directory not found" to "Repositories directory not found".
 
 ## Completion Criteria

@@ -3060,3 +3060,31 @@ Updated the error message in `homeos init` when a cloned repository has no `home
 - All 438 tests pass. No clippy warnings.
 - The existing test `test_init_with_url_rejects_repo_without_homeos_yml` already verifies the exact error message and that the cloned directory is removed, so no new test was needed — just updated the assertion string.
 - Function ordering in init.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Append ". Cloned directory removed." to plugin add error message
+
+**Timestamp:**
+
+2026-04-13T06:58:12Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Updated the error message in `homeos plugin add` when a cloned plugin has no `plugin.yml` from "Not a valid homeos plugin" to "Not a valid homeos plugin. Cloned directory removed." to match the COMMAND_OUTPUT.md specification. Updated the existing test assertion to match the new message.
+
+**What was changed:**
+
+- src/commands/plugin.rs (updated error message string and test assertion)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- The existing test `test_add_rejects_repo_without_plugin_yml` already verifies the exact error message, so just updated the assertion string. The companion test `test_add_rejects_repo_without_plugin_yml_cleans_up` verifies directory cleanup separately and didn't need changes.
+- Function ordering in plugin.rs already matched README order — no reordering needed.

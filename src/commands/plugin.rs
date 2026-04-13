@@ -248,7 +248,7 @@ where
 
     if !target.join("plugin.yml").exists() {
         std::fs::remove_dir_all(&target)?;
-        return Err("Not a valid homeos plugin".into());
+        return Err("Not a valid homeos plugin. Cloned directory removed.".into());
     }
 
     let git_dir = target.join(".git");
@@ -863,7 +863,10 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "Not a valid homeos plugin");
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Not a valid homeos plugin. Cloned directory removed."
+        );
     }
 
     #[test]
