@@ -190,8 +190,8 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
                 update_state_per_package(ctx, *action, name)?;
             }
             Err(e) => {
-                writeln!(writer, "FAILED")?;
                 writeln!(writer, "Error: {e}")?;
+                writeln!(writer, "FAILED")?;
                 had_errors = true;
             }
         }
@@ -339,8 +339,8 @@ pub fn run_action<R: BufRead, W: Write>(
                 update_state_per_package(ctx, action, name)?;
             }
             Err(e) => {
-                writeln!(writer, "FAILED")?;
                 writeln!(writer, "Error: {e}")?;
+                writeln!(writer, "FAILED")?;
                 had_errors = true;
             }
         }
@@ -1451,7 +1451,9 @@ mod tests {
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["ripgrep"]);
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Installing neovim...\nFAILED"));
+        assert!(
+            written.contains("Installing neovim...\nError: Script failed with exit code 1\nFAILED")
+        );
         assert!(written.contains("Installing ripgrep...\ndone"));
         assert!(ripgrep_marker.exists());
     }
@@ -2937,6 +2939,68 @@ mod tests {
         assert!(
             skip_pos < prompt_pos,
             "disabled message should appear before confirmation prompt"
+        );
+    }
+
+    #[test]
+    fn test_script_failure_shows_error_before_failed() {
+        // Arrange: a package with a failing script
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ext = script_extension();
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\nexit 1\n",
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let _ = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert: Error details appear before FAILED
+        let written = String::from_utf8(output).unwrap();
+        let error_pos = written.find("Error: Script failed").unwrap();
+        let failed_pos = written.find("FAILED").unwrap();
+        assert!(
+            error_pos < failed_pos,
+            "Error details should appear before FAILED"
+        );
+    }
+
+    #[test]
+    fn test_apply_script_failure_shows_error_before_failed() {
+        // Arrange: a package with a failing install script
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ext = script_extension();
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            "#!/usr/bin/env sh\nexit 1\n",
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let _ = apply_to(&ctx, &mut input, &mut output);
+
+        // Assert: Error details appear before FAILED
+        let written = String::from_utf8(output).unwrap();
+        let error_pos = written.find("Error: Script failed").unwrap();
+        let failed_pos = written.find("FAILED").unwrap();
+        assert!(
+            error_pos < failed_pos,
+            "Error details should appear before FAILED"
         );
     }
 }

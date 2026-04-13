@@ -177,7 +177,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add a newline after `Installing <name>...` (and `Updating`, `Uninstalling`) before script execution, so that script output starts on its own line. `done` should also be on its own line after execution.
 - [x] `homeos init` scaffold mode: error if the repo directory already exists (even without homeos.yml).
 - [x] Unify plan display for all commands: always call `plan.display()` regardless of whether there are enabled packages. When `plan.is_empty()`, display the skipped section followed by `Nothing to do.` and exit without a confirmation prompt. Remove per-command `No packages to {action}.` messages. This applies to `apply`, `install`, `update`, and `uninstall`.
-- [ ] Change script execution output order from `{verb} {name}...` / `FAILED` / `Error: ...` to `{verb} {name}...` / `Error: ...` / `FAILED`. Error details should appear before the conclusion.
+- [x] Change script execution output order from `{verb} {name}...` / `FAILED` / `Error: ...` to `{verb} {name}...` / `Error: ...` / `FAILED`. Error details should appear before the conclusion.
 - [ ] Change `Some packages failed` to stdout and exit code 0. The message is a summary report, not a fatal error. `run_action` should report individual failures to stdout during execution, print `Some packages failed` to stdout at the end, and return `Ok(())`.
 - [ ] Change `homeos init` "Already initialized" from `println!` (stdout) to `eprintln!` (stderr) with `Error:` prefix, and return `Err`.
 - [ ] Append ". Cloned directory removed." to the error message in `homeos init` when cloned repo has no homeos.yml.

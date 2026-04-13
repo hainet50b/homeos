@@ -28,7 +28,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Plan display | stdout | (see Plan Display section below) |
 | User confirms | stdout | Executes with progress messages |
 | User declines | stdout | `Aborted.` |
-| Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
+| Script execution | stdout | `Installing {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Some packages fail | stdout | `Some packages failed` |
@@ -133,7 +133,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
 | User declines | stdout | `Aborted.` |
-| Script execution | stdout | `Installing {name}...` / `done` or `FAILED` |
+| Script execution | stdout | `Installing {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
@@ -146,7 +146,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
 | User declines | stdout | `Aborted.` |
-| Script execution | stdout | `Updating {name}...` / `done` or `FAILED` |
+| Script execution | stdout | `Updating {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
@@ -158,7 +158,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
 | User declines | stdout | `Aborted.` |
-| Script execution | stdout | `Uninstalling {name}...` / `done` or `FAILED` |
+| Script execution | stdout | `Uninstalling {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |

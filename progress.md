@@ -2947,3 +2947,32 @@ Unified the plan display for `apply`, `install`, `update`, and `uninstall` comma
 - All 436 tests pass. No clippy warnings.
 - The `apply_to` nothing-to-do case now builds a Plan with disabled package names using `Action::Install`. Since all packages are disabled, Plan::build classifies them into the `disabled` vec, and `display()` outputs the skipped section. The action type doesn't affect disabled classification.
 - Function ordering in action.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Change script execution output order (Error before FAILED)
+
+**Timestamp:**
+
+2026-04-13T06:48:40Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Swapped the order of `FAILED` and `Error:` lines in both `run_action` and `apply_to` functions so that error details appear before the conclusion. Previously: `{verb} {name}...` / `FAILED` / `Error: ...`. Now: `{verb} {name}...` / `Error: ...` / `FAILED`. Updated one existing test assertion and added two new tests (one for `run_action`, one for `apply_to`) that explicitly verify the error-before-FAILED ordering. Updated COMMAND_OUTPUT.md to reflect the new output order.
+
+**What was changed:**
+
+- src/commands/package/action.rs (swapped FAILED/Error order in 2 locations, updated 1 existing assertion, added 2 new tests)
+- COMMAND_OUTPUT.md (updated script execution output descriptions for apply, install, update, uninstall)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- Two code paths needed updating: `run_action` (used by install/update/uninstall) and `apply_to` (used by apply). Both share the same pattern.
+- Function ordering in action.rs already matched README order — no reordering needed.
