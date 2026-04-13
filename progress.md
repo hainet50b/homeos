@@ -3088,3 +3088,30 @@ Updated the error message in `homeos plugin add` when a cloned plugin has no `pl
 - All 438 tests pass. No clippy warnings.
 - The existing test `test_add_rejects_repo_without_plugin_yml` already verifies the exact error message, so just updated the assertion string. The companion test `test_add_rejects_repo_without_plugin_yml_cleans_up` verifies directory cleanup separately and didn't need changes.
 - Function ordering in plugin.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Change `homeos cd` error message from "Repos directory not found" to "Repositories directory not found"
+
+**Timestamp:**
+
+2026-04-13T06:59:47Z
+
+**Why this task:**
+
+Last unchecked task in the PRD. All other Tasks and Post Tasks are already checked.
+
+**What was done:**
+
+Verified that the error message in `cd.rs` already reads "Repositories directory not found at {path}. Run \`homeos init\` first." — this was updated in a previous session (the change from "Repos" to "Repositories" was applied but the PRD task was not checked off). The test `test_resolve_target_errors_when_not_initialized` already asserts on "Repositories directory not found". No code changes needed — just marked the task as complete.
+
+**What was changed:**
+
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings. No formatting issues.
+- The message was already correct in the code, so this was a bookkeeping-only task.
+- This is the final task in both Tasks and Post Tasks sections of the PRD.
