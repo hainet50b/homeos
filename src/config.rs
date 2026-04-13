@@ -65,6 +65,13 @@ fn is_true(v: &bool) -> bool {
 
 impl Config {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        if !path.exists() {
+            return Err(format!(
+                "homeos.yml not found at {}. Run 'homeos init' first.",
+                path.display()
+            )
+            .into());
+        }
         let contents = std::fs::read_to_string(path)?;
         let config: Config = yaml_serde::from_str(&contents)?;
         Ok(config)
@@ -337,7 +344,11 @@ packages:
         let result = Config::load(path);
 
         // Assert
-        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "homeos.yml not found at /nonexistent/homeos.yml. Run 'homeos init' first."
+        );
     }
 
     #[test]

@@ -3156,4 +3156,31 @@ Updated 6 tests across the three files to assert on header presence and correct 
 
 # Ralph Loop — 2026-04-13T07:16:31Z
 
+## Task: Add existence check for homeos.yml in Config::load
+
+**Timestamp:**
+
+2026-04-13T07:21:31Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on the other unchecked task.
+
+**What was done:**
+
+Added a file existence check at the beginning of `Config::load`. Before attempting to read the file, it now checks `path.exists()` and returns a clear error message: `homeos.yml not found at {path}. Run 'homeos init' first.` Updated the existing `test_load_nonexistent_file` test to assert on the specific error message string rather than just checking `is_err()`.
+
+**What was changed:**
+
+- src/config.rs (added existence check in `Config::load`, updated test assertion)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- The change is backward-compatible: all existing callers use `?` to propagate errors, so the new error message flows naturally to `main.rs` where it's printed via `eprintln!("Error: {e}")`.
+- Function ordering in config.rs already matched expectations — no reordering needed.
+
+---
 
