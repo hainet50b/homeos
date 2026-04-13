@@ -49,6 +49,14 @@ pub fn run(
         );
     } else {
         // Scaffold mode: create empty structure
+        if repo_dir.exists() {
+            return Err(format!(
+                "Repository directory already exists at {}",
+                repo_dir.display()
+            )
+            .into());
+        }
+
         let packages_dir = ctx.packages_dir();
         fs::create_dir_all(&packages_dir)?;
 
@@ -173,6 +181,25 @@ mod tests {
         // Assert
         let content = fs::read_to_string(ctx.gitignore_path()).unwrap();
         assert_eq!(content, "state.yml\ncustom\n");
+    }
+
+    #[test]
+    fn test_init_scaffold_errors_if_repo_dir_exists() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        fs::create_dir_all(ctx.repo_dir()).unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.starts_with("Repository directory already exists at "),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

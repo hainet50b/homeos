@@ -2890,3 +2890,32 @@ Changed `write!` (no newline) to `writeln!` (with newline) for the `Installing/U
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-13T06:35:49Z
+
+## Task: `homeos init` scaffold mode: error if repo directory already exists
+
+**Timestamp:**
+
+2026-04-13T06:38:17Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a check in scaffold mode (no URL) to error if the repo directory already exists, even when `homeos.yml` is not present. The error message follows the COMMAND_OUTPUT.md specification: `Repository directory already exists at {path}`. The check is placed after the existing `config_path.exists()` check (which handles the "Already initialized" case) and before any directory creation. Added one new test verifying the error when the repo directory exists without `homeos.yml`.
+
+**What was changed:**
+
+- src/commands/init.rs (added repo_dir existence check in scaffold branch, added test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- The existing `config_path.exists()` check on line 14 catches the case where homeos.yml already exists (idempotent behavior). The new check handles the case where the directory exists but homeos.yml does not, which could indicate a partial/corrupt state or manual directory creation.
+- All 436 tests pass. No clippy warnings.

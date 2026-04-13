@@ -175,7 +175,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add confirmation prompt to `homeos package remove` before removing entries. Show which packages will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
 - [x] Add confirmation prompt to `homeos plugin remove` before removing entries. Show which plugins will be removed from `homeos.yml`. When `--purge` is used, also show which directories will be deleted.
 - [x] Add a newline after `Installing <name>...` (and `Updating`, `Uninstalling`) before script execution, so that script output starts on its own line. `done` should also be on its own line after execution.
-- [ ] `homeos init` scaffold mode: error if the repo directory already exists (even without homeos.yml).
+- [x] `homeos init` scaffold mode: error if the repo directory already exists (even without homeos.yml).
 - [ ] Unify plan display for all commands: always call `plan.display()` regardless of whether there are enabled packages. When `plan.is_empty()`, display the skipped section followed by `Nothing to do.` and exit without a confirmation prompt. Remove per-command `No packages to {action}.` messages. This applies to `apply`, `install`, `update`, and `uninstall`.
 - [ ] Change script execution output order from `{verb} {name}...` / `FAILED` / `Error: ...` to `{verb} {name}...` / `Error: ...` / `FAILED`. Error details should appear before the conclusion.
 - [ ] Change `Some packages failed` to stdout and exit code 0. The message is a summary report, not a fatal error. `run_action` should report individual failures to stdout during execution, print `Some packages failed` to stdout at the end, and return `Ok(())`.
