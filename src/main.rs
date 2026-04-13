@@ -132,17 +132,17 @@ pub enum PackageCommands {
     Add {
         /// Package name
         package: String,
-        /// Dependencies for this package
-        #[arg(long = "depends-on", num_args = 1..)]
+        /// Add a dependency (can be repeated)
+        #[arg(long = "depends-on", action = clap::ArgAction::Append)]
         depends_on: Vec<String>,
-        /// Script aliases as target=source pairs (e.g., update=install)
-        #[arg(long = "script-aliases", num_args = 1.., value_parser = parse_key_value)]
+        /// Add a script alias as target=source (can be repeated)
+        #[arg(long = "script-alias", action = clap::ArgAction::Append, value_parser = parse_key_value)]
         script_aliases: Vec<(String, String)>,
         /// Plugin to use for generating scripts
         #[arg(long)]
         plugin: Option<String>,
-        /// Plugin parameters as key=value pairs
-        #[arg(long, num_args = 1.., value_parser = parse_key_value)]
+        /// Plugin parameter as key=value (can be repeated)
+        #[arg(long = "param", action = clap::ArgAction::Append, value_parser = parse_key_value)]
         params: Vec<(String, String)>,
     },
     /// Remove package entries from homeos.yml
@@ -585,14 +585,14 @@ mod tests {
     }
 
     #[test]
-    fn test_add_script_aliases_option() {
+    fn test_add_script_alias_option() {
         // Arrange & Act
         let cli = Cli::try_parse_from([
             "homeos",
             "package",
             "add",
             "neovim",
-            "--script-aliases",
+            "--script-alias",
             "update=install",
         ])
         .unwrap();
@@ -612,7 +612,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_without_script_aliases_defaults_to_empty() {
+    fn test_add_without_script_alias_defaults_to_empty() {
         // Arrange & Act
         let cli = Cli::try_parse_from(["homeos", "package", "add", "neovim"]).unwrap();
 
@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_params_option() {
+    fn test_add_param_option() {
         // Arrange & Act
         let cli = Cli::try_parse_from([
             "homeos",
@@ -637,8 +637,9 @@ mod tests {
             "neovim",
             "--plugin",
             "dnf",
-            "--params",
+            "--param",
             "name=neovim.x86_64",
+            "--param",
             "repo=extra",
         ])
         .unwrap();
@@ -831,6 +832,113 @@ mod tests {
         {
             assert!(plugin.is_none());
             assert!(params.is_empty());
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_depends_on_does_not_consume_subsequent_options() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "claude",
+            "--depends-on",
+            "git",
+            "--depends-on",
+            "curl",
+            "--plugin",
+            "dnf",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Add {
+                depends_on, plugin, ..
+            },
+        } = cli.command
+        {
+            assert_eq!(depends_on, vec!["git", "curl"]);
+            assert_eq!(plugin, Some("dnf".to_string()));
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_script_alias_can_be_repeated() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "neovim",
+            "--script-alias",
+            "update=install",
+            "--script-alias",
+            "uninstall=install",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Add { script_aliases, .. },
+        } = cli.command
+        {
+            assert_eq!(
+                script_aliases,
+                vec![
+                    ("update".to_string(), "install".to_string()),
+                    ("uninstall".to_string(), "install".to_string()),
+                ]
+            );
+        } else {
+            panic!("Expected PackageCommands::Add");
+        }
+    }
+
+    #[test]
+    fn test_add_param_does_not_consume_subsequent_options() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "neovim",
+            "--plugin",
+            "dnf",
+            "--param",
+            "name=neovim.x86_64",
+            "--depends-on",
+            "git",
+            "--param",
+            "repo=extra",
+        ])
+        .unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command:
+                PackageCommands::Add {
+                    depends_on,
+                    params,
+                    plugin,
+                    ..
+                },
+        } = cli.command
+        {
+            assert_eq!(
+                params,
+                vec![
+                    ("name".to_string(), "neovim.x86_64".to_string()),
+                    ("repo".to_string(), "extra".to_string()),
+                ]
+            );
+            assert_eq!(depends_on, vec!["git"]);
+            assert_eq!(plugin, Some("dnf".to_string()));
         } else {
             panic!("Expected PackageCommands::Add");
         }

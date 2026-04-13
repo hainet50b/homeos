@@ -3184,3 +3184,32 @@ Added a file existence check at the beginning of `Config::load`. Before attempti
 
 ---
 
+## Task: Change package add options from num_args to action = Append
+
+**Timestamp:**
+
+2026-04-13T07:24:58Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD.
+
+**What was done:**
+
+Changed `--depends-on`, `--script-aliases`, and `--params` in `homeos package add` CLI definition from `num_args = 1..` to `action = clap::ArgAction::Append`. This prevents these options from greedily consuming subsequent arguments (e.g., `--depends-on git curl --plugin dnf` would previously consume `--plugin` as a dependency value). Renamed `--script-aliases` to `--script-alias` and `--params` to `--param` (singular form, matching append-per-call semantics where each flag provides one value). Updated help descriptions to match README spec. Updated 3 existing tests to use the new flag names and repeated-flag syntax. Added 3 new tests verifying that repeated flags work correctly and don't consume subsequent options.
+
+**What was changed:**
+
+- src/main.rs (changed arg attributes for depends_on, script_aliases, params; renamed flags; updated tests; added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 441 tests pass (3 new tests added). No clippy warnings.
+- The `action = Append` approach means users must repeat the flag for each value (e.g., `--param name=foo --param repo=bar`) instead of listing multiple values after one flag (`--params name=foo repo=bar`). This is the standard clap pattern for options that can be repeated.
+- The internal field names (`script_aliases`, `params`) remain unchanged — only the CLI long flag names changed.
+- Command ordering in main.rs already matched README — no reordering needed.
+
+---
+
