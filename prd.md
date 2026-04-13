@@ -179,7 +179,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Unify plan display for all commands: always call `plan.display()` regardless of whether there are enabled packages. When `plan.is_empty()`, display the skipped section followed by `Nothing to do.` and exit without a confirmation prompt. Remove per-command `No packages to {action}.` messages. This applies to `apply`, `install`, `update`, and `uninstall`.
 - [x] Change script execution output order from `{verb} {name}...` / `FAILED` / `Error: ...` to `{verb} {name}...` / `Error: ...` / `FAILED`. Error details should appear before the conclusion.
 - [x] Change `Some packages failed` to stdout and exit code 0. The message is a summary report, not a fatal error. `run_action` should report individual failures to stdout during execution, print `Some packages failed` to stdout at the end, and return `Ok(())`.
-- [ ] Change `homeos init` "Already initialized" from `println!` (stdout) to `eprintln!` (stderr) with `Error:` prefix, and return `Err`.
+- [x] Change `homeos init` "Already initialized" from `println!` (stdout) to `eprintln!` (stderr) with `Error:` prefix, and return `Err`.
 - [ ] Append ". Cloned directory removed." to the error message in `homeos init` when cloned repo has no homeos.yml.
 - [ ] Append ". Cloned directory removed." to the error message in `homeos plugin add` when cloned plugin has no plugin.yml.
 - [ ] Change `homeos cd` error message from "Repos directory not found" to "Repositories directory not found".

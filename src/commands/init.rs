@@ -12,8 +12,7 @@ pub fn run(
     let config_path = ctx.config_path();
 
     if config_path.exists() {
-        println!("Already initialized at {}", repo_dir.display());
-        return Ok(());
+        return Err(format!("Already initialized at {}", repo_dir.display()).into());
     }
 
     if let Some(url) = url {
@@ -121,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_idempotent() {
+    fn test_init_already_initialized_returns_error() {
         // Arrange
         let (_tmp, ctx) = fixture();
         run(&ctx, None, false).unwrap();
@@ -132,9 +131,17 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        run(&ctx, None, false).unwrap();
+        let result = run(&ctx, None, false);
 
         // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.starts_with("Already initialized at "),
+            "unexpected error: {}",
+            err
+        );
+        // Config should be preserved (not overwritten)
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.packages.len(), 1);
     }
@@ -169,16 +176,17 @@ mod tests {
     }
 
     #[test]
-    fn test_init_idempotent_preserves_gitignore() {
+    fn test_init_already_initialized_preserves_gitignore() {
         // Arrange
         let (_tmp, ctx) = fixture();
         run(&ctx, None, false).unwrap();
         fs::write(ctx.gitignore_path(), "state.yml\ncustom\n").unwrap();
 
         // Act
-        run(&ctx, None, false).unwrap();
+        let result = run(&ctx, None, false);
 
         // Assert
+        assert!(result.is_err());
         let content = fs::read_to_string(ctx.gitignore_path()).unwrap();
         assert_eq!(content, "state.yml\ncustom\n");
     }
@@ -240,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_with_url_skips_if_already_initialized() {
+    fn test_init_with_url_errors_if_already_initialized() {
         // Arrange
         let (_tmp, ctx) = fixture();
         run(&ctx, None, false).unwrap();
@@ -248,9 +256,16 @@ mod tests {
         // Act
         let source_dir = TempDir::new().unwrap();
         create_local_git_repo(source_dir.path());
-        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
+        let result = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
 
-        // Assert — original scaffold preserved, not replaced by clone
+        // Assert — returns error, original scaffold preserved
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.starts_with("Already initialized at "),
+            "unexpected error: {}",
+            err
+        );
         assert!(ctx.packages_dir().exists());
     }
 

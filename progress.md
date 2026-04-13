@@ -3004,3 +3004,31 @@ Changed both `run_action` and `apply_to` to print "Some packages failed" to the 
 - All 438 tests pass. No clippy warnings.
 - The circular dependency tests (lines 2153, 2317) still correctly return `Err` — those are validation errors before execution, not execution failures.
 - Function ordering in action.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Change `homeos init` "Already initialized" to stderr error
+
+**Timestamp:**
+
+2026-04-13T06:54:46Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed `homeos init` "Already initialized" from `println!` (stdout) + `return Ok(())` to `return Err(...)`. Since main.rs handles `Err` with `eprintln!("Error: {e}")`, this now outputs `Error: Already initialized at {path}` to stderr and exits with a non-zero code. Updated three tests that previously expected `Ok` on re-initialization (`test_init_idempotent`, `test_init_idempotent_preserves_gitignore`, `test_init_with_url_skips_if_already_initialized`) to assert `is_err()` and verify the error message. Renamed the tests to reflect the new behavior.
+
+**What was changed:**
+
+- src/commands/init.rs (changed `println!` + `Ok(())` to `Err(...)`, updated and renamed 3 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- The COMMAND_OUTPUT.md already specifies `Error: Already initialized at {path}` to stderr, so this change brings the code into alignment with the output specification.
+- Function ordering in init.rs already matched README order — no reordering needed.
