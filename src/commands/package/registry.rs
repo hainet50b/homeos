@@ -19,11 +19,6 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         Vec::new()
     };
 
-    if config.packages.is_empty() {
-        writeln!(writer, "No packages.")?;
-        return Ok(());
-    }
-
     let name_width = config
         .packages
         .keys()
@@ -592,7 +587,11 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         let text = String::from_utf8(output).unwrap();
-        assert_eq!(text, "No packages.\n");
+        assert!(text.contains("Package"));
+        assert!(text.contains("Enabled"));
+        assert!(text.contains("Installed"));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2); // header + separator only
     }
 
     #[test]

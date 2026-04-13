@@ -3115,3 +3115,45 @@ Verified that the error message in `cd.rs` already reads "Repositories directory
 - All 438 tests pass. No clippy warnings. No formatting issues.
 - The message was already correct in the code, so this was a bookkeeping-only task.
 - This is the final task in both Tasks and Post Tasks sections of the PRD.
+
+---
+
+## Task: Show table headers even when empty for list commands
+
+**Timestamp:**
+
+2026-04-13T07:19:42Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed `homeos package list`, `homeos plugin list`, and `homeos repo list` to always display table headers (with separator line) even when there are no entries, instead of showing "No packages." / "No plugins." / "No repositories." messages. This matches the COMMAND_OUTPUT.md specification which says "(empty table if no packages/plugins/repositories)".
+
+- `package list`: Removed early return for empty packages; header + separator always printed.
+- `plugin list`: Removed early return for empty plugins; header + separator always printed.
+- `repo list`: Restructured to collect repos (or empty vec if dir doesn't exist), always print `Repository` / `----------` header, then list entries.
+
+Updated 6 tests across the three files to assert on header presence and correct line counts instead of the old "No X." messages.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (removed empty-packages early return, updated test_list_empty_packages)
+- src/commands/plugin.rs (removed empty-plugins early return, updated test_list_no_plugins)
+- src/commands/repo.rs (restructured list_to, updated test_list_no_repos_dir, test_list_empty_repos_dir, test_list_single_repo, test_list_multiple_repos_sorted, test_list_ignores_files)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- Function ordering in all three files already matched README order — no reordering needed.
+- For repo list, added a `Repository` / `----------` header to match the table pattern used by the other list commands, consistent with COMMAND_OUTPUT.md spec "Table: repository names (empty table if no repositories)".
+
+---
+
+# Ralph Loop — 2026-04-13T07:16:31Z
+
+

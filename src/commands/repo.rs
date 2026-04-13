@@ -14,28 +14,25 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let repos_dir = ctx.repos_dir();
 
-    if !repos_dir.exists() {
-        writeln!(writer, "No repositories.")?;
-        return Ok(());
-    }
-
-    let mut repos: Vec<String> = std::fs::read_dir(&repos_dir)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_dir() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut repos: Vec<String> = if repos_dir.exists() {
+        std::fs::read_dir(&repos_dir)?
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                if entry.file_type().ok()?.is_dir() {
+                    Some(entry.file_name().to_string_lossy().into_owned())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     repos.sort();
 
-    if repos.is_empty() {
-        writeln!(writer, "No repositories.")?;
-        return Ok(());
-    }
+    writeln!(writer, "Repository")?;
+    writeln!(writer, "----------")?;
 
     for repo in &repos {
         writeln!(writer, "{repo}")?;
@@ -193,7 +190,10 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "No repositories.\n");
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Repository"));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2); // header + separator only
     }
 
     #[test]
@@ -208,7 +208,10 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "No repositories.\n");
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Repository"));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2); // header + separator only
     }
 
     #[test]
@@ -223,7 +226,10 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "default\n");
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3); // header + separator + 1 repo
+        assert_eq!(lines[2], "default");
     }
 
     #[test]
@@ -241,10 +247,12 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(
-            String::from_utf8(output).unwrap(),
-            "default\nserver\nwork\n"
-        );
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 5); // header + separator + 3 repos
+        assert_eq!(lines[2], "default");
+        assert_eq!(lines[3], "server");
+        assert_eq!(lines[4], "work");
     }
 
     #[test]
@@ -261,7 +269,10 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "default\n");
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3); // header + separator + 1 repo
+        assert_eq!(lines[2], "default");
     }
 
     #[test]

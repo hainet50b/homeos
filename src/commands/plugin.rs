@@ -12,11 +12,6 @@ pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    if config.plugins.is_empty() {
-        writeln!(writer, "No plugins.")?;
-        return Ok(());
-    }
-
     let name_width = config
         .plugins
         .keys()
@@ -496,7 +491,11 @@ mod tests {
         list_to(&ctx, &mut output).unwrap();
 
         // Assert
-        assert_eq!(String::from_utf8(output).unwrap(), "No plugins.\n");
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Name"));
+        assert!(text.contains("URL"));
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2); // header + separator only
     }
 
     #[test]
