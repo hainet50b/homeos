@@ -198,10 +198,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     if had_errors {
-        Err("Some packages failed".into())
-    } else {
-        Ok(())
+        writeln!(writer, "Some packages failed")?;
     }
+
+    Ok(())
 }
 
 pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -347,10 +347,10 @@ pub fn run_action<R: BufRead, W: Write>(
     }
 
     if had_errors {
-        Err("Some packages failed".into())
-    } else {
-        Ok(())
+        writeln!(writer, "Some packages failed")?;
     }
+
+    Ok(())
 }
 
 /// Update state.yml for a single package after successful script execution.
@@ -660,15 +660,10 @@ mod tests {
         );
 
         // Assert
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Some packages failed")
-        );
+        assert!(result.is_ok());
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Script not found"));
+        assert!(written.contains("Some packages failed"));
     }
 
     #[test]
@@ -1404,12 +1399,13 @@ mod tests {
         );
 
         // Assert
-        assert!(result.is_err());
+        assert!(result.is_ok());
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["neovim"]);
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Installing neovim...\ndone"));
         assert!(written.contains("Script not found"));
+        assert!(written.contains("Some packages failed"));
         assert!(neovim_marker.exists());
     }
 
@@ -1447,7 +1443,7 @@ mod tests {
         );
 
         // Assert
-        assert!(result.is_err());
+        assert!(result.is_ok());
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["ripgrep"]);
         let written = String::from_utf8(output).unwrap();
@@ -1455,6 +1451,7 @@ mod tests {
             written.contains("Installing neovim...\nError: Script failed with exit code 1\nFAILED")
         );
         assert!(written.contains("Installing ripgrep...\ndone"));
+        assert!(written.contains("Some packages failed"));
         assert!(ripgrep_marker.exists());
     }
 
@@ -1530,12 +1527,13 @@ mod tests {
         );
 
         // Assert
-        assert!(result.is_err());
+        assert!(result.is_ok());
         let state = State::load(&ctx.state_path()).unwrap();
         assert_eq!(state.installed, vec!["ripgrep"]);
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Uninstalling neovim...\ndone"));
         assert!(written.contains("Script not found"));
+        assert!(written.contains("Some packages failed"));
         assert!(neovim_marker.exists());
     }
 

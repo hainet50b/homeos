@@ -2976,3 +2976,31 @@ Swapped the order of `FAILED` and `Error:` lines in both `run_action` and `apply
 - All 438 tests pass. No clippy warnings.
 - Two code paths needed updating: `run_action` (used by install/update/uninstall) and `apply_to` (used by apply). Both share the same pattern.
 - Function ordering in action.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Change `Some packages failed` to stdout and exit code 0
+
+**Timestamp:**
+
+2026-04-13T06:52:30Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Changed both `run_action` and `apply_to` to print "Some packages failed" to the writer (stdout) instead of returning `Err`. Both now return `Ok(())` after printing, so the process exits with code 0. Updated 4 tests that previously asserted `is_err()` to assert `is_ok()` and verify "Some packages failed" appears in stdout output instead.
+
+**What was changed:**
+
+- src/commands/package/action.rs (production code: 2 locations changed from `Err` to `writeln!` + `Ok(())`; tests: 4 assertions updated from `is_err` to `is_ok` with stdout checks)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- The circular dependency tests (lines 2153, 2317) still correctly return `Err` — those are validation errors before execution, not execution failures.
+- Function ordering in action.rs already matched README order — no reordering needed.
