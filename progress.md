@@ -2919,3 +2919,31 @@ Added a check in scaffold mode (no URL) to error if the repo directory already e
 
 - The existing `config_path.exists()` check on line 14 catches the case where homeos.yml already exists (idempotent behavior). The new check handles the case where the directory exists but homeos.yml does not, which could indicate a partial/corrupt state or manual directory creation.
 - All 436 tests pass. No clippy warnings.
+
+---
+
+## Task: Unify plan display for all commands
+
+**Timestamp:**
+
+2026-04-13T06:44:20Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Unified the plan display for `apply`, `install`, `update`, and `uninstall` commands. In `run_action` (used by install/update/uninstall), replaced the `"No packages to {action}."` message with `plan.display()` followed by `"Nothing to do."` when the plan is empty. In `apply_to`, replaced the manual disabled-packages display with a `Plan::build` call that classifies disabled packages, then uses `plan.display()` followed by `"Nothing to do."`. Both paths add a blank line between the plan display and "Nothing to do." when there is a skipped section to display. Updated 6 test assertions from `"No packages to {action}."` to `"Nothing to do."`.
+
+**What was changed:**
+
+- src/commands/package/action.rs (unified empty plan display in `run_action` and `apply_to`, updated 6 test assertions)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 436 tests pass. No clippy warnings.
+- The `apply_to` nothing-to-do case now builds a Plan with disabled package names using `Action::Install`. Since all packages are disabled, Plan::build classifies them into the `disabled` vec, and `display()` outputs the skipped section. The action type doesn't affect disabled classification.
+- Function ordering in action.rs already matched README order — no reordering needed.

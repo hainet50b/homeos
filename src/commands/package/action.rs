@@ -41,11 +41,17 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     if to_install.is_empty() && to_update.is_empty() {
-        if !disabled_packages.is_empty() {
-            writeln!(writer, "The following packages will be skipped:")?;
-            for name in &disabled_packages {
-                writeln!(writer, "  {name} (disabled)")?;
-            }
+        let plan = Plan::build(
+            &config,
+            &disabled_packages,
+            Action::Install,
+            &installed,
+            Some(&ctx.packages_dir()),
+        )?;
+        let display = plan.display();
+        if !display.is_empty() {
+            writeln!(writer, "{display}")?;
+            writeln!(writer)?;
         }
         writeln!(writer, "Nothing to do.")?;
         return Ok(());
@@ -299,8 +305,9 @@ pub fn run_action<R: BufRead, W: Write>(
         let display = plan.display();
         if !display.is_empty() {
             writeln!(writer, "{display}")?;
+            writeln!(writer)?;
         }
-        writeln!(writer, "No packages to {action}.")?;
+        writeln!(writer, "Nothing to do.")?;
         return Ok(());
     }
 
@@ -599,7 +606,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("No packages to install."));
+        assert!(written.contains("Nothing to do."));
         assert!(!written.contains("Installing"));
         assert!(!marker_path.exists());
     }
@@ -767,7 +774,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("No packages to update."));
+        assert!(written.contains("Nothing to do."));
         assert!(!written.contains("Updating"));
         assert!(!marker_path.exists());
     }
@@ -1277,7 +1284,7 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("neovim (already installed)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("No packages to install."));
+        assert!(written.contains("Nothing to do."));
         assert!(!written.contains("Installing"));
         assert!(!marker_path.exists());
     }
@@ -1363,7 +1370,7 @@ mod tests {
         assert!(written.contains("neovim (already installed)"));
         assert!(written.contains("zed (already installed)"));
         assert!(written.contains("will be skipped"));
-        assert!(written.contains("No packages to install."));
+        assert!(written.contains("Nothing to do."));
         assert!(!marker_path.exists());
     }
 
@@ -1741,7 +1748,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("No packages to uninstall."));
+        assert!(written.contains("Nothing to do."));
     }
 
     #[test]
@@ -1758,7 +1765,7 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("No packages to uninstall."));
+        assert!(written.contains("Nothing to do."));
     }
 
     #[test]
