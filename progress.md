@@ -3032,3 +3032,31 @@ Changed `homeos init` "Already initialized" from `println!` (stdout) + `return O
 - All 438 tests pass. No clippy warnings.
 - The COMMAND_OUTPUT.md already specifies `Error: Already initialized at {path}` to stderr, so this change brings the code into alignment with the output specification.
 - Function ordering in init.rs already matched README order — no reordering needed.
+
+---
+
+## Task: Append ". Cloned directory removed." to init error message
+
+**Timestamp:**
+
+2026-04-13T06:56:27Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Updated the error message in `homeos init` when a cloned repository has no `homeos.yml` from "Not a valid homeos repository" to "Not a valid homeos repository. Cloned directory removed." to match the COMMAND_OUTPUT.md specification. Updated the existing test assertion to match the new message.
+
+**What was changed:**
+
+- src/commands/init.rs (updated error message string and test assertion)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 438 tests pass. No clippy warnings.
+- The existing test `test_init_with_url_rejects_repo_without_homeos_yml` already verifies the exact error message and that the cloned directory is removed, so no new test was needed — just updated the assertion string.
+- Function ordering in init.rs already matched README order — no reordering needed.

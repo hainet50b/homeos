@@ -31,7 +31,7 @@ pub fn run(
 
         if !config_path.exists() {
             fs::remove_dir_all(&repo_dir)?;
-            return Err("Not a valid homeos repository".into());
+            return Err("Not a valid homeos repository. Cloned directory removed.".into());
         }
 
         if strip_git {
@@ -375,7 +375,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Not a valid homeos repository"
+            "Not a valid homeos repository. Cloned directory removed."
         );
         assert!(!ctx.repo_dir().exists());
     }
