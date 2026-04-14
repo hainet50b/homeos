@@ -560,6 +560,23 @@ fn info_to<W: Write>(
         }
     }
 
+    let actions = ["install", "update", "uninstall"];
+    let extensions = super::all_script_extensions();
+    let pkg_dir = ctx.packages_dir().join(package);
+
+    writeln!(writer, "Scripts:")?;
+    for action in &actions {
+        for ext in extensions {
+            let filename = format!("{action}.{ext}");
+            let script_path = pkg_dir.join(&filename);
+            if script_path.is_file() {
+                writeln!(writer, "  {filename} ({})", script_path.display())?;
+            } else {
+                writeln!(writer, "  {filename} (not found)")?;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -2985,6 +3002,9 @@ mod tests {
         assert!(text.contains("  (none)"));
         assert!(text.contains("Script aliases:"));
         assert!(text.contains("  update → install"));
+        assert!(text.contains("Scripts:"));
+        assert!(text.contains("  install.sh (not found)"));
+        assert!(text.contains("  install.ps1 (not found)"));
     }
 
     #[test]
@@ -3020,6 +3040,7 @@ mod tests {
         assert!(text.contains("Dependencies:\n  (none)"));
         assert!(text.contains("Dependents:\n  (none)"));
         assert!(text.contains("Script aliases:\n  (none)"));
+        assert!(text.contains("Scripts:"));
     }
 
     #[test]
@@ -3070,6 +3091,54 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_info_scripts_shows_existing_with_full_path() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "#!/usr/bin/env sh\n").unwrap();
+        std::fs::write(pkg_dir.join("update.ps1"), "# powershell\n").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Scripts:"));
+        let install_sh_path = pkg_dir.join("install.sh");
+        assert!(text.contains(&format!("  install.sh ({})", install_sh_path.display())));
+        assert!(text.contains("  install.ps1 (not found)"));
+        assert!(text.contains("  update.sh (not found)"));
+        let update_ps1_path = pkg_dir.join("update.ps1");
+        assert!(text.contains(&format!("  update.ps1 ({})", update_ps1_path.display())));
+        assert!(text.contains("  uninstall.sh (not found)"));
+        assert!(text.contains("  uninstall.ps1 (not found)"));
+    }
+
+    #[test]
+    fn test_info_scripts_shows_all_not_found_when_no_scripts_exist() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Scripts:"));
+        assert!(text.contains("  install.sh (not found)"));
+        assert!(text.contains("  install.ps1 (not found)"));
+        assert!(text.contains("  update.sh (not found)"));
+        assert!(text.contains("  update.ps1 (not found)"));
+        assert!(text.contains("  uninstall.sh (not found)"));
+        assert!(text.contains("  uninstall.ps1 (not found)"));
     }
 
     #[test]

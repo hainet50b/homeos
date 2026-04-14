@@ -3400,3 +3400,31 @@ Added circular dependency detection to both `add_dep` and `add --depends-on`. Be
 
 ---
 
+## Task: Enhance homeos package info to show Scripts section
+
+**Timestamp:**
+
+2026-04-14T06:33:46Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks.
+
+**What was done:**
+
+Added a "Scripts:" section to `info_to` that lists all script files (install, update, uninstall) for both `.sh` and `.ps1` extensions. For existing scripts, the output shows the filename and full path (e.g., `install.sh (/path/to/install.sh)`). For missing scripts, it shows `install.sh (not found)`. Uses the same `all_script_extensions()` helper used by `cat_to`. Updated 2 existing tests to assert on the new Scripts section. Added 2 new tests: one verifying existing scripts show full paths while missing ones show `(not found)`, and one verifying all scripts show `(not found)` when no package directory exists.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added Scripts section to `info_to`, updated 2 existing tests, added 2 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 471 tests pass (2 new tests added). No clippy warnings.
+- The Scripts section follows the same action/extension iteration pattern as `cat_to`, ensuring consistency.
+- Function ordering in registry.rs already matched README — no reordering needed.
+
+---
+
