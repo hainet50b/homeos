@@ -119,3 +119,8 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-14T05:06:12Z,f4fdabd,"Add Dependencies column to package list table output",229,30,7780,1.1093345000000001
 2026-04-14T05:15:29Z,71a9957,"Implement reverse dependency expansion for package uninstall",553,58,21761,2.9355349999999993
 2026-04-14T05:19:06Z,7dc3170,"Implement homeos package info command",211,33,7709,1.4646554999999997
+2026-04-14T06:28:00Z,8161fa2,"Add dependency target validation for add-dep and add --depends-on",220,30,8162,1.34733025
+2026-04-14T06:31:44Z,fb7357b,"Add circular dependency check for add-dep and add --depends-on",214,38,9316,1.3648422500000004
+2026-04-14T06:34:20Z,2774138,"Add Scripts section to homeos package info output",151,956,6333,0.9833832499999999
+2026-04-14T06:37:42Z,4274f7c,"Change add-dep messages to match command argument order",196,39,7828,1.2491002499999997
+2026-04-14T06:40:21Z,55e5fe1,"Change remove-dep messages to match command argument order",153,31,6177,0.9993145
