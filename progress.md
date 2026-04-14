@@ -3456,3 +3456,31 @@ Changed the `add_dep` success message from `"Added dependency '{dependency}' to 
 
 ---
 
+## Task: Change remove-dep messages to match command argument order
+
+**Timestamp:**
+
+2026-04-14T06:39:40Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks. Mirrors the previous add-dep message change.
+
+**What was done:**
+
+Changed the `remove_dep` success message from `"Removed dependency '{dependency}' from package '{package}'"` to `"Package '{package}' no longer depends on '{dependency}'"` to match COMMAND_OUTPUT.md specification. The "does not depend on" message already matched the spec. Extracted `remove_dep_to` with a writer parameter (same pattern as `add_dep_to`) to enable output testing. Added 3 new tests: `test_remove_dep_outputs_no_longer_depends_on_message`, `test_remove_dep_outputs_does_not_depend_on_message`, and `test_remove_dep_outputs_mixed_messages_for_multiple_deps`.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (refactored `remove_dep` into `remove_dep`/`remove_dep_to`, changed success message, added 3 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 477 tests pass (3 new tests added). No clippy warnings.
+- The "does not depend on" message already had the correct format — only the success message needed changing.
+- Function ordering already matched README — no reordering needed.
+
+---
+

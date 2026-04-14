@@ -384,6 +384,15 @@ pub fn remove_dep(
     package: &str,
     dependencies: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    remove_dep_to(ctx, package, dependencies, &mut std::io::stdout())
+}
+
+fn remove_dep_to(
+    ctx: &Context,
+    package: &str,
+    dependencies: &[String],
+    writer: &mut impl std::io::Write,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -395,9 +404,15 @@ pub fn remove_dep(
     for dependency in dependencies {
         if let Some(pos) = pkg.depends_on.iter().position(|d| d == dependency) {
             pkg.depends_on.remove(pos);
-            println!("Removed dependency '{dependency}' from package '{package}'");
+            writeln!(
+                writer,
+                "Package '{package}' no longer depends on '{dependency}'"
+            )?;
         } else {
-            println!("Package '{package}' does not depend on '{dependency}'");
+            writeln!(
+                writer,
+                "Package '{package}' does not depend on '{dependency}'"
+            )?;
         }
     }
 
@@ -2525,6 +2540,58 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_remove_dep_outputs_no_longer_depends_on_message() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        remove_dep_to(&ctx, "neovim", &["git".to_string()], &mut output).unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Package 'neovim' no longer depends on 'git'"));
+    }
+
+    #[test]
+    fn test_remove_dep_outputs_does_not_depend_on_message() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        remove_dep_to(&ctx, "neovim", &["curl".to_string()], &mut output).unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Package 'neovim' does not depend on 'curl'"));
+    }
+
+    #[test]
+    fn test_remove_dep_outputs_mixed_messages_for_multiple_deps() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        remove_dep_to(
+            &ctx,
+            "neovim",
+            &["git".to_string(), "curl".to_string()],
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Package 'neovim' no longer depends on 'git'"));
+        assert!(output_str.contains("Package 'neovim' does not depend on 'curl'"));
     }
 
     #[test]
