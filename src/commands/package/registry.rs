@@ -277,7 +277,7 @@ fn remove_to<R: BufRead, W: Write>(
             let pkg_dir = ctx.packages_dir().join(package);
             if pkg_dir.exists() {
                 std::fs::remove_dir_all(&pkg_dir)?;
-                writeln!(writer, "Removed package '{package}' and deleted directory")?;
+                writeln!(writer, "Removed package '{package}' and removed directory")?;
             } else {
                 writeln!(writer, "Removed package '{package}'")?;
             }
@@ -1687,6 +1687,8 @@ mod tests {
         // Assert
         assert!(result.is_ok());
         assert!(!pkg_dir.exists());
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Removed package 'neovim' and removed directory"));
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages.contains_key("neovim"));
         assert!(config.packages.contains_key("ripgrep"));
@@ -1711,6 +1713,9 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Removed package 'neovim'"));
+        assert!(!output_str.contains("removed directory"));
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.packages.contains_key("neovim"));
     }

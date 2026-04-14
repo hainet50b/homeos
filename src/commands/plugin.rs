@@ -326,7 +326,7 @@ fn remove_to<R: BufRead, W: Write>(
         let plugin_dir = ctx.plugins_dir().join(plugin);
         if plugin_dir.exists() {
             std::fs::remove_dir_all(&plugin_dir)?;
-            writeln!(writer, "Removed plugin '{}' and deleted directory", plugin)?;
+            writeln!(writer, "Removed plugin '{}' and removed directory", plugin)?;
         } else {
             writeln!(writer, "Removed plugin '{}'", plugin)?;
         }
@@ -1260,11 +1260,14 @@ mod tests {
         std::fs::write(plugin_dir.join("plugin.yml"), "params: {}").unwrap();
 
         // Act
-        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut Vec::new());
+        let mut output = Vec::new();
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut output);
 
         // Assert
         assert!(result.is_ok());
         assert!(!plugin_dir.exists());
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Removed plugin 'dnf' and removed directory"));
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.plugins.contains_key("dnf"));
     }
@@ -1284,10 +1287,14 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
 
         // Act
-        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut Vec::new());
+        let mut output = Vec::new();
+        let result = remove_to(&ctx, "dnf", true, &mut Cursor::new(b"y\n"), &mut output);
 
         // Assert
         assert!(result.is_ok());
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Removed plugin 'dnf'"));
+        assert!(!output_str.contains("removed directory"));
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(!config.plugins.contains_key("dnf"));
     }

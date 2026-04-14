@@ -3213,3 +3213,37 @@ Changed `--depends-on`, `--script-aliases`, and `--params` in `homeos package ad
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-14T04:59:40Z
+
+## Task: Change "deleted directory" to "removed directory" in purge output messages
+
+**Timestamp:**
+
+2026-04-14T05:01:44Z
+
+**Why this task:**
+
+First unchecked task in the PRD. Simple text change with no dependencies.
+
+**What was done:**
+
+Changed "deleted directory" to "removed directory" in `homeos package remove --purge` and `homeos plugin remove --purge` output messages to match the COMMAND_OUTPUT.md specification. Updated existing purge tests to capture and assert on the output message text, verifying both the purge case ("and removed directory") and the no-directory case (no "removed directory" in output).
+
+**What was changed:**
+
+- src/commands/package/registry.rs (changed output message, added output assertions to test_remove_purge_deletes_package_directory and test_remove_purge_succeeds_when_directory_does_not_exist)
+- src/commands/plugin.rs (changed output message, added output assertions to test_remove_purge_deletes_plugin_directory and test_remove_purge_succeeds_when_directory_does_not_exist)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 441 tests pass. No clippy warnings.
+- No new functions or methods added — only string literals changed and test assertions enhanced.
+- Function ordering already matched README — no reordering needed.
+
+---
+
