@@ -3335,3 +3335,37 @@ Added `homeos package info <package>` command that displays package details: nam
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-14T06:24:15Z
+
+## Task: Add dependency target validation to add-dep and add --depends-on
+
+**Timestamp:**
+
+2026-04-14T06:27:22Z
+
+**Why this task:**
+
+First unchecked task in the PRD. No dependencies on other unchecked tasks — it validates dependency targets exist, which is a prerequisite for the circular dependency check task.
+
+**What was done:**
+
+Added validation in both `add_dep` and `add` (with `--depends-on`) to check that each specified dependency exists as a package in `homeos.yml`. If a dependency is not found, the command errors with `Dependency '{name}' not found` before making any changes. In `add_dep`, validation runs before any modifications to ensure no partial changes on failure. Updated 2 existing tests (`test_add_with_depends_on_stores_dependencies` and `test_add_with_depends_on_persists_after_reload`) to include dependency packages in their fixtures. Added 4 new tests: `test_add_dep_errors_when_dependency_not_found`, `test_add_dep_errors_when_one_of_multiple_dependencies_not_found` (verifies no partial changes), `test_add_with_depends_on_errors_when_dependency_not_found`, and `test_add_with_valid_depends_on_succeeds`.
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added validation in `add_dep` and `add`, updated 2 existing tests, added 4 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 464 tests pass (4 new tests added). No clippy warnings.
+- Validation in `add_dep` runs before the mutation loop, so if any dependency in the list is invalid, none are added — preventing partial state changes.
+- Self-dependency (e.g., neovim depends on neovim) passes this validation since the package exists in config. It will be caught by the separate circular dependency check task.
+- Function ordering already matched README — no reordering needed.
+
+---
+

@@ -81,6 +81,12 @@ pub fn add(
         return Err(format!("Package '{package}' already exists").into());
     }
 
+    for dep in depends_on {
+        if !config.packages.contains_key(dep.as_str()) {
+            return Err(format!("Dependency '{dep}' not found").into());
+        }
+    }
+
     let pkg_config = PackageConfig {
         depends_on: depends_on.to_vec(),
         script_aliases: script_aliases.clone(),
@@ -310,6 +316,12 @@ pub fn add_dep(
 
     if !config.packages.contains_key(package) {
         return Err(format!("Package '{package}' not found").into());
+    }
+
+    for dependency in dependencies {
+        if !config.packages.contains_key(dependency.as_str()) {
+            return Err(format!("Dependency '{dependency}' not found").into());
+        }
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -1010,7 +1022,7 @@ mod tests {
     #[test]
     fn test_add_with_depends_on_stores_dependencies() {
         // Arrange
-        let (_tmp, ctx) = fixture("packages: {}\n");
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n  curl: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
 
         // Act
@@ -1054,7 +1066,7 @@ mod tests {
     #[test]
     fn test_add_with_depends_on_persists_after_reload() {
         // Arrange
-        let (_tmp, ctx) = fixture("packages: {}\n");
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n  curl: {}\n");
         std::fs::create_dir_all(ctx.packages_dir()).unwrap();
         let dependencies = vec!["git".to_string(), "curl".to_string()];
 
@@ -2124,6 +2136,90 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.packages["neovim"].depends_on, vec!["git", "curl"]);
+    }
+
+    #[test]
+    fn test_add_dep_errors_when_dependency_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+
+        // Act
+        let result = add_dep(&ctx, "neovim", &["nonexistent".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Dependency 'nonexistent' not found"
+        );
+    }
+
+    #[test]
+    fn test_add_dep_errors_when_one_of_multiple_dependencies_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  git: {}\n");
+
+        // Act
+        let result = add_dep(&ctx, "neovim", &["git".to_string(), "missing".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Dependency 'missing' not found"
+        );
+        // Verify no partial changes were saved
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_with_depends_on_errors_when_dependency_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "neovim",
+            &["nonexistent".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Dependency 'nonexistent' not found"
+        );
+        // Verify the package was not added
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_add_with_valid_depends_on_succeeds() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  git: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "neovim",
+            &["git".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["neovim"].depends_on, vec!["git"]);
     }
 
     #[test]
