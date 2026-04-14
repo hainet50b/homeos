@@ -67,7 +67,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Success | stdout | `Added dependency '{dependency}' to package '{name}'` |
+| Success | stdout | `Package '{name}' now depends on '{dependency}'` |
 | Already depends | stdout | `Package '{name}' already depends on '{dependency}'` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
@@ -75,7 +75,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Success | stdout | `Removed dependency '{dependency}' from package '{name}'` |
+| Success | stdout | `Package '{name}' no longer depends on '{dependency}'` |
 | Not a dependency | stdout | `Package '{name}' does not depend on '{dependency}'` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
