@@ -59,6 +59,8 @@ pub struct Plan {
     pub warnings: BTreeMap<String, Vec<String>>,
     /// Plugin name per package (only for packages that use a plugin).
     pub plugins: BTreeMap<String, String>,
+    /// Per-package notes shown in the plan (e.g., "depends on B" for reverse deps).
+    pub notes: BTreeMap<String, String>,
 }
 
 impl Plan {
@@ -156,6 +158,7 @@ impl Plan {
             not_installed,
             warnings,
             plugins,
+            notes: BTreeMap::new(),
         })
     }
 
@@ -169,6 +172,9 @@ impl Plan {
             lines.push(format!("The following packages will be {verb}:"));
             for name in &self.enabled {
                 let mut annotations = Vec::new();
+                if let Some(note) = self.notes.get(name) {
+                    annotations.push(note.clone());
+                }
                 if let Some(plugin_name) = self.plugins.get(name) {
                     annotations.push(format!("plugin: {plugin_name}"));
                 }
@@ -358,6 +364,7 @@ mod tests {
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -384,6 +391,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -407,6 +415,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -427,6 +436,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -513,6 +523,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
         let mut input = Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -540,6 +551,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act & Assert
@@ -557,6 +569,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act & Assert
@@ -612,6 +625,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -701,6 +715,7 @@ The following packages will be skipped:
             not_installed: vec!["neovim".to_string()],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -724,6 +739,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -750,6 +766,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -771,6 +788,7 @@ The following packages will be skipped:
             not_installed: vec!["ripgrep".to_string()],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1161,6 +1179,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings,
             plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1215,6 +1234,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1238,6 +1258,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1261,6 +1282,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1284,6 +1306,7 @@ The following packages will be skipped:
             not_installed: vec!["neovim".to_string()],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1312,6 +1335,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings,
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1332,6 +1356,7 @@ The following packages will be skipped:
             not_installed: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
         };
 
         // Act
@@ -1405,5 +1430,59 @@ The following packages will be installed:
 
         // Assert
         assert_eq!(sut.plugins.get("neovim"), Some(&"dnf".to_string()));
+    }
+
+    #[test]
+    fn test_display_shows_notes_for_enabled_packages() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Uninstall,
+            enabled: vec!["editor".to_string(), "git".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be uninstalled:
+  editor (depends on git)
+  git";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_notes_with_plugin_and_warning() {
+        // Arrange
+        let mut warnings = BTreeMap::new();
+        warnings.insert(
+            "editor".to_string(),
+            vec!["warning: uninstall.sh is unmodified".to_string()],
+        );
+        let plan = Plan {
+            action: Action::Uninstall,
+            enabled: vec!["editor".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            warnings,
+            plugins: BTreeMap::from([("editor".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert — notes appear first, then plugin, then warning
+        let expected = "\
+The following packages will be uninstalled:
+  editor (depends on git, plugin: dnf, warning: uninstall.sh is unmodified)";
+        assert_eq!(sut, expected);
     }
 }

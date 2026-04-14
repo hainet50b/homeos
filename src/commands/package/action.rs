@@ -270,22 +270,6 @@ pub fn run_action<R: BufRead, W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    // For install, expand to include transitive dependencies and sort topologically.
-    // For uninstall, do the same but reverse the order (dependents first, then dependencies).
-    let ordered_packages = match action {
-        Action::Install => {
-            let expanded = expand_dependencies(&config, packages);
-            topological_sort(&config, &expanded)?
-        }
-        Action::Uninstall => {
-            let expanded = expand_dependencies(&config, packages);
-            let mut sorted = topological_sort(&config, &expanded)?;
-            sorted.reverse();
-            sorted
-        }
-        Action::Update => packages.to_vec(),
-    };
-
     let state_path = ctx.state_path();
     let installed = if state_path.exists() {
         State::load(&state_path)?.installed
@@ -293,13 +277,35 @@ pub fn run_action<R: BufRead, W: Write>(
         Vec::new()
     };
 
-    let plan = Plan::build(
+    // For install, expand to include transitive dependencies and sort topologically.
+    // For uninstall, expand reverse deps (dependents) + forward deps, then reverse order.
+    let mut reverse_dep_notes = std::collections::BTreeMap::new();
+    let ordered_packages = match action {
+        Action::Install => {
+            let expanded = expand_dependencies(&config, packages);
+            topological_sort(&config, &expanded)?
+        }
+        Action::Uninstall => {
+            // Expand reverse dependencies: find all packages that depend on requested ones
+            let (reverse_expanded, notes) = expand_reverse_dependencies(&config, packages);
+            reverse_dep_notes = notes;
+            // Also expand forward dependencies (existing behavior)
+            let fully_expanded = expand_dependencies(&config, &reverse_expanded);
+            let mut sorted = topological_sort(&config, &fully_expanded)?;
+            sorted.reverse();
+            sorted
+        }
+        Action::Update => packages.to_vec(),
+    };
+
+    let mut plan = Plan::build(
         &config,
         &ordered_packages,
         action,
         &installed,
         Some(&ctx.packages_dir()),
     )?;
+    plan.notes = reverse_dep_notes;
 
     if plan.is_empty() {
         let display = plan.display();
@@ -444,6 +450,58 @@ fn expand_dependencies(config: &Config, packages: &[String]) -> Vec<String> {
     }
 
     result
+}
+
+/// Expand a list of packages to include all reverse (dependent) packages.
+/// For each requested package, finds all packages that depend on it (recursively).
+/// Returns the expanded list and a map of added packages to their dependency notes
+/// (e.g., "depends on B" for packages pulled in because they depend on B).
+fn expand_reverse_dependencies(
+    config: &Config,
+    packages: &[String],
+) -> (Vec<String>, std::collections::BTreeMap<String, String>) {
+    use std::collections::HashMap;
+
+    // Build reverse dependency graph: dep -> packages that depend on it
+    let mut reverse_graph: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (name, pkg_config) in &config.packages {
+        for dep in &pkg_config.depends_on {
+            reverse_graph
+                .entry(dep.as_str())
+                .or_default()
+                .push(name.as_str());
+        }
+    }
+
+    let requested: HashSet<String> = packages.iter().cloned().collect();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut notes: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    // Stack: (package_name, the package it depends on that triggered inclusion)
+    let mut stack: Vec<(String, Option<String>)> =
+        packages.iter().map(|p| (p.clone(), None)).collect();
+
+    while let Some((name, triggered_by)) = stack.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        // If this package was pulled in via reverse dep expansion, note it
+        if let Some(dep_name) = triggered_by
+            && !requested.contains(&name)
+        {
+            notes.insert(name.clone(), format!("depends on {dep_name}"));
+        }
+        // Find packages that depend on `name` — they also need to be uninstalled
+        if let Some(dependents) = reverse_graph.get(name.as_str()) {
+            for &dependent in dependents {
+                if !visited.contains(dependent) {
+                    stack.push((dependent.to_string(), Some(name.clone())));
+                }
+            }
+        }
+    }
+
+    let result: Vec<String> = visited.into_iter().collect();
+    (result, notes)
 }
 
 #[cfg(test)]
@@ -3000,5 +3058,332 @@ mod tests {
             error_pos < failed_pos,
             "Error details should appear before FAILED"
         );
+    }
+
+    // --- expand_reverse_dependencies tests ---
+
+    #[test]
+    fn test_expand_reverse_dependencies_no_dependents() {
+        // Arrange — neovim has no dependents
+        let config = Config {
+            packages: std::collections::BTreeMap::from([(
+                "neovim".to_string(),
+                PackageConfig::default(),
+            )]),
+            ..Default::default()
+        };
+
+        // Act
+        let (expanded, notes) = expand_reverse_dependencies(&config, &["neovim".to_string()]);
+
+        // Assert
+        assert_eq!(expanded, vec!["neovim"]);
+        assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn test_expand_reverse_dependencies_includes_direct_dependent() {
+        // Arrange — editor depends on git; uninstalling git should include editor
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                (
+                    "editor".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                ("git".to_string(), PackageConfig::default()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (expanded, notes) = expand_reverse_dependencies(&config, &["git".to_string()]);
+
+        // Assert
+        let mut sorted = expanded.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec!["editor", "git"]);
+        assert_eq!(notes.get("editor").unwrap(), "depends on git");
+        assert!(!notes.contains_key("git")); // requested package has no note
+    }
+
+    #[test]
+    fn test_expand_reverse_dependencies_transitive() {
+        // Arrange — c depends on b, b depends on a; uninstalling a should include b and c
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                ("a".to_string(), PackageConfig::default()),
+                (
+                    "b".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["a".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "c".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["b".to_string()],
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (expanded, notes) = expand_reverse_dependencies(&config, &["a".to_string()]);
+
+        // Assert
+        let mut sorted = expanded.clone();
+        sorted.sort();
+        assert_eq!(sorted, vec!["a", "b", "c"]);
+        assert_eq!(notes.get("b").unwrap(), "depends on a");
+        assert_eq!(notes.get("c").unwrap(), "depends on b");
+    }
+
+    #[test]
+    fn test_expand_reverse_dependencies_no_note_for_requested() {
+        // Arrange — editor depends on git; both requested explicitly
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                (
+                    "editor".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                ("git".to_string(), PackageConfig::default()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (_, notes) =
+            expand_reverse_dependencies(&config, &["git".to_string(), "editor".to_string()]);
+
+        // Assert — neither gets a note since both were explicitly requested
+        assert!(notes.is_empty());
+    }
+
+    // --- Reverse dependency ordering integration tests ---
+
+    #[test]
+    fn test_uninstall_reverse_deps_included_in_plan() {
+        // Arrange — editor depends on git; uninstall git should also uninstall editor
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "packages:\n  editor:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["editor", "git"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["editor".to_string(), "git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — only request git, editor should be pulled in as reverse dependency
+        run_action(
+            &ctx,
+            &["git".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — editor uninstalled before git (dependent first)
+        let written = String::from_utf8(output).unwrap();
+        let editor_pos = written
+            .find("Uninstalling editor")
+            .expect("editor should be uninstalled");
+        let git_pos = written
+            .find("Uninstalling git")
+            .expect("git should be uninstalled");
+        assert!(
+            editor_pos < git_pos,
+            "editor (dependent) must be uninstalled before git (dependency)"
+        );
+        // Both markers should exist
+        assert!(marker_dir.path().join("editor_marker").exists());
+        assert!(marker_dir.path().join("git_marker").exists());
+    }
+
+    #[test]
+    fn test_uninstall_reverse_deps_shows_depends_on_note() {
+        // Arrange — editor depends on git; uninstall git should show note for editor
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "packages:\n  editor:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["editor", "git"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["editor".to_string(), "git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["git".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — plan display shows "depends on git" for editor
+        let written = String::from_utf8(output).unwrap();
+        assert!(
+            written.contains("editor (depends on git)"),
+            "Plan should show 'depends on git' annotation for editor. Got: {written}"
+        );
+    }
+
+    #[test]
+    fn test_uninstall_reverse_deps_transitive_chain() {
+        // Arrange — c depends on b, b depends on a; uninstall a should include b and c
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "packages:\n  a: {}\n  b:\n    depends_on:\n      - a\n  c:\n    depends_on:\n      - b\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["a", "b", "c"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — only request a, b and c should be pulled in as reverse deps
+        run_action(
+            &ctx,
+            &["a".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — c before b before a (dependents first)
+        let written = String::from_utf8(output).unwrap();
+        let c_pos = written.find("Uninstalling c").unwrap();
+        let b_pos = written.find("Uninstalling b").unwrap();
+        let a_pos = written.find("Uninstalling a").unwrap();
+        assert!(c_pos < b_pos, "c must be uninstalled before b");
+        assert!(b_pos < a_pos, "b must be uninstalled before a");
+    }
+
+    #[test]
+    fn test_uninstall_reverse_deps_skips_not_installed() {
+        // Arrange — editor depends on git; editor is NOT installed
+        let marker_dir = TempDir::new().unwrap();
+        let git_marker = marker_dir.path().join("git_marker");
+        let yaml = "packages:\n  editor:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        let git_dir = ctx.packages_dir().join("git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        std::fs::write(
+            git_dir.join(format!("uninstall.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", git_marker.display()),
+        )
+        .unwrap();
+        // Only git is installed, editor is not
+        let state = State {
+            installed: vec!["git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["git".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — editor shows as not installed in skip section, git is uninstalled
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling git...\ndone"));
+        assert!(written.contains("editor (not installed"));
+        assert!(git_marker.exists());
+    }
+
+    #[test]
+    fn test_uninstall_reverse_deps_removed_from_state() {
+        // Arrange — editor depends on git; both installed; uninstall git
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "packages:\n  editor:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let ext = script_extension();
+        for pkg in ["editor", "git"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("uninstall.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec!["editor".to_string(), "git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["git".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — both removed from state
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(!state.installed.contains(&"editor".to_string()));
+        assert!(!state.installed.contains(&"git".to_string()));
     }
 }

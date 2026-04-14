@@ -3275,3 +3275,33 @@ Added a `Dependencies` column to the `homeos package list` table output. The col
 
 ---
 
+## Task: Implement reverse dependency expansion for homeos package uninstall
+
+**Timestamp:**
+
+2026-04-14T05:14:17Z
+
+**Why this task:**
+
+Dependency order — this task builds the reverse dependency (dependents) logic that is also needed by the remaining `package info` task.
+
+**What was done:**
+
+Added `expand_reverse_dependencies` function in action.rs that traverses the reverse dependency graph to find all packages that depend on the requested packages (recursively). When uninstalling package B, all packages that depend on B are automatically included in the plan. Added a `notes` field to the `Plan` struct (`BTreeMap<String, String>`) to carry per-package annotations like "depends on B". Updated `Plan::display()` to show notes as the first annotation (before plugin and warning). Updated `run_action` for the Uninstall action to first expand reverse dependencies, then forward dependencies, topologically sort and reverse. Added 11 new tests: 4 unit tests for `expand_reverse_dependencies` (no dependents, direct dependent, transitive chain, no note for explicitly requested packages) and 5 integration tests for the full uninstall flow (reverse deps included in plan, "depends on" note shown, transitive chain ordering, not-installed dependents skipped, state cleanup for reverse deps), plus 2 plan display tests for notes rendering.
+
+**What was changed:**
+
+- src/plan.rs (added `notes` field to Plan, updated Plan::build to initialize it, updated display() to show notes, added 2 tests)
+- src/commands/package/action.rs (added `expand_reverse_dependencies` function, updated run_action Uninstall branch, moved state loading before package expansion, added 9 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 454 tests pass (11 new tests added). No clippy warnings.
+- The `Plan.notes` field is set after `Plan::build` rather than passed through the builder, since all Plan fields are already pub and the struct is effectively mutable after construction.
+- The reverse expansion includes ALL dependents from the config (not just installed ones). Non-installed dependents are classified as "not installed" by `Plan::build` and shown in the skip section.
+- Function ordering in both plan.rs and action.rs already matched README — no reordering needed.
+
+---
+
