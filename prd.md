@@ -190,6 +190,9 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement reverse dependency expansion for `homeos package uninstall`. When uninstalling B, find all packages that depend on B (recursively) and include them in the plan. Execute dependents first, then dependencies. Show dependents in the plan with a note (e.g., `A (depends on B)`).
 - [x] Add `Dependencies` column to `homeos package list` table output.
 - [x] Implement `homeos package info <package>` — display package details: enabled, installed, plugin, params, dependencies, dependents, script aliases.
+- [ ] Add dependency target validation to `homeos package add-dep` and `homeos package add --depends-on`. Error if the specified dependency does not exist in `homeos.yml`.
+- [ ] Add circular dependency check to `homeos package add-dep` and `homeos package add --depends-on`. Error if adding the dependency would create a cycle.
+- [ ] Enhance `homeos package info` to show a Scripts section listing all script files (both `.sh` and `.ps1`). For existing scripts, show the filename and full path. For missing scripts, show the filename and `(not found)`.
 
 ## Completion Criteria
 
