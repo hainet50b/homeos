@@ -193,7 +193,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add dependency target validation to `homeos package add-dep` and `homeos package add --depends-on`. Error if the specified dependency does not exist in `homeos.yml`.
 - [x] Add circular dependency check to `homeos package add-dep` and `homeos package add --depends-on`. Error if adding the dependency would create a cycle.
 - [x] Enhance `homeos package info` to show a Scripts section listing all script files (both `.sh` and `.ps1`). For existing scripts, show the filename and full path. For missing scripts, show the filename and `(not found)`.
-- [ ] Change `add-dep` messages to match command argument order: "Package '{name}' now depends on '{dependency}'" (success), "Package '{name}' already depends on '{dependency}'" (already exists).
+- [x] Change `add-dep` messages to match command argument order: "Package '{name}' now depends on '{dependency}'" (success), "Package '{name}' already depends on '{dependency}'" (already exists).
 - [ ] Change `remove-dep` messages to match command argument order: "Package '{name}' no longer depends on '{dependency}'" (success), "Package '{name}' does not depend on '{dependency}'" (not found).
 - [ ] Create `plugins/` directory during `homeos init`, consistent with `packages/` directory creation.
 

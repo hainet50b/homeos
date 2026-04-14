@@ -327,6 +327,15 @@ pub fn add_dep(
     package: &str,
     dependencies: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
+    add_dep_to(ctx, package, dependencies, &mut std::io::stdout())
+}
+
+fn add_dep_to(
+    ctx: &Context,
+    package: &str,
+    dependencies: &[String],
+    writer: &mut impl std::io::Write,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
@@ -356,10 +365,13 @@ pub fn add_dep(
 
     for dependency in dependencies {
         if pkg.depends_on.contains(dependency) {
-            println!("Package '{package}' already depends on '{dependency}'");
+            writeln!(
+                writer,
+                "Package '{package}' already depends on '{dependency}'"
+            )?;
         } else {
             pkg.depends_on.push(dependency.clone());
-            println!("Added dependency '{dependency}' to package '{package}'");
+            writeln!(writer, "Package '{package}' now depends on '{dependency}'")?;
         }
     }
 
@@ -2333,6 +2345,57 @@ mod tests {
         // Assert — config should be unchanged
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["b"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_dep_outputs_now_depends_on_message() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  git: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        add_dep_to(&ctx, "neovim", &["git".to_string()], &mut output).unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(output_str, "Package 'neovim' now depends on 'git'\n");
+    }
+
+    #[test]
+    fn test_add_dep_outputs_already_depends_on_message() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        add_dep_to(&ctx, "neovim", &["git".to_string()], &mut output).unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert_eq!(output_str, "Package 'neovim' already depends on 'git'\n");
+    }
+
+    #[test]
+    fn test_add_dep_outputs_mixed_messages_for_multiple_deps() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n  curl: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        add_dep_to(
+            &ctx,
+            "neovim",
+            &["git".to_string(), "curl".to_string()],
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("Package 'neovim' already depends on 'git'"));
+        assert!(output_str.contains("Package 'neovim' now depends on 'curl'"));
     }
 
     #[test]
