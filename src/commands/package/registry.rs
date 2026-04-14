@@ -2,6 +2,7 @@ use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
 use crate::plan::prompt_confirm;
 use crate::state::State;
+use crate::topo::topological_sort;
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
@@ -85,6 +86,20 @@ pub fn add(
         if !config.packages.contains_key(dep.as_str()) {
             return Err(format!("Dependency '{dep}' not found").into());
         }
+    }
+
+    // Check for circular dependencies by simulating the addition
+    if !depends_on.is_empty() {
+        let mut test_config = config.clone();
+        test_config.packages.insert(
+            package.to_string(),
+            PackageConfig {
+                depends_on: depends_on.to_vec(),
+                ..Default::default()
+            },
+        );
+        let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
+        topological_sort(&test_config, &all_packages)?;
     }
 
     let pkg_config = PackageConfig {
@@ -322,6 +337,19 @@ pub fn add_dep(
         if !config.packages.contains_key(dependency.as_str()) {
             return Err(format!("Dependency '{dependency}' not found").into());
         }
+    }
+
+    // Check for circular dependencies by simulating the addition
+    {
+        let mut test_config = config.clone();
+        let pkg = test_config.packages.get_mut(package).unwrap();
+        for dependency in dependencies {
+            if !pkg.depends_on.contains(dependency) {
+                pkg.depends_on.push(dependency.clone());
+            }
+        }
+        let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
+        topological_sort(&test_config, &all_packages)?;
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -2220,6 +2248,100 @@ mod tests {
         assert!(result.is_ok());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert_eq!(config.packages["neovim"].depends_on, vec!["git"]);
+    }
+
+    #[test]
+    fn test_add_dep_errors_on_circular_dependency() {
+        // Arrange — a depends on b, try to add b depends on a
+        let (_tmp, ctx) = fixture("packages:\n  a:\n    depends_on: [b]\n  b: {}\n");
+
+        // Act
+        let result = add_dep(&ctx, "b", &["a".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
+    }
+
+    #[test]
+    fn test_add_dep_errors_on_self_dependency() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  a: {}\n");
+
+        // Act
+        let result = add_dep(&ctx, "a", &["a".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
+    }
+
+    #[test]
+    fn test_add_dep_errors_on_transitive_circular_dependency() {
+        // Arrange — a -> b -> c, try to add c -> a
+        let (_tmp, ctx) =
+            fixture("packages:\n  a:\n    depends_on: [b]\n  b:\n    depends_on: [c]\n  c: {}\n");
+
+        // Act
+        let result = add_dep(&ctx, "c", &["a".to_string()]);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
+    }
+
+    #[test]
+    fn test_add_dep_no_changes_on_circular_dependency_error() {
+        // Arrange — a depends on b, try to add b depends on a
+        let (_tmp, ctx) = fixture("packages:\n  a:\n    depends_on: [b]\n  b: {}\n");
+
+        // Act
+        let _ = add_dep(&ctx, "b", &["a".to_string()]);
+
+        // Assert — config should be unchanged
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["b"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_with_depends_on_errors_on_circular_dependency() {
+        // Arrange — b depends on (future) a; add a with depends_on b creates a -> b -> a cycle
+        let (_tmp, ctx) = fixture("packages:\n  b:\n    depends_on: [a]\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "a",
+            &["b".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Circular dependency")
+        );
     }
 
     #[test]

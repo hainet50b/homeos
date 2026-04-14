@@ -3369,3 +3369,34 @@ Added validation in both `add_dep` and `add` (with `--depends-on`) to check that
 
 ---
 
+## Task: Add circular dependency check to add-dep and add --depends-on
+
+**Timestamp:**
+
+2026-04-14T06:30:46Z
+
+**Why this task:**
+
+First unchecked task in the PRD. Builds on the dependency target validation added in the previous task. Prerequisite for safe dependency management — without this check, users could create cycles that would cause errors at install time.
+
+**What was done:**
+
+Added circular dependency detection to both `add_dep` and `add --depends-on`. Before mutating the config, the code clones the config, simulates the dependency addition, and runs `topological_sort` on all packages. If a cycle is detected, the error from `topological_sort` ("Circular dependency detected among packages: ...") propagates and no changes are saved. Added `Clone` derive to `Config`, `PackageConfig`, and `PluginConfig` structs. Added `use crate::topo::topological_sort` import to registry.rs. Added 5 new tests: self-dependency, direct cycle, transitive cycle (a->b->c->a), no partial changes on error, and cycle detection in `add --depends-on`.
+
+**What was changed:**
+
+- src/config.rs (added `Clone` derive to Config, PackageConfig, PluginConfig)
+- src/commands/package/registry.rs (added circular dependency check in `add_dep` and `add`, added 5 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 469 tests pass (5 new tests added). No clippy warnings.
+- The check uses `topological_sort` which already has robust cycle detection via Kahn's algorithm. Reusing it avoids duplicating graph traversal logic.
+- Self-dependency (a depends on a) is correctly caught because topological_sort sees a node with in-degree 1 that never reaches 0.
+- In `add`, the cycle check only runs when `depends_on` is non-empty, as an optimization.
+- Function ordering already matched README — no reordering needed.
+
+---
+

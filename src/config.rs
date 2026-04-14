@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
     pub packages: BTreeMap<String, PackageConfig>,
@@ -10,7 +10,7 @@ pub struct Config {
     pub plugins: BTreeMap<String, PluginConfig>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct PluginConfig {
     pub url: String,
 }
@@ -29,7 +29,7 @@ impl PluginManifest {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PackageConfig {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub script_aliases: BTreeMap<String, String>,
