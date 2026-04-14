@@ -59,6 +59,9 @@ pub fn run(
         let packages_dir = ctx.packages_dir();
         fs::create_dir_all(&packages_dir)?;
 
+        let plugins_dir = ctx.plugins_dir();
+        fs::create_dir_all(&plugins_dir)?;
+
         let config = Config::default();
         config.save(&config_path)?;
 
@@ -114,6 +117,7 @@ mod tests {
         // Assert
         assert!(ctx.repo_dir().exists());
         assert!(ctx.packages_dir().exists());
+        assert!(ctx.plugins_dir().exists());
         assert!(ctx.config_path().exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.is_empty());
@@ -157,7 +161,21 @@ mod tests {
         // Assert
         let base = tmp.path();
         assert!(base.join("repos/default/packages").exists());
+        assert!(base.join("repos/default/plugins").exists());
         assert!(base.join("repos/default/homeos.yml").exists());
+    }
+
+    #[test]
+    fn test_init_creates_plugins_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert
+        assert!(ctx.plugins_dir().exists());
+        assert!(ctx.plugins_dir().is_dir());
     }
 
     #[test]

@@ -3484,3 +3484,36 @@ Changed the `remove_dep` success message from `"Removed dependency '{dependency}
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-14T06:40:52Z
+
+## Task: Create plugins/ directory during homeos init
+
+**Timestamp:**
+
+2026-04-14T06:42:26Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. No dependencies.
+
+**What was done:**
+
+Added `plugins/` directory creation to `homeos init` scaffold mode, consistent with `packages/` directory creation. Updated 2 existing tests (`test_init_creates_structure` and `test_init_directory_paths`) to assert on the new `plugins/` directory. Added 1 new test (`test_init_creates_plugins_directory`) that verifies the plugins directory exists and is a directory after init.
+
+**What was changed:**
+
+- src/commands/init.rs (added plugins_dir creation in scaffold mode, updated 2 existing tests, added 1 new test)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 478 tests pass (1 new test added). No clippy warnings.
+- Clone mode does not need changes — cloned repos already contain whatever directory structure the remote has.
+- Function ordering already matched README — no reordering needed.
+
+---
+
