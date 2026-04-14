@@ -198,6 +198,11 @@ pub enum PackageCommands {
         #[arg(required = true)]
         packages: Vec<String>,
     },
+    /// Display package details
+    Info {
+        /// Package name
+        package: String,
+    },
     /// Display all scripts for a package
     Cat {
         /// Package name
@@ -391,6 +396,12 @@ fn main() {
             }
             PackageCommands::Disable { packages } => {
                 if let Err(e) = commands::package::disable(&ctx, &packages) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Info { package } => {
+                if let Err(e) = commands::package::info(&ctx, &package) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

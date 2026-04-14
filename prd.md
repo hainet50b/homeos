@@ -189,7 +189,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change "deleted directory" to "removed directory" in `homeos package remove --purge` and `homeos plugin remove --purge` output messages.
 - [x] Implement reverse dependency expansion for `homeos package uninstall`. When uninstalling B, find all packages that depend on B (recursively) and include them in the plan. Execute dependents first, then dependencies. Show dependents in the plan with a note (e.g., `A (depends on B)`).
 - [x] Add `Dependencies` column to `homeos package list` table output.
-- [ ] Implement `homeos package info <package>` — display package details: enabled, installed, plugin, params, dependencies, dependents, script aliases.
+- [x] Implement `homeos package info <package>` — display package details: enabled, installed, plugin, params, dependencies, dependents, script aliases.
 
 ## Completion Criteria
 

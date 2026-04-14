@@ -3305,3 +3305,33 @@ Added `expand_reverse_dependencies` function in action.rs that traverses the rev
 
 ---
 
+## Task: Implement homeos package info <package>
+
+**Timestamp:**
+
+2026-04-14T05:18:24Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD. No dependencies — all prerequisite tasks (config fields, state tracking, dependency/dependent logic) are already implemented.
+
+**What was done:**
+
+Added `homeos package info <package>` command that displays package details: name, enabled/installed status, plugin, dependencies, dependents, and script aliases. Added `Info` variant to `PackageCommands` in main.rs, `info` and `info_to` functions in registry.rs (between `disable` and `cat` to match README command order), CLI routing in main.rs, and re-export in mod.rs. Dependents are computed by scanning all packages in `homeos.yml` for those that list the target package in their `depends_on`. Output format matches README specification exactly, including `(none)` for empty lists and `→` for alias display.
+
+**What was changed:**
+
+- src/main.rs (added `Info` variant to `PackageCommands`, added CLI routing)
+- src/commands/package/mod.rs (added `info` to re-exports)
+- src/commands/package/registry.rs (added `info` and `info_to` functions, added 6 tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 460 tests pass (6 new tests added). No clippy warnings.
+- The `info_to` function computes dependents by iterating all packages and checking if their `depends_on` contains the target — same approach used by `expand_reverse_dependencies` in action.rs but simpler since we only need direct dependents.
+- Function ordering in registry.rs and main.rs matches README command order — info is between disable and cat.
+
+---
+

@@ -448,6 +448,81 @@ pub fn disable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
+pub fn info(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
+    info_to(ctx, package, &mut std::io::stdout())
+}
+
+fn info_to<W: Write>(
+    ctx: &Context,
+    package: &str,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = Config::load(&ctx.config_path())?;
+
+    let pkg = config
+        .packages
+        .get(package)
+        .ok_or_else(|| format!("Package '{package}' not found"))?;
+
+    let state_path = ctx.state_path();
+    let installed = if state_path.exists() {
+        State::load(&state_path)?
+            .installed
+            .contains(&package.to_string())
+    } else {
+        false
+    };
+
+    writeln!(writer, "Package: {package}")?;
+    writeln!(
+        writer,
+        "Enabled: {}",
+        if pkg.enabled { "yes" } else { "no" }
+    )?;
+    writeln!(
+        writer,
+        "Installed: {}",
+        if installed { "yes" } else { "no" }
+    )?;
+    writeln!(writer, "Plugin: {}", pkg.plugin.as_deref().unwrap_or("-"))?;
+
+    writeln!(writer, "Dependencies:")?;
+    if pkg.depends_on.is_empty() {
+        writeln!(writer, "  (none)")?;
+    } else {
+        for dep in &pkg.depends_on {
+            writeln!(writer, "  {dep}")?;
+        }
+    }
+
+    let dependents: Vec<&String> = config
+        .packages
+        .iter()
+        .filter(|(_, p)| p.depends_on.contains(&package.to_string()))
+        .map(|(name, _)| name)
+        .collect();
+
+    writeln!(writer, "Dependents:")?;
+    if dependents.is_empty() {
+        writeln!(writer, "  (none)")?;
+    } else {
+        for dep in &dependents {
+            writeln!(writer, "  {dep}")?;
+        }
+    }
+
+    writeln!(writer, "Script aliases:")?;
+    if pkg.script_aliases.is_empty() {
+        writeln!(writer, "  (none)")?;
+    } else {
+        for (target, source) in &pkg.script_aliases {
+            writeln!(writer, "  {target} → {source}")?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn cat(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     cat_to(ctx, package, &mut std::io::stdout())
 }
@@ -2661,6 +2736,122 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_info_displays_package_details() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n    script_aliases:\n      update: install\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let state = State {
+            installed: vec!["claude".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "claude", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Package: claude"));
+        assert!(text.contains("Enabled: yes"));
+        assert!(text.contains("Installed: yes"));
+        assert!(text.contains("Plugin: -"));
+        assert!(text.contains("Dependencies:"));
+        assert!(text.contains("  bubblewrap"));
+        assert!(text.contains("  socat"));
+        assert!(text.contains("Dependents:"));
+        assert!(text.contains("  (none)"));
+        assert!(text.contains("Script aliases:"));
+        assert!(text.contains("  update → install"));
+    }
+
+    #[test]
+    fn test_info_shows_dependents() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  app:\n    depends_on: [lib]\n  lib: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "lib", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Dependents:"));
+        assert!(text.contains("  app"));
+    }
+
+    #[test]
+    fn test_info_disabled_and_not_installed() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    enabled: false\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "ollama", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Enabled: no"));
+        assert!(text.contains("Installed: no"));
+        assert!(text.contains("Dependencies:\n  (none)"));
+        assert!(text.contains("Dependents:\n  (none)"));
+        assert!(text.contains("Script aliases:\n  (none)"));
+    }
+
+    #[test]
+    fn test_info_shows_plugin() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    plugin: dnf\n    params:\n      name: neovim.x86_64\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Plugin: dnf"));
+    }
+
+    #[test]
+    fn test_info_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Package 'nonexistent' not found")
+        );
+    }
+
+    #[test]
+    fn test_info_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_err());
     }
 
     #[test]

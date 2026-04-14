@@ -3,7 +3,7 @@ mod registry;
 
 pub use action::{apply, install, uninstall, update};
 pub use registry::{
-    add, add_alias, add_dep, cat, cd, disable, enable, list, remove, remove_alias, remove_dep,
+    add, add_alias, add_dep, cat, cd, disable, enable, info, list, remove, remove_alias, remove_dep,
 };
 
 /// Returns the OS-appropriate script file extension.
