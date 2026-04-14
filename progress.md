@@ -3247,3 +3247,31 @@ Changed "deleted directory" to "removed directory" in `homeos package remove --p
 
 ---
 
+## Task: Add Dependencies column to homeos package list table output
+
+**Timestamp:**
+
+2026-04-14T05:05:43Z
+
+**Why this task:**
+
+Next unchecked task in the PRD. No dependencies on the other remaining unchecked tasks (reverse dependency expansion, package info).
+
+**What was done:**
+
+Added a `Dependencies` column to the `homeos package list` table output. The column displays comma-separated dependency names from `depends_on`, or `-` if the package has no dependencies. Updated the table header and separator to include the new column. Updated 6 existing tests to account for the new column (header assertions, adjusted `ends_with` checks to `contains` since Dependencies is now the last column). Added 2 new tests: `test_list_shows_dependencies` (verifies comma-separated deps display) and `test_list_shows_dash_for_no_dependencies` (verifies `-` for packages without deps).
+
+**What was changed:**
+
+- src/commands/package/registry.rs (added Dependencies column to `list_to`, updated 6 existing tests, added 2 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 443 tests pass (2 new tests added). No clippy warnings.
+- The `Installed` column now uses a fixed width (`installed_width`) to properly align the `Dependencies` column that follows it.
+- Function ordering in registry.rs already matched README — no reordering needed.
+
+---
+

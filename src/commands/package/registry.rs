@@ -27,16 +27,22 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         .unwrap_or(0)
         .max(7); // "Package" header length
 
+    let deps_header = "Dependencies";
+    let installed_header = "Installed";
+    let installed_width = installed_header.len();
+
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  Installed",
-        "Package", "Enabled"
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
+        "Package", "Enabled", installed_header, deps_header
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  ---------",
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
         "-".repeat(name_width),
-        "-------"
+        "-------",
+        "-".repeat(installed_width),
+        "-".repeat(deps_header.len())
     )?;
 
     for (name, pkg) in &config.packages {
@@ -46,10 +52,15 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         } else {
             "no"
         };
+        let deps = if pkg.depends_on.is_empty() {
+            "-".to_string()
+        } else {
+            pkg.depends_on.join(", ")
+        };
         writeln!(
             writer,
-            "{:<name_width$}  {:<7}  {}",
-            name, enabled, installed
+            "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
+            name, enabled, installed, deps
         )?;
     }
 
@@ -570,6 +581,7 @@ mod tests {
         assert!(text.contains("Package"));
         assert!(text.contains("Enabled"));
         assert!(text.contains("Installed"));
+        assert!(text.contains("Dependencies"));
         assert!(text.contains("neovim"));
         assert!(text.contains("ripgrep"));
         assert!(text.contains("starship"));
@@ -590,6 +602,7 @@ mod tests {
         assert!(text.contains("Package"));
         assert!(text.contains("Enabled"));
         assert!(text.contains("Installed"));
+        assert!(text.contains("Dependencies"));
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 2); // header + separator only
     }
@@ -643,10 +656,10 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         // neovim: enabled=yes, installed=yes
         assert!(lines[2].contains("neovim"));
-        assert!(lines[2].ends_with("yes"));
+        assert!(lines[2].contains("  yes  "));
         // ripgrep: enabled=yes, installed=no
         assert!(lines[3].contains("ripgrep"));
-        assert!(lines[3].ends_with("no"));
+        assert!(lines[3].contains("  no   "));
     }
 
     #[test]
@@ -664,7 +677,7 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         // neovim: enabled=yes, installed=no (no state file means not installed)
         assert!(lines[2].contains("neovim"));
-        assert!(lines[2].ends_with("no"));
+        assert!(lines[2].contains("  no   "));
     }
 
     #[test]
@@ -682,8 +695,51 @@ mod tests {
         assert!(lines[0].contains("Package"));
         assert!(lines[0].contains("Enabled"));
         assert!(lines[0].contains("Installed"));
+        assert!(lines[0].contains("Dependencies"));
         // Second line is separator
         assert!(lines[1].contains("-------"));
+        assert!(lines[1].contains("------------"));
+    }
+
+    #[test]
+    fn test_list_shows_dependencies() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // bubblewrap has no dependencies
+        assert!(lines[2].contains("bubblewrap"));
+        assert!(lines[2].ends_with("-"));
+        // claude has dependencies
+        assert!(lines[3].contains("claude"));
+        assert!(lines[3].contains("bubblewrap, socat"));
+        // socat has no dependencies
+        assert!(lines[4].contains("socat"));
+        assert!(lines[4].ends_with("-"));
+    }
+
+    #[test]
+    fn test_list_shows_dash_for_no_dependencies() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[2].contains("neovim"));
+        assert!(lines[2].ends_with("-"));
     }
 
     #[test]
