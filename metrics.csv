@@ -115,3 +115,7 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-04-13T07:20:09Z,5b7c7bc,"Show table headers even when list commands have no entries",214,23,6945,0.9998204
 2026-04-13T07:21:58Z,8d7b990,"Add existence check for homeos.yml in Config::load",104,19,3734,0.709601
 2026-04-13T07:25:39Z,d940560,"Change package add options from num_args to action = Append",216,31,7105,1.0825502499999997
+2026-04-14T05:02:17Z,dfa8736,"Change "deleted directory" to "removed directory" in purge output messages",153,27,5687,0.9546235000000001
+2026-04-14T05:06:12Z,f4fdabd,"Add Dependencies column to package list table output",229,30,7780,1.1093345000000001
+2026-04-14T05:15:29Z,71a9957,"Implement reverse dependency expansion for package uninstall",553,58,21761,2.9355349999999993
+2026-04-14T05:19:06Z,7dc3170,"Implement homeos package info command",211,33,7709,1.4646554999999997
