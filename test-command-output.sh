@@ -247,6 +247,35 @@ $HOMEOS package enable testpkg --repo "$TEST_REPO"
 $HOMEOS package install testpkg --repo "$TEST_REPO" <<< "n"
 
 echo ""
+echo "=== Setup: create circular dependency ==="
+$HOMEOS package enable testpkg --repo "$TEST_REPO"
+$HOMEOS package add circpkg --repo "$TEST_REPO"
+$HOMEOS package add-dep testpkg circpkg --repo "$TEST_REPO"
+$HOMEOS package add-dep circpkg testpkg --repo "$TEST_REPO"
+verify
+
+cat > "$PKG_DIR/circpkg/install.sh" << 'SCRIPT'
+#!/usr/bin/env sh
+echo "circpkg install script executed successfully"
+SCRIPT
+
+cat > "$PKG_DIR/testpkg/install.sh" << 'SCRIPT'
+#!/usr/bin/env sh
+echo "testpkg install script executed successfully"
+SCRIPT
+
+echo ""
+echo "=== homeos package install (circular dependency) ==="
+$HOMEOS package install testpkg circpkg --repo "$TEST_REPO" <<< "y"
+verify
+
+echo ""
+echo "=== Setup: cleanup circular dependency ==="
+$HOMEOS package remove-dep testpkg circpkg --repo "$TEST_REPO"
+$HOMEOS package remove-dep circpkg testpkg --repo "$TEST_REPO"
+$HOMEOS package remove circpkg --purge --repo "$TEST_REPO" <<< "y"
+
+echo ""
 echo "=== homeos repo list ==="
 $HOMEOS repo list
 
