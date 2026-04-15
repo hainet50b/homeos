@@ -99,7 +99,14 @@ pub fn add(
             },
         );
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
-        topological_sort(&test_config, &all_packages)?;
+        let topo_result = topological_sort(&test_config, &all_packages)?;
+        if !topo_result.cycle.is_empty() {
+            return Err(format!(
+                "Circular dependency detected among packages: {}",
+                topo_result.cycle.join(", ")
+            )
+            .into());
+        }
     }
 
     let pkg_config = PackageConfig {
@@ -358,7 +365,14 @@ fn add_dep_to(
             }
         }
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
-        topological_sort(&test_config, &all_packages)?;
+        let topo_result = topological_sort(&test_config, &all_packages)?;
+        if !topo_result.cycle.is_empty() {
+            return Err(format!(
+                "Circular dependency detected among packages: {}",
+                topo_result.cycle.join(", ")
+            )
+            .into());
+        }
     }
 
     let pkg = config.packages.get_mut(package).unwrap();

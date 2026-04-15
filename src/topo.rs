@@ -1,14 +1,24 @@
 use crate::config::Config;
 use std::collections::{HashMap, HashSet, VecDeque};
 
+/// Result of a topological sort: successfully sorted packages and any cycle participants.
+#[derive(Debug)]
+pub struct TopologicalResult {
+    /// Packages in valid dependency order.
+    pub sorted: Vec<String>,
+    /// Packages involved in a circular dependency (empty when no cycle exists).
+    pub cycle: Vec<String>,
+}
+
 /// Sort packages in topological order based on `depends_on` relationships.
 /// Dependencies come before the packages that depend on them.
 /// Only considers dependencies among the given packages.
-/// Returns an error if a circular dependency is detected.
+/// Packages involved in circular dependencies are separated into `cycle`
+/// instead of causing an error, so the caller can skip them gracefully.
 pub fn topological_sort(
     config: &Config,
     packages: &[String],
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> Result<TopologicalResult, Box<dyn std::error::Error>> {
     let pkg_set: HashSet<&str> = packages.iter().map(|s| s.as_str()).collect();
 
     // Build in-degree map and adjacency list (only among requested packages)
@@ -65,23 +75,21 @@ pub fn topological_sort(
         }
     }
 
+    let mut cycle = Vec::new();
     if result.len() != pkg_set.len() {
-        // Find the cycle participants for a useful error message
-        let in_cycle: Vec<&str> = in_degree
+        let mut in_cycle: Vec<&str> = in_degree
             .iter()
             .filter(|&(_, &deg)| deg > 0)
             .map(|(&name, _)| name)
             .collect();
-        let mut sorted_cycle: Vec<&str> = in_cycle;
-        sorted_cycle.sort();
-        return Err(format!(
-            "Circular dependency detected among packages: {}",
-            sorted_cycle.join(", ")
-        )
-        .into());
+        in_cycle.sort();
+        cycle = in_cycle.into_iter().map(|s| s.to_string()).collect();
     }
 
-    Ok(result)
+    Ok(TopologicalResult {
+        sorted: result,
+        cycle,
+    })
 }
 
 #[cfg(test)]
@@ -120,7 +128,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert — no deps, so alphabetical order
-        assert_eq!(sut, vec!["git", "neovim", "zed"]);
+        assert_eq!(sut.sorted, vec!["git", "neovim", "zed"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -136,7 +145,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert_eq!(sut, vec!["git", "neovim"]);
+        assert_eq!(sut.sorted, vec!["git", "neovim"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -149,7 +159,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert_eq!(sut, vec!["a", "b", "c"]);
+        assert_eq!(sut.sorted, vec!["a", "b", "c"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -170,47 +181,53 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert — a must come first, d must come last
-        assert_eq!(sut[0], "a");
-        assert_eq!(sut[3], "d");
-        // b and c can be in either order, but deterministic sort gives alphabetical
-        assert_eq!(sut[1], "b");
-        assert_eq!(sut[2], "c");
+        assert_eq!(sut.sorted[0], "a");
+        assert_eq!(sut.sorted[3], "d");
+        assert_eq!(sut.sorted[1], "b");
+        assert_eq!(sut.sorted[2], "c");
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
-    fn test_circular_dependency_errors() {
+    fn test_circular_dependency_returns_cycle_participants() {
         // Arrange — a depends on b, b depends on a
         let config = fixture_config(vec![("a", vec!["b"]), ("b", vec!["a"])]);
         let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
 
         // Act
-        let result = topological_sort(&config, &packages);
+        let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("Circular dependency"));
-        assert!(err.contains("a"));
-        assert!(err.contains("b"));
+        assert!(sut.sorted.is_empty());
+        assert_eq!(sut.cycle, vec!["a", "b"]);
     }
 
     #[test]
-    fn test_three_way_circular_dependency_errors() {
+    fn test_three_way_circular_dependency_returns_cycle_participants() {
         // Arrange — a -> b -> c -> a
         let config = fixture_config(vec![("a", vec!["b"]), ("b", vec!["c"]), ("c", vec!["a"])]);
         let packages: Vec<String> = vec!["a", "b", "c"].into_iter().map(String::from).collect();
 
         // Act
-        let result = topological_sort(&config, &packages);
+        let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Circular dependency")
-        );
+        assert!(sut.sorted.is_empty());
+        assert_eq!(sut.cycle, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_partial_cycle_separates_sorted_and_cycle() {
+        // Arrange — a and b form a cycle, c has no deps
+        let config = fixture_config(vec![("a", vec!["b"]), ("b", vec!["a"]), ("c", vec![])]);
+        let packages: Vec<String> = vec!["a", "b", "c"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = topological_sort(&config, &packages).unwrap();
+
+        // Assert — c is sorted normally, a and b are in cycle
+        assert_eq!(sut.sorted, vec!["c"]);
+        assert_eq!(sut.cycle, vec!["a", "b"]);
     }
 
     #[test]
@@ -223,7 +240,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert — git is not in the set, so neovim has no in-set deps
-        assert_eq!(sut, vec!["neovim"]);
+        assert_eq!(sut.sorted, vec!["neovim"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -236,7 +254,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert!(sut.is_empty());
+        assert!(sut.sorted.is_empty());
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -249,7 +268,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert_eq!(sut, vec!["neovim"]);
+        assert_eq!(sut.sorted, vec!["neovim"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -262,7 +282,8 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert
-        assert_eq!(sut, vec!["unknown"]);
+        assert_eq!(sut.sorted, vec!["unknown"]);
+        assert!(sut.cycle.is_empty());
     }
 
     #[test]
@@ -282,6 +303,7 @@ mod tests {
         let sut = topological_sort(&config, &packages).unwrap();
 
         // Assert — curl and git before neovim
-        assert_eq!(sut, vec!["curl", "git", "neovim"]);
+        assert_eq!(sut.sorted, vec!["curl", "git", "neovim"]);
+        assert!(sut.cycle.is_empty());
     }
 }

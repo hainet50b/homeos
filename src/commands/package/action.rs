@@ -72,7 +72,9 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .union(&update_set)
         .map(|s| s.to_string())
         .collect();
-    let ordered = topological_sort(&config, &all_packages)?;
+    let topo_result = topological_sort(&config, &all_packages)?;
+    let ordered = topo_result.sorted;
+    let cycle_packages = topo_result.cycle;
 
     // Classify each package: if in state -> update, else -> install
     let installed_set: HashSet<&str> = installed.iter().map(|s| s.as_str()).collect();
@@ -135,11 +137,23 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             writeln!(writer, "{display}")?;
         }
     }
-    if !disabled_packages.is_empty() {
+    if !disabled_packages.is_empty() || !cycle_packages.is_empty() {
         writeln!(writer, "The following packages will be skipped:")?;
         for name in &disabled_packages {
             writeln!(writer, "  {name} (disabled)")?;
         }
+        for name in &cycle_packages {
+            writeln!(writer, "  {name} (circular dependency)")?;
+        }
+    }
+
+    // If all packages were in cycle and nothing to install/update, show nothing to do
+    if install_plan.as_ref().is_none_or(|p| p.is_empty())
+        && update_plan.as_ref().is_none_or(|p| p.is_empty())
+    {
+        writeln!(writer)?;
+        writeln!(writer, "Nothing to do.")?;
+        return Ok(());
     }
 
     writeln!(writer)?;
@@ -280,10 +294,13 @@ pub fn run_action<R: BufRead, W: Write>(
     // For install, expand to include transitive dependencies and sort topologically.
     // For uninstall, expand reverse deps (dependents) + forward deps, then reverse order.
     let mut reverse_dep_notes = std::collections::BTreeMap::new();
+    let mut cycle_packages = Vec::new();
     let ordered_packages = match action {
         Action::Install => {
             let expanded = expand_dependencies(&config, packages);
-            topological_sort(&config, &expanded)?
+            let topo_result = topological_sort(&config, &expanded)?;
+            cycle_packages = topo_result.cycle;
+            topo_result.sorted
         }
         Action::Uninstall => {
             // Expand reverse dependencies: find all packages that depend on requested ones
@@ -291,7 +308,9 @@ pub fn run_action<R: BufRead, W: Write>(
             reverse_dep_notes = notes;
             // Also expand forward dependencies (existing behavior)
             let fully_expanded = expand_dependencies(&config, &reverse_expanded);
-            let mut sorted = topological_sort(&config, &fully_expanded)?;
+            let topo_result = topological_sort(&config, &fully_expanded)?;
+            cycle_packages = topo_result.cycle;
+            let mut sorted = topo_result.sorted;
             sorted.reverse();
             sorted
         }
@@ -306,6 +325,7 @@ pub fn run_action<R: BufRead, W: Write>(
         Some(&ctx.packages_dir()),
     )?;
     plan.notes = reverse_dep_notes;
+    plan.circular_dependency = cycle_packages;
 
     if plan.is_empty() {
         let display = plan.display();
@@ -2188,31 +2208,29 @@ mod tests {
     }
 
     #[test]
-    fn test_install_circular_dependency_errors() {
+    fn test_install_circular_dependency_skips_gracefully() {
         // Arrange — a depends on b, b depends on a
         let yaml =
             "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
         let (_tmp, ctx) = fixture(yaml);
-        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut input = std::io::Cursor::new(b"".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(
+        run_action(
             &ctx,
             &["a".to_string()],
             Action::Install,
             &mut input,
             &mut output,
-        );
+        )
+        .unwrap();
 
-        // Assert
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Circular dependency")
-        );
+        // Assert — both packages skipped with circular dependency, nothing to do
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(written.contains("Nothing to do."));
     }
 
     #[test]
@@ -2348,8 +2366,8 @@ mod tests {
     }
 
     #[test]
-    fn test_uninstall_circular_dependency_errors() {
-        // Arrange — a depends on b, b depends on a
+    fn test_uninstall_circular_dependency_skips_gracefully() {
+        // Arrange — a depends on b, b depends on a, both installed
         let yaml =
             "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n";
         let (_tmp, ctx) = fixture(yaml);
@@ -2357,26 +2375,24 @@ mod tests {
             installed: vec!["a".to_string(), "b".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
-        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut input = std::io::Cursor::new(b"".to_vec());
         let mut output = Vec::new();
 
         // Act
-        let result = run_action(
+        run_action(
             &ctx,
             &["a".to_string()],
             Action::Uninstall,
             &mut input,
             &mut output,
-        );
+        )
+        .unwrap();
 
-        // Assert
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Circular dependency")
-        );
+        // Assert — both packages skipped with circular dependency, nothing to do
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(written.contains("Nothing to do."));
     }
 
     #[test]
@@ -3385,5 +3401,137 @@ mod tests {
         let state = State::load(&ctx.state_path()).unwrap();
         assert!(!state.installed.contains(&"editor".to_string()));
         assert!(!state.installed.contains(&"git".to_string()));
+    }
+
+    // --- Circular dependency graceful handling tests ---
+
+    #[test]
+    fn test_install_skips_circular_dependency_packages() {
+        // Arrange — a and b form a cycle, c has no deps
+        let (_tmp, ctx) =
+            fixture("packages:\n  a:\n    depends_on: [b]\n  b:\n    depends_on: [a]\n  c: {}\n");
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("c_installed");
+        let pkg_dir = ctx.packages_dir().join("c");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — c should be installed, a and b skipped
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(written.contains("will be skipped"));
+        assert!(marker_path.exists(), "c should have been installed");
+    }
+
+    #[test]
+    fn test_install_all_circular_shows_nothing_to_do() {
+        // Arrange — a and b form a cycle, no other packages requested
+        let (_tmp, ctx) =
+            fixture("packages:\n  a:\n    depends_on: [b]\n  b:\n    depends_on: [a]\n");
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["a".to_string(), "b".to_string()],
+            Action::Install,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_uninstall_skips_circular_dependency_packages() {
+        // Arrange — a and b form a cycle, both installed
+        let (_tmp, ctx) =
+            fixture("packages:\n  a:\n    depends_on: [b]\n  b:\n    depends_on: [a]\n  c: {}\n");
+        // Mark all as installed
+        let state = State {
+            installed: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        // Create uninstall script for c
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("c_uninstalled");
+        let pkg_dir = ctx.packages_dir().join("c");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("uninstall.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            Action::Uninstall,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — c should be uninstalled, a and b skipped
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(marker_path.exists(), "c should have been uninstalled");
+    }
+
+    #[test]
+    fn test_apply_skips_circular_dependency_packages() {
+        // Arrange — a and b form a cycle (not installed), c has no deps (not installed)
+        let (_tmp, ctx) =
+            fixture("packages:\n  a:\n    depends_on: [b]\n  b:\n    depends_on: [a]\n  c: {}\n");
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("c_installed");
+        let pkg_dir = ctx.packages_dir().join("c");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, &mut input, &mut output).unwrap();
+
+        // Assert — c should be installed, a and b skipped due to cycle
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("a (circular dependency)"));
+        assert!(written.contains("b (circular dependency)"));
+        assert!(marker_path.exists(), "c should have been installed");
     }
 }

@@ -3517,3 +3517,54 @@ Added `plugins/` directory creation to `homeos init` scaffold mode, consistent w
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-15T23:25:20Z
+
+## Task: Handle circular dependencies gracefully in apply, install, and uninstall
+
+**Timestamp:**
+
+2026-04-15T23:34:16Z
+
+**Why this task:**
+
+Only remaining unchecked task in the PRD (last task in both Tasks and Post Tasks). No dependencies.
+
+**What was done:**
+
+Changed circular dependency handling from aborting entirely to gracefully skipping cycle participants:
+
+1. Modified `topological_sort` in `topo.rs` to return a `TopologicalResult` struct with both `sorted` (valid packages) and `cycle` (cycle participants) instead of returning an error on cycles. This allows callers to proceed with non-cyclic packages.
+
+2. Added `circular_dependency: Vec<String>` field to `Plan` struct in `plan.rs`. Updated `display()` to show cycle packages in the skipped section with `(circular dependency)` reason.
+
+3. Updated `apply_to` in `action.rs` to extract cycle packages from the topo result and display them in the skipped section. Added early exit with "Nothing to do." when all packages are in the cycle.
+
+4. Updated `run_action` in `action.rs` to set `circular_dependency` on the plan for both install and uninstall actions.
+
+5. Updated `add_to` and `add_dep_to` in `registry.rs` to check `topo_result.cycle` and return explicit errors (these validation checks should still block circular dep creation).
+
+6. Updated existing tests (`test_install_circular_dependency_errors` → `test_install_circular_dependency_skips_gracefully`, same for uninstall) to expect graceful skipping instead of errors.
+
+7. Added 8 new tests: 3 plan display tests, 1 topo partial cycle test, 4 action tests (install skip, install all-cycle nothing-to-do, uninstall skip, apply skip).
+
+**What was changed:**
+
+- src/topo.rs (added `TopologicalResult` struct, changed return type, updated 2 existing tests, added 1 new test)
+- src/plan.rs (added `circular_dependency` field, updated `display()`, added field to all Plan literals, added 3 new tests)
+- src/commands/package/action.rs (updated `apply_to` and `run_action`, rewrote 2 existing tests, added 4 new tests)
+- src/commands/package/registry.rs (updated cycle check in `add_to` and `add_dep_to` to use new return type)
+- COMMAND_OUTPUT.md (removed circular dependency error rows from install/uninstall tables, added `(circular dependency)` to Plan Display section)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 486 tests pass (8 new tests added). No clippy warnings.
+- The `add_dep` and `package add` validation still errors on cycles — only `apply`, `install`, and `uninstall` handle them gracefully. This is intentional: users should not be able to create circular dependencies, but if they edit `homeos.yml` manually and introduce a cycle, the tool should degrade gracefully.
+- Function ordering already matched README — no reordering needed.
+
+---
+

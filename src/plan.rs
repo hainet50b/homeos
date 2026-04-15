@@ -55,6 +55,8 @@ pub struct Plan {
     pub disabled: Vec<String>,
     pub already_installed: Vec<String>,
     pub not_installed: Vec<String>,
+    /// Packages involved in a circular dependency (skipped).
+    pub circular_dependency: Vec<String>,
     /// Warnings per package (e.g., unmodified skeleton scripts).
     pub warnings: BTreeMap<String, Vec<String>>,
     /// Plugin name per package (only for packages that use a plugin).
@@ -156,6 +158,7 @@ impl Plan {
             disabled,
             already_installed,
             not_installed,
+            circular_dependency: Vec::new(),
             warnings,
             plugins,
             notes: BTreeMap::new(),
@@ -214,6 +217,14 @@ impl Plan {
                 .map(|p| format!(", plugin: {p}"))
                 .unwrap_or_default();
             skipped.push(format!("  {name} (not installed{plugin_suffix})"));
+        }
+        for name in &self.circular_dependency {
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!("  {name} (circular dependency{plugin_suffix})"));
         }
         if !skipped.is_empty() {
             lines.push("The following packages will be skipped:".to_string());
@@ -362,6 +373,7 @@ mod tests {
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -389,6 +401,7 @@ The following packages will be skipped:
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -413,6 +426,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -434,6 +448,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -521,6 +536,7 @@ The following packages will be skipped:
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -549,6 +565,7 @@ The following packages will be skipped:
             disabled: vec!["docker".to_string()],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -567,6 +584,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -623,6 +641,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -713,6 +732,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -737,6 +757,7 @@ The following packages will be skipped:
             disabled: vec!["docker".to_string()],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -764,6 +785,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -786,6 +808,7 @@ The following packages will be skipped:
             disabled: vec!["docker".to_string()],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec!["ripgrep".to_string()],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1177,6 +1200,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings,
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1232,6 +1256,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1256,6 +1281,7 @@ The following packages will be skipped:
             disabled: vec!["neovim".to_string()],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1280,6 +1306,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1304,6 +1331,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1333,6 +1361,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings,
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1354,6 +1383,7 @@ The following packages will be skipped:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1441,6 +1471,7 @@ The following packages will be installed:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
@@ -1471,6 +1502,7 @@ The following packages will be uninstalled:
             disabled: vec![],
             already_installed: vec![],
             not_installed: vec![],
+            circular_dependency: vec![],
             warnings,
             plugins: BTreeMap::from([("editor".to_string(), "dnf".to_string())]),
             notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
@@ -1484,5 +1516,86 @@ The following packages will be uninstalled:
 The following packages will be uninstalled:
   editor (depends on git, plugin: dnf, warning: uninstall.sh is unmodified)";
         assert_eq!(sut, expected);
+    }
+
+    // --- Circular dependency display tests ---
+
+    #[test]
+    fn test_display_shows_circular_dependency_in_skipped() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["zed".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec!["a".to_string(), "b".to_string()],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be installed:
+  zed
+The following packages will be skipped:
+  a (circular dependency)
+  b (circular dependency)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_only_circular_dependency_when_all_skipped() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec!["a".to_string(), "b".to_string()],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be skipped:
+  a (circular dependency)
+  b (circular dependency)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_circular_dependency_with_plugin() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec!["a".to_string()],
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("a".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  a (circular dependency, plugin: dnf)"
+        );
     }
 }

@@ -143,7 +143,6 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
-| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
 | Some packages fail | stdout | `Some packages failed` |
 
 ## homeos package update
@@ -168,7 +167,6 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (error) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
-| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
 | Some packages fail | stdout | `Some packages failed` |
 
 ## homeos plugin list
@@ -272,6 +270,7 @@ The following packages will be skipped:
   {name} (disabled)
   {name} (already installed)
   {name} (not installed)
+  {name} (circular dependency)
 
 Proceed? [y/N]
 ```
@@ -282,6 +281,7 @@ When all packages are skipped (no confirmation prompt):
 The following packages will be skipped:
   {name} (disabled)
   {name} (already installed)
+  {name} (circular dependency)
 
 Nothing to do.
 ```

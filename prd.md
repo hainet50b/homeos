@@ -196,7 +196,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Change `add-dep` messages to match command argument order: "Package '{name}' now depends on '{dependency}'" (success), "Package '{name}' already depends on '{dependency}'" (already exists).
 - [x] Change `remove-dep` messages to match command argument order: "Package '{name}' no longer depends on '{dependency}'" (success), "Package '{name}' does not depend on '{dependency}'" (not found).
 - [x] Create `plugins/` directory during `homeos init`, consistent with `packages/` directory creation.
-- [ ] Handle circular dependencies gracefully in `apply`, `install`, and `uninstall`. Instead of aborting entirely, skip packages involved in the cycle with reason `(circular dependency)` in the plan, and proceed with the remaining packages.
+- [x] Handle circular dependencies gracefully in `apply`, `install`, and `uninstall`. Instead of aborting entirely, skip packages involved in the cycle with reason `(circular dependency)` in the plan, and proceed with the remaining packages.
 
 ## Completion Criteria
 
