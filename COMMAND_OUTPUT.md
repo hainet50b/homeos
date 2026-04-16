@@ -49,6 +49,8 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found. Add it first with: homeos plugin add {name}` |
 | Missing plugin params (error) | stderr | `Error: Missing required plugin parameters: {params}` |
 | Invalid key=value pair (error) | stderr | `Error: invalid key=value pair: no '=' found in '{input}'` |
+| Dependency not found (error) | stderr | `Error: Dependency '{dependency}' not found in homeos.yml` |
+| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
 
 ## homeos package remove
 
@@ -69,6 +71,8 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Success | stdout | `Package '{name}' now depends on '{dependency}'` |
 | Already depends | stdout | `Package '{name}' already depends on '{dependency}'` |
+| Dependency not found (error) | stderr | `Error: Dependency '{dependency}' not found in homeos.yml` |
+| Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 
 ## homeos package remove-dep

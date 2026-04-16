@@ -90,6 +90,14 @@ echo "=== homeos package add-dep (already depends) ==="
 $HOMEOS package add-dep testpkg deppkg --repo "$TEST_REPO"
 
 echo ""
+echo "=== homeos package add-dep (dependency not found in homeos.yml) ==="
+$HOMEOS package add-dep testpkg nonexistent --repo "$TEST_REPO" 2>&1 || true
+
+echo ""
+echo "=== homeos package add-dep (circular dependency) ==="
+$HOMEOS package add-dep deppkg testpkg --repo "$TEST_REPO" 2>&1 || true
+
+echo ""
 echo "=== homeos package add-dep (package not found) ==="
 $HOMEOS package add-dep nonexistent deppkg --repo "$TEST_REPO" 2>&1 || true
 
