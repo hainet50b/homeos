@@ -202,9 +202,9 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Warning about referencing packages | stdout | `Warning: the following packages reference plugin '{name}': {packages}` |
 | Confirmation prompt | stdout | `The following plugins will be removed from homeos.yml:` / `  {name}` |
 | With --purge | stdout | `The following directories will be deleted:` / `  {path}` |
+| Warning about referencing packages | stdout | `Warning: the following packages reference plugin '{name}': {packages}` |
 | User declines | stdout | `Aborted.` |
 | Success | stdout | `Removed plugin '{name}'` |
 | Success with --purge | stdout | `Removed plugin '{name}' and removed directory` |
