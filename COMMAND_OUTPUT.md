@@ -237,8 +237,8 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Clone success | stdout | `Repository '{name}' cloned successfully` |
 | Create success | stdout | `Repository '{name}' created` |
+| Clone success | stdout | `Repository '{name}' cloned successfully` |
 | Repository already exists (error) | stderr | `Error: Repository '{name}' already exists` |
 | git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
 
