@@ -666,10 +666,13 @@ Below is a step-by-step guide to creating a plugin.
 ### 1. Create a plugin
 
 ```sh
-$ homeos plugin add my-provider --local
+$ homeos plugin add --local my-provider
+Plugin 'my-provider' created locally
+
 $ homeos plugin cd my-provider
 $ ls
-TODO: output
+install.ps1.tmpl  plugin.yml          uninstall.sh.tmpl  update.sh.tmpl
+install.sh.tmpl   uninstall.ps1.tmpl  update.ps1.tmpl
 ```
 
 ### 2. Define parameters
