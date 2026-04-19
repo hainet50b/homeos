@@ -26,6 +26,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
+| Dry-run (`--dry-run`) | stdout | Plan display only; exits without prompt or execution |
 | User confirms | stdout | Executes with progress messages |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Installing {name}...` / `done` or `Error:` then `FAILED` |
@@ -64,6 +65,15 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Package not found (error) | stderr | `Error: Package '{name}' not found` |
 | Package is installed (error) | stderr | `Error: Package '{name}' is currently installed. Uninstall it first with: homeos package uninstall {name}` |
 | Package is depended on (error) | stderr | `Error: Cannot remove package '{name}' because it is depended on by: {dependents}` |
+
+## homeos package rename
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Renamed package '{old}' to '{new}'` |
+| Updated dependent (per reference) | stdout | `Updated '{dependent}' dependency: {old} → {new}` |
+| Package not found (error) | stderr | `Error: Package '{old}' not found` |
+| New name already exists (error) | stderr | `Error: Package '{new}' already exists` |
 
 ## homeos package add-dep
 
@@ -142,6 +152,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
+| Dry-run (`--dry-run`) | stdout | Plan display only; exits without prompt or execution |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Installing {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
@@ -154,6 +165,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
+| Dry-run (`--dry-run`) | stdout | Plan display only; exits without prompt or execution |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Updating {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |
@@ -166,6 +178,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Plan display | stdout | (see Plan Display section below) |
+| Dry-run (`--dry-run`) | stdout | Plan display only; exits without prompt or execution |
 | User declines | stdout | `Aborted.` |
 | Script execution | stdout | `Uninstalling {name}...` / `done` or `Error:` then `FAILED` |
 | Script not found (error) | stdout | `Error: Script not found: {path}` |

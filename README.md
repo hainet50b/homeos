@@ -212,7 +212,10 @@ Usage: homeos cd
 Install new packages and update installed ones.
 
 ```
-Usage: homeos apply
+Usage: homeos apply [OPTIONS]
+
+Options:
+      --dry-run  Display the plan without executing scripts or prompting
 ```
 
 A confirmation prompt is shown before execution.
@@ -293,6 +296,18 @@ Arguments:
 
 Options:
       --purge  Also delete the package directory
+```
+
+#### `homeos package rename`
+
+Rename a package. Renames the package directory on disk, updates the entry key in `homeos.yml`, updates `state.yml` if the package is installed, and updates any `depends_on` references in other packages to point to the new name.
+
+```
+Usage: homeos package rename <OLD> <NEW>
+
+Arguments:
+  <OLD>  Current package name
+  <NEW>  New package name
 ```
 
 #### `homeos package add-dep`
@@ -462,10 +477,13 @@ A confirmation prompt is shown before execution. On script failure, the error is
 Execute install scripts. Records installed packages in `state.yml`.
 
 ```
-Usage: homeos package install <PACKAGES>...
+Usage: homeos package install [OPTIONS] <PACKAGES>...
 
 Arguments:
   <PACKAGES>...  Package names
+
+Options:
+      --dry-run  Display the plan without executing scripts or prompting
 ```
 
 #### `homeos package update`
@@ -473,10 +491,13 @@ Arguments:
 Execute update scripts.
 
 ```
-Usage: homeos package update <PACKAGES>...
+Usage: homeos package update [OPTIONS] <PACKAGES>...
 
 Arguments:
   <PACKAGES>...  Package names
+
+Options:
+      --dry-run  Display the plan without executing scripts or prompting
 ```
 
 #### `homeos package uninstall`
@@ -490,7 +511,8 @@ Arguments:
   [PACKAGES]...  Package names
 
 Options:
-      --all  Uninstall all installed packages (from state.yml)
+      --all      Uninstall all installed packages (from state.yml)
+      --dry-run  Display the plan without executing scripts or prompting
 ```
 
 ### Manage plugins
