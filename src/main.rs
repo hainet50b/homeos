@@ -156,6 +156,13 @@ pub enum PackageCommands {
         #[arg(long)]
         purge: bool,
     },
+    /// Rename a package
+    Rename {
+        /// Current package name
+        old: String,
+        /// New package name
+        new: String,
+    },
     /// Add dependencies to an existing package
     AddDep {
         /// Package name
@@ -356,6 +363,12 @@ fn main() {
             }
             PackageCommands::Remove { packages, purge } => {
                 if let Err(e) = commands::package::remove(&ctx, &packages, purge) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PackageCommands::Rename { old, new } => {
+                if let Err(e) = commands::package::rename(&ctx, &old, &new) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

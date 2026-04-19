@@ -3683,3 +3683,60 @@ Named the second submodule `view` (parallel to `registry`) since `cat` and `cd` 
 ---
 
 
+
+
+---
+
+# Ralph Loop — 2026-04-19T12:55:51Z
+
+## Task: Implement `homeos package rename <old> <new>`
+
+**Timestamp:**
+
+2026-04-19T12:55:51Z
+
+**Why this task:**
+
+One of only two remaining unchecked tasks. Chose `rename` over `--dry-run` because it is self-contained (single command, single module) while `--dry-run` touches four commands (apply/install/update/uninstall) and their shared plan-execution path — a tighter, lower-risk unit of work for this iteration.
+
+**What was done:**
+
+Added a new `Rename { old, new }` variant to `PackageCommands` in `src/main.rs`, wired it to `commands::package::rename(...)` in the dispatch block (placed after `Remove`, before `AddDep`, matching README order). Implemented `pub fn rename(ctx, old, new)` + a writer-injectable `rename_to<W>(ctx, old, new, writer)` in `src/commands/package/registry.rs` (placed after `remove`/`remove_to`, before `add_dep`). The function:
+
+1. Loads `homeos.yml`, errors if `old` does not exist or `new` already exists (messages per COMMAND_OUTPUT.md: `Package '{old}' not found`, `Package '{new}' already exists`).
+2. Moves the old entry under the new key (preserves `enabled`, `depends_on`, `script_aliases`, `plugin`, `params`).
+3. Walks every other package's `depends_on` and replaces `old` → `new`, collecting dependent names for reporting.
+4. Saves config, renames the package directory on disk (only if it exists — skipped silently otherwise since creation is idempotent from the config's perspective), and updates `state.yml` if `old` is in the `installed` list.
+5. Prints `Renamed package '{old}' to '{new}'` followed by one `Updated '{dependent}' dependency: {old} → {new}` line per affected dependent (per COMMAND_OUTPUT.md).
+
+Re-exported `rename` from `src/commands/package/mod.rs`.
+
+Added 11 unit tests in `registry.rs` tests module covering:
+- entry key renamed
+- package config fields preserved (enabled=false, script_aliases)
+- directory renamed on disk with contents intact
+- state.yml updated when package is in `installed`
+- state.yml unchanged when package is not in `installed`
+- `depends_on` references in other packages updated
+- per-dependent "Updated '{dependent}' dependency: ..." messages printed
+- error when old not found
+- error when new already exists
+- success message printed
+- succeeds when package directory does not exist on disk
+
+**What was changed:**
+
+- src/main.rs (added `Rename` variant and dispatch)
+- src/commands/package/mod.rs (re-export `rename`)
+- src/commands/package/registry.rs (added `rename`, `rename_to`, and 11 unit tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 502 tests pass (11 new). Pre-existing clippy warnings (3 `type_complexity` in `commands/package/mod.rs` test module) remain unchanged — not introduced by this task.
+- CLI enum order in `main.rs` (List, Add, Remove, Rename, AddDep, ...) and function order in `registry.rs` (list, add, remove, rename, add_dep, ...) both match README command order.
+- Tests hit the writer-injectable `rename_to` variant so output assertions are deterministic. The public `rename` delegates to it with `std::io::stdout()` as in other commands (`list`, `info`, etc.).
+- The rename is not transactional across config / filesystem / state. If `std::fs::rename` fails (e.g., cross-device), the config will already be saved with the new key while the directory still has the old name. This is the same approach used by `remove --purge` (config save, then directory delete). Noting for future hardening; not addressed here since the PRD does not require atomicity.
+
+---

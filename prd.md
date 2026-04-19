@@ -200,7 +200,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Extract git clone invocation into a shared helper. Create a `git` module with a `clone(url, target)` function that wraps the `Command::new("git")` call and error handling (`git clone failed: {stderr}`). Migrate `homeos init`, `homeos repo add`, and `homeos plugin add` to use it.
 - [x] Split `commands/plugin.rs` into `commands/plugin/mod.rs` and submodules, following the same structure as `commands/package/`. Group list/list-remote/add/remove into one submodule and cat/cd into another. Each submodule keeps its own tests and fixtures.
 - [x] Add `#[command(version)]` attribute to the `Cli` struct in `main.rs` so that `homeos --version` and `homeos -V` display the version from `Cargo.toml`.
-- [ ] Implement `homeos package rename <old> <new>` — rename the package directory on disk and update the entry key in `homeos.yml`. Update `state.yml` if the package is installed. Update any `depends_on` references in other packages to point to the new name. Error if a package with the new name already exists.
+- [x] Implement `homeos package rename <old> <new>` — rename the package directory on disk and update the entry key in `homeos.yml`. Update `state.yml` if the package is installed. Update any `depends_on` references in other packages to point to the new name. Error if a package with the new name already exists.
 - [ ] Add `--dry-run` flag to `homeos apply`, `homeos package install`, `homeos package update`, and `homeos package uninstall`. When set, display the plan and exit successfully without prompting for confirmation or executing scripts. This supports automation and AI agent workflows where non-interactive plan inspection is required.
 
 ## Completion Criteria

@@ -329,6 +329,61 @@ fn remove_to<R: BufRead, W: Write>(
     Ok(())
 }
 
+pub fn rename(ctx: &Context, old: &str, new: &str) -> Result<(), Box<dyn std::error::Error>> {
+    rename_to(ctx, old, new, &mut std::io::stdout())
+}
+
+fn rename_to<W: Write>(
+    ctx: &Context,
+    old: &str,
+    new: &str,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    if !config.packages.contains_key(old) {
+        return Err(format!("Package '{old}' not found").into());
+    }
+    if config.packages.contains_key(new) {
+        return Err(format!("Package '{new}' already exists").into());
+    }
+
+    let pkg_config = config.packages.remove(old).unwrap();
+    config.packages.insert(new.to_string(), pkg_config);
+
+    let mut updated_dependents: Vec<String> = Vec::new();
+    for (name, pkg) in config.packages.iter_mut() {
+        if let Some(pos) = pkg.depends_on.iter().position(|d| d == old) {
+            pkg.depends_on[pos] = new.to_string();
+            updated_dependents.push(name.clone());
+        }
+    }
+
+    config.save(&ctx.config_path())?;
+
+    let old_dir = ctx.packages_dir().join(old);
+    let new_dir = ctx.packages_dir().join(new);
+    if old_dir.exists() {
+        std::fs::rename(&old_dir, &new_dir)?;
+    }
+
+    let state_path = ctx.state_path();
+    if state_path.exists() {
+        let mut state = State::load(&state_path)?;
+        if let Some(pos) = state.installed.iter().position(|p| p == old) {
+            state.installed[pos] = new.to_string();
+            state.save(&state_path)?;
+        }
+    }
+
+    writeln!(writer, "Renamed package '{old}' to '{new}'")?;
+    for dependent in &updated_dependents {
+        writeln!(writer, "Updated '{dependent}' dependency: {old} → {new}")?;
+    }
+
+    Ok(())
+}
+
 pub fn add_dep(
     ctx: &Context,
     package: &str,
@@ -2125,6 +2180,189 @@ mod tests {
         assert!(pkg_dir.exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_rename_updates_config_entry_key() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "neovim", "nvim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("nvim"));
+    }
+
+    #[test]
+    fn test_rename_preserves_package_config_fields() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    enabled: false\n    script_aliases:\n      update: install\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        let pkg = &config.packages["nvim"];
+        assert!(!pkg.enabled);
+        assert_eq!(pkg.script_aliases["update"], "install");
+    }
+
+    #[test]
+    fn test_rename_renames_package_directory_on_disk() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let old_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::write(old_dir.join("install.sh"), "echo hello").unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let new_dir = ctx.packages_dir().join("nvim");
+        assert!(!ctx.packages_dir().join("neovim").exists());
+        assert!(new_dir.is_dir());
+        let content = std::fs::read_to_string(new_dir.join("install.sh")).unwrap();
+        assert_eq!(content, "echo hello");
+    }
+
+    #[test]
+    fn test_rename_updates_state_when_installed() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let state = State {
+            installed: vec!["neovim".to_string(), "git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["nvim".to_string(), "git".to_string()]);
+    }
+
+    #[test]
+    fn test_rename_leaves_state_unchanged_when_not_installed() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let state = State {
+            installed: vec!["git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["git".to_string()]);
+    }
+
+    #[test]
+    fn test_rename_updates_depends_on_references_in_other_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on:\n      - neovim\n      - git\n  neovim: {}\n  git: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert_eq!(config.packages["claude"].depends_on, vec!["nvim", "git"]);
+    }
+
+    #[test]
+    fn test_rename_prints_updated_dependency_messages() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  a:\n    depends_on:\n      - neovim\n  b:\n    depends_on:\n      - neovim\n  neovim: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Updated 'a' dependency: neovim → nvim"));
+        assert!(text.contains("Updated 'b' dependency: neovim → nvim"));
+    }
+
+    #[test]
+    fn test_rename_errors_when_old_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "nonexistent", "nvim", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert_eq!(err, "Package 'nonexistent' not found");
+    }
+
+    #[test]
+    fn test_rename_errors_when_new_already_exists() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  nvim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "neovim", "nvim", &mut output);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert_eq!(err, "Package 'nvim' already exists");
+    }
+
+    #[test]
+    fn test_rename_prints_success_message() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        rename_to(&ctx, "neovim", "nvim", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Renamed package 'neovim' to 'nvim'"));
+    }
+
+    #[test]
+    fn test_rename_succeeds_when_package_directory_does_not_exist() {
+        // Arrange — package exists in config but no directory on disk
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "neovim", "nvim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages.contains_key("nvim"));
     }
 
     #[test]
