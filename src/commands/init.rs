@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::context::Context;
+use crate::git;
 use std::fs;
-use std::process::Command;
 
 pub fn run(
     ctx: &Context,
@@ -20,14 +20,7 @@ pub fn run(
         let repos_dir = ctx.repos_dir();
         fs::create_dir_all(&repos_dir)?;
 
-        let output = Command::new("git")
-            .args(["clone", url, &repo_dir.to_string_lossy()])
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("git clone failed: {}", stderr.trim()).into());
-        }
+        git::clone(url, &repo_dir)?;
 
         if !config_path.exists() {
             fs::remove_dir_all(&repo_dir)?;
@@ -79,6 +72,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn fixture() -> (TempDir, Context) {

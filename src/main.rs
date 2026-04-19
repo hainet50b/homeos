@@ -12,6 +12,7 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 mod commands;
 mod config;
 mod context;
+mod git;
 mod plan;
 mod state;
 mod topo;

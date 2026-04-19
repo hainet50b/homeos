@@ -3568,3 +3568,42 @@ Changed circular dependency handling from aborting entirely to gracefully skippi
 
 ---
 
+
+---
+
+# Ralph Loop — 2026-04-19T12:41:10Z
+
+## Task: Extract git clone invocation into a shared helper
+
+**Timestamp:**
+
+2026-04-19T12:43:42Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section — a standalone refactor with no dependencies on other unchecked tasks.
+
+**What was done:**
+
+Created a new `git` module at `src/git.rs` exposing `clone(url: &str, target: &Path) -> Result<()>`. The helper wraps `Command::new("git").args(["clone", url, target])`, checks the exit status, and returns the formatted `git clone failed: {stderr}` error on failure. Registered the module in `main.rs`. Migrated the three call sites — `homeos init` (clone mode), `homeos repo add` (when URL is provided), and `homeos plugin add` (clone branch) — to call `git::clone(...)` instead of invoking `Command::new("git")` inline. Added two unit tests for the helper: one asserting a valid local repo clones successfully and produces a `.git` directory, another asserting an invalid URL returns a `git clone failed:` error.
+
+**What was changed:**
+
+- src/git.rs (new file — `clone` helper and 2 unit tests)
+- src/main.rs (registered `git` module)
+- src/commands/init.rs (migrated clone call, added `Command` import to tests module)
+- src/commands/repo.rs (migrated clone call, kept `Command` for `cd` and tests)
+- src/commands/plugin.rs (migrated clone call, kept `Command` for `cd` and tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 488 tests pass (2 new tests added). Pre-existing clippy warnings (3 `type_complexity` warnings in `commands/package/mod.rs` test module) are unchanged — confirmed by running `cargo clippy` against `HEAD` before applying the change.
+- The fallback repo_checker path in `plugin::add` still runs before the clone call (unchanged), so GitHub API existence checks still precede `git::clone` for auto-resolved URLs.
+- Error message format is preserved verbatim (`git clone failed: {stderr.trim()}`) so existing tests that assert on the prefix continue to pass without modification.
+- Function and CLI ordering already matches README — no reordering needed.
+
+---
+
+

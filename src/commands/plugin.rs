@@ -1,5 +1,6 @@
 use crate::config::{Config, PluginConfig};
 use crate::context::Context;
+use crate::git;
 use crate::plan::prompt_confirm;
 use serde::Deserialize;
 use std::io::{BufRead, Write};
@@ -232,14 +233,7 @@ where
 
     std::fs::create_dir_all(&plugins_dir)?;
 
-    let output = Command::new("git")
-        .args(["clone", &url, &target.to_string_lossy()])
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {}", stderr.trim()).into());
-    }
+    git::clone(&url, &target)?;
 
     if !target.join("plugin.yml").exists() {
         std::fs::remove_dir_all(&target)?;

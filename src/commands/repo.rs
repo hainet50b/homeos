@@ -1,6 +1,7 @@
 use crate::commands::detect_shell;
 use crate::config::Config;
 use crate::context::Context;
+use crate::git;
 use crate::plan::prompt_confirm;
 use crate::state::State;
 use std::io::{BufRead, Write};
@@ -52,14 +53,7 @@ pub fn add(ctx: &Context, repo: &str, url: Option<&str>) -> Result<(), Box<dyn s
     std::fs::create_dir_all(&repos_dir)?;
 
     if let Some(url) = url {
-        let output = Command::new("git")
-            .args(["clone", url, &target.to_string_lossy()])
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("git clone failed: {}", stderr.trim()).into());
-        }
+        git::clone(url, &target)?;
 
         println!("Repository '{}' cloned successfully", repo);
     } else {
