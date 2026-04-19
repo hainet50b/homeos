@@ -3740,3 +3740,59 @@ Added 11 unit tests in `registry.rs` tests module covering:
 - The rename is not transactional across config / filesystem / state. If `std::fs::rename` fails (e.g., cross-device), the config will already be saved with the new key while the directory still has the old name. This is the same approach used by `remove --purge` (config save, then directory delete). Noting for future hardening; not addressed here since the PRD does not require atomicity.
 
 ---
+
+
+
+
+---
+
+# Ralph Loop — 2026-04-19T13:04:04Z
+
+## Task: Add `--dry-run` flag to `homeos apply`, `homeos package install`, `homeos package update`, and `homeos package uninstall`
+
+**Timestamp:**
+
+2026-04-19T13:04:04Z
+
+**Why this task:**
+
+The only remaining unchecked Task in the PRD. All Post Tasks are also checked, so completing this finishes the roadmap.
+
+**What was done:**
+
+1. **CLI (src/main.rs):** Added `dry_run: bool` to the `Apply`, `PackageCommands::Install`, `PackageCommands::Update`, and `PackageCommands::Uninstall` variants. Each is a `#[arg(long)]` flag with the help text `Display the plan without executing scripts or prompting`. Updated the dispatch arms to pass `dry_run` through to the respective command functions. README and COMMAND_OUTPUT.md already documented the flag — implementation now matches the spec.
+
+2. **Public API (src/commands/package/action.rs):** Threaded `dry_run: bool` through `apply`, `install`, `update`, `uninstall`, and the writer-injectable variants `apply_to`, `uninstall_to`, and `run_action`. Parameter position: after the "semantic" args (`ctx`, `packages`, `action`, `all`) and before the I/O args (`reader`, `writer`).
+
+3. **Dry-run behavior in `run_action`:** Inserted a `if dry_run { ... return Ok(()); }` branch right after the `plan.is_empty()` check. When dry-run is set with a non-empty plan, `plan.display()` is printed once and the function returns — no `Proceed?` prompt, no script execution, no state.yml updates. When the plan is empty, behavior is unchanged (still prints `Nothing to do.` since there is nothing to dry-run).
+
+4. **Dry-run behavior in `apply_to`:** Added `if dry_run { return Ok(()); }` right after the combined plan display block (install/update/disabled/cycle) and right before the `writeln\!(writer)?; prompt_confirm` block. The plan was already printed before this point, so dry-run gets a clean plan-only output.
+
+5. **Test call-site updates:** Updated all 56 existing `run_action(...)` test callers, all 5 `uninstall_to(...)` test callers, and all 20 `apply_to(...)` test callers to pass `false` for `dry_run`. Did the bulk edit with two small Python regex passes — one for `run_action` (inserting `false,` between `Action::X,` and `&mut input,`) and one for `apply_to` / `uninstall_to` (literal-string replacement on the single-line signatures). Verified `Plan::build(...)` calls (which also have `Action::X,` followed by `&installed,`) were not modified since the `run_action` regex required `&mut ` in the capture.
+
+6. **Signature compile-time test (src/commands/package/mod.rs):** Updated `test_mod_only_contains_shared_helpers_and_reexports` to reflect the new signatures (`install`/`update` now take `bool`; `uninstall` takes `bool, bool`). Added `#[allow(clippy::type_complexity)]` to the test function because spelling out function-pointer types is intentionally verbose here — the test's whole point is to pin the public signatures literally, and extracting type aliases would defeat that. Prior progress entries noted these `type_complexity` warnings as pre-existing; they are now silenced at the warn-site rather than left dangling.
+
+7. **New tests (action.rs):**
+   - `test_run_action_dry_run_install_displays_plan_without_executing` — install plan printed, no `Proceed?`, no `Installing`, no side-effect marker file.
+   - `test_run_action_dry_run_update_displays_plan_without_executing` — same for update (state seeded so the package is in-state).
+   - `test_run_action_dry_run_uninstall_displays_plan_without_executing` — same for uninstall; also asserts `state.yml` still contains the package.
+   - `test_run_action_dry_run_does_not_update_state` — `state.yml` is not even created when `Install` runs in dry-run mode.
+   - `test_run_action_dry_run_shows_nothing_to_do_for_empty_plan` — disabled package → empty plan → still prints `Nothing to do.` (dry-run does not suppress it).
+   - `test_apply_dry_run_displays_plan_without_executing` — end-to-end for `apply_to` (plan printed, no prompt, no execution, no state.yml).
+
+8. **New CLI parse tests (main.rs):** `test_apply_dry_run_flag`, `test_apply_without_dry_run_defaults_to_false`, `test_package_install_dry_run_flag`, `test_package_update_dry_run_flag`, `test_package_uninstall_dry_run_flag`. Each asserts clap parses `--dry-run` into the correct enum variant and that omitting the flag defaults to `false`.
+
+**What was changed:**
+
+- src/main.rs (CLI arg, dispatch, 5 new tests)
+- src/commands/package/action.rs (signatures, dry-run branches, 6 new tests, 81 existing test call-sites updated to pass `false`)
+- src/commands/package/mod.rs (signature test updated for new bool params, `#[allow(clippy::type_complexity)]` added)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 513 tests pass (502 prior + 11 new). `cargo clippy --all-targets` is clean — the 3 pre-existing `type_complexity` warnings previously noted in progress entries are gone after the `#[allow]` annotation.
+- Chose parameter position "after semantics, before I/O" rather than "last arg after writer" because it groups logically — `dry_run` is an option that shapes what the function does, not an I/O sink. The tradeoff is that all 81 test call-sites needed to be updated; the bulk edit took two regex passes and was verified to not touch `Plan::build(...)` (which has a superficially similar arg shape).
+- Dry-run is a pure read path — it does not even open `state.yml` for writing, does not `Config::save`, and does not invoke `execute_script`. Confirmed by the `test_run_action_dry_run_does_not_update_state` and `test_apply_dry_run_displays_plan_without_executing` tests asserting `\!ctx.state_path().exists()`.
+- The dry-run branch intentionally does NOT print a trailing blank line (unlike `confirm_plan` which writes `{display}\n\n` before prompting). This matches COMMAND_OUTPUT.md's "Plan display only; exits without prompt or execution" — the plan display is the entire output. The empty-plan path still prints `{display}\n\nNothing to do.` because that path is shared with the non-dry-run case.

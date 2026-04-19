@@ -49,7 +49,11 @@ pub enum Commands {
     /// Launch a shell in the repositories directory
     Cd,
     /// Install new packages and update installed ones
-    Apply,
+    Apply {
+        /// Display the plan without executing scripts or prompting
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Manage packages
     Package {
         #[command(subcommand)]
@@ -227,12 +231,18 @@ pub enum PackageCommands {
         /// Package names
         #[arg(required = true)]
         packages: Vec<String>,
+        /// Display the plan without executing scripts or prompting
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Execute update scripts
     Update {
         /// Package names
         #[arg(required = true)]
         packages: Vec<String>,
+        /// Display the plan without executing scripts or prompting
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Execute uninstall scripts
     Uninstall {
@@ -242,6 +252,9 @@ pub enum PackageCommands {
         /// Uninstall all installed packages (from state.yml)
         #[arg(long)]
         all: bool,
+        /// Display the plan without executing scripts or prompting
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -262,8 +275,8 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Apply => {
-            if let Err(e) = commands::package::apply(&ctx) {
+        Commands::Apply { dry_run } => {
+            if let Err(e) = commands::package::apply(&ctx, dry_run) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -433,20 +446,24 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Install { packages } => {
-                if let Err(e) = commands::package::install(&ctx, &packages) {
+            PackageCommands::Install { packages, dry_run } => {
+                if let Err(e) = commands::package::install(&ctx, &packages, dry_run) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Update { packages } => {
-                if let Err(e) = commands::package::update(&ctx, &packages) {
+            PackageCommands::Update { packages, dry_run } => {
+                if let Err(e) = commands::package::update(&ctx, &packages, dry_run) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
-            PackageCommands::Uninstall { packages, all } => {
-                if let Err(e) = commands::package::uninstall(&ctx, &packages, all) {
+            PackageCommands::Uninstall {
+                packages,
+                all,
+                dry_run,
+            } => {
+                if let Err(e) = commands::package::uninstall(&ctx, &packages, all, dry_run) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
@@ -1039,6 +1056,83 @@ mod tests {
             assert!(!purge);
         } else {
             panic!("Expected PackageCommands::Remove");
+        }
+    }
+
+    #[test]
+    fn test_apply_dry_run_flag() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply", "--dry-run"]).unwrap();
+
+        // Assert
+        if let Commands::Apply { dry_run } = cli.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Commands::Apply");
+        }
+    }
+
+    #[test]
+    fn test_apply_without_dry_run_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply"]).unwrap();
+
+        // Assert
+        if let Commands::Apply { dry_run } = cli.command {
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Commands::Apply");
+        }
+    }
+
+    #[test]
+    fn test_package_install_dry_run_flag() {
+        // Arrange & Act
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "install", "neovim", "--dry-run"]).unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Install { dry_run, .. },
+        } = cli.command
+        {
+            assert!(dry_run);
+        } else {
+            panic!("Expected PackageCommands::Install");
+        }
+    }
+
+    #[test]
+    fn test_package_update_dry_run_flag() {
+        // Arrange & Act
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "update", "neovim", "--dry-run"]).unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Update { dry_run, .. },
+        } = cli.command
+        {
+            assert!(dry_run);
+        } else {
+            panic!("Expected PackageCommands::Update");
+        }
+    }
+
+    #[test]
+    fn test_package_uninstall_dry_run_flag() {
+        // Arrange & Act
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "uninstall", "neovim", "--dry-run"]).unwrap();
+
+        // Assert
+        if let Commands::Package {
+            command: PackageCommands::Uninstall { dry_run, .. },
+        } = cli.command
+        {
+            assert!(dry_run);
+        } else {
+            panic!("Expected PackageCommands::Uninstall");
         }
     }
 }

@@ -7,12 +7,18 @@ use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-pub fn apply(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
-    apply_to(ctx, &mut std::io::stdin().lock(), &mut std::io::stdout())
+pub fn apply(ctx: &Context, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+    apply_to(
+        ctx,
+        dry_run,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )
 }
 
 pub(crate) fn apply_to<R: BufRead, W: Write>(
     ctx: &Context,
+    dry_run: bool,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -156,6 +162,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
+    if dry_run {
+        return Ok(());
+    }
+
     writeln!(writer)?;
     if !crate::plan::prompt_confirm(reader, writer) {
         writeln!(writer, "Aborted.")?;
@@ -218,21 +228,31 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     Ok(())
 }
 
-pub fn install(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn install(
+    ctx: &Context,
+    packages: &[String],
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     run_action(
         ctx,
         packages,
         Action::Install,
+        dry_run,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
 }
 
-pub fn update(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn update(
+    ctx: &Context,
+    packages: &[String],
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     run_action(
         ctx,
         packages,
         Action::Update,
+        dry_run,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
@@ -242,11 +262,13 @@ pub fn uninstall(
     ctx: &Context,
     packages: &[String],
     all: bool,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     uninstall_to(
         ctx,
         packages,
         all,
+        dry_run,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout(),
     )
@@ -256,6 +278,7 @@ pub(crate) fn uninstall_to<R: BufRead, W: Write>(
     ctx: &Context,
     packages: &[String],
     all: bool,
+    dry_run: bool,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -270,7 +293,14 @@ pub(crate) fn uninstall_to<R: BufRead, W: Write>(
         packages.to_vec()
     };
 
-    run_action(ctx, &resolved_packages, Action::Uninstall, reader, writer)
+    run_action(
+        ctx,
+        &resolved_packages,
+        Action::Uninstall,
+        dry_run,
+        reader,
+        writer,
+    )
 }
 
 /// Execute an action for the given packages, with confirmation prompt.
@@ -279,6 +309,7 @@ pub fn run_action<R: BufRead, W: Write>(
     ctx: &Context,
     packages: &[String],
     action: Action,
+    dry_run: bool,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -334,6 +365,12 @@ pub fn run_action<R: BufRead, W: Write>(
             writeln!(writer)?;
         }
         writeln!(writer, "Nothing to do.")?;
+        return Ok(());
+    }
+
+    if dry_run {
+        let display = plan.display();
+        writeln!(writer, "{display}")?;
         return Ok(());
     }
 
@@ -645,6 +682,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -675,6 +713,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -708,6 +747,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -733,6 +773,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -773,6 +814,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         );
@@ -808,6 +850,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         );
@@ -838,6 +881,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         );
@@ -876,6 +920,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         );
@@ -912,6 +957,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -947,6 +993,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -983,6 +1030,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -1019,6 +1067,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -1051,6 +1100,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1081,6 +1131,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1116,6 +1167,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1150,6 +1202,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1183,6 +1236,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1213,6 +1267,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -1254,6 +1309,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1287,6 +1343,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1316,6 +1373,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         )
@@ -1348,6 +1406,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1395,6 +1454,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "zed".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1433,6 +1493,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "zed".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -1472,6 +1533,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -1516,6 +1578,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -1561,6 +1624,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1600,6 +1664,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -1638,6 +1703,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1676,6 +1742,7 @@ mod tests {
             &ctx,
             &["neovim".to_string(), "ripgrep".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1704,6 +1771,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -1736,6 +1804,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -1769,6 +1838,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         )
@@ -1804,7 +1874,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        super::uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+        super::uninstall_to(&ctx, &[], true, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1822,7 +1892,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        super::uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+        super::uninstall_to(&ctx, &[], true, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1839,7 +1909,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        super::uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+        super::uninstall_to(&ctx, &[], true, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1865,7 +1935,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        super::uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+        super::uninstall_to(&ctx, &[], true, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -1899,6 +1969,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         );
@@ -1932,6 +2003,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         );
@@ -1961,7 +2033,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        super::uninstall_to(&ctx, &[], true, &mut input, &mut output).unwrap();
+        super::uninstall_to(&ctx, &[], true, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2107,6 +2179,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -2152,6 +2225,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -2194,6 +2268,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -2221,6 +2296,7 @@ mod tests {
             &ctx,
             &["a".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -2263,6 +2339,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -2311,6 +2388,7 @@ mod tests {
             &ctx,
             &["c".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -2352,6 +2430,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -2383,6 +2462,7 @@ mod tests {
             &ctx,
             &["a".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -2424,6 +2504,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -2466,6 +2547,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Update,
+            false,
             &mut input,
             &mut output,
         )
@@ -2510,7 +2592,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2535,7 +2617,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2555,7 +2637,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2573,7 +2655,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2592,7 +2674,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2615,7 +2697,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2644,7 +2726,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2665,7 +2747,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let state = State::load(&ctx.state_path()).unwrap();
@@ -2690,7 +2772,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2718,7 +2800,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert: git updated before neovim installed
         let written = String::from_utf8(output).unwrap();
@@ -2746,7 +2828,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert: a before b before c
         let written = String::from_utf8(output).unwrap();
@@ -2776,7 +2858,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert: git updated before neovim
         let written = String::from_utf8(output).unwrap();
@@ -2800,7 +2882,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert: both installed, git first
         let written = String::from_utf8(output).unwrap();
@@ -2832,7 +2914,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert: a before b and c, b and c before d
         let written = String::from_utf8(output).unwrap();
@@ -2864,7 +2946,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2887,7 +2969,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -2916,6 +2998,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -2947,6 +3030,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -2980,7 +3064,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let _ = apply_to(&ctx, &mut input, &mut output);
+        let _ = apply_to(&ctx, false, &mut input, &mut output);
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -3002,7 +3086,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert
         let written = String::from_utf8(output).unwrap();
@@ -3034,6 +3118,7 @@ mod tests {
             &ctx,
             &["neovim".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         );
@@ -3064,7 +3149,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        let _ = apply_to(&ctx, &mut input, &mut output);
+        let _ = apply_to(&ctx, false, &mut input, &mut output);
 
         // Assert: Error details appear before FAILED
         let written = String::from_utf8(output).unwrap();
@@ -3216,6 +3301,7 @@ mod tests {
             &ctx,
             &["git".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3267,6 +3353,7 @@ mod tests {
             &ctx,
             &["git".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3309,6 +3396,7 @@ mod tests {
             &ctx,
             &["a".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3351,6 +3439,7 @@ mod tests {
             &ctx,
             &["git".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3392,6 +3481,7 @@ mod tests {
             &ctx,
             &["git".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3428,6 +3518,7 @@ mod tests {
             &ctx,
             &["a".to_string(), "b".to_string(), "c".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -3454,6 +3545,7 @@ mod tests {
             &ctx,
             &["a".to_string(), "b".to_string()],
             Action::Install,
+            false,
             &mut input,
             &mut output,
         )
@@ -3495,6 +3587,7 @@ mod tests {
             &ctx,
             &["a".to_string(), "b".to_string(), "c".to_string()],
             Action::Uninstall,
+            false,
             &mut input,
             &mut output,
         )
@@ -3526,12 +3619,217 @@ mod tests {
         let mut output = Vec::new();
 
         // Act
-        apply_to(&ctx, &mut input, &mut output).unwrap();
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
 
         // Assert — c should be installed, a and b skipped due to cycle
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("a (circular dependency)"));
         assert!(written.contains("b (circular dependency)"));
         assert!(marker_path.exists(), "c should have been installed");
+    }
+
+    #[test]
+    fn test_run_action_dry_run_install_displays_plan_without_executing() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(written.contains("neovim"));
+        assert!(!written.contains("Proceed?"));
+        assert!(!written.contains("Installing"));
+        assert!(!written.contains("Aborted"));
+        assert!(!marker_path.exists(), "install script must not run");
+    }
+
+    #[test]
+    fn test_run_action_dry_run_update_displays_plan_without_executing() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "update",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            true,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be updated:"));
+        assert!(!written.contains("Proceed?"));
+        assert!(!written.contains("Updating"));
+        assert!(!marker_path.exists(), "update script must not run");
+    }
+
+    #[test]
+    fn test_run_action_dry_run_uninstall_displays_plan_without_executing() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            true,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be uninstalled:"));
+        assert!(!written.contains("Proceed?"));
+        assert!(!written.contains("Uninstalling"));
+        assert!(!marker_path.exists(), "uninstall script must not run");
+        // state.yml must remain unchanged
+        let state_after = State::load(&ctx.state_path()).unwrap();
+        assert!(state_after.installed.contains(&"neovim".to_string()));
+    }
+
+    #[test]
+    fn test_run_action_dry_run_does_not_update_state() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — state.yml should not exist since nothing was installed
+        assert!(
+            !ctx.state_path().exists(),
+            "state.yml must not be created during dry-run"
+        );
+    }
+
+    #[test]
+    fn test_run_action_dry_run_shows_nothing_to_do_for_empty_plan() {
+        // Arrange — package is disabled, so plan is empty
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim:\n    enabled: false\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — empty-plan path still runs; Nothing to do. is shown
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Nothing to do."));
+        assert!(!written.contains("Proceed?"));
+    }
+
+    #[test]
+    fn test_apply_dry_run_displays_plan_without_executing() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(Vec::new());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(written.contains("neovim"));
+        assert!(!written.contains("Proceed?"));
+        assert!(!written.contains("Installing"));
+        assert!(!marker_path.exists(), "install script must not run");
+        assert!(
+            !ctx.state_path().exists(),
+            "state.yml must not be created during dry-run"
+        );
     }
 }

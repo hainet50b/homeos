@@ -57,6 +57,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn test_mod_only_contains_shared_helpers_and_reexports() {
         // Arrange — the module should re-export action functions from action.rs
         // Verify the re-exports are callable through the package module path
@@ -66,14 +67,17 @@ mod tests {
         let _install_fn: fn(
             &crate::context::Context,
             &[String],
+            bool,
         ) -> Result<(), Box<dyn std::error::Error>> = install;
         let _update_fn: fn(
             &crate::context::Context,
             &[String],
+            bool,
         ) -> Result<(), Box<dyn std::error::Error>> = update;
         let _uninstall_fn: fn(
             &crate::context::Context,
             &[String],
+            bool,
             bool,
         ) -> Result<(), Box<dyn std::error::Error>> = uninstall;
 
