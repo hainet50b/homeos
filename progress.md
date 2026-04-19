@@ -3639,3 +3639,47 @@ Added `version` to the `#[command(...)]` attribute on `Cli` in `src/main.rs` so 
 ---
 
 
+---
+
+# Ralph Loop — 2026-04-19T12:52:22Z
+
+## Task: Split `commands/plugin.rs` into `commands/plugin/mod.rs` and submodules
+
+**Timestamp:**
+
+2026-04-19T12:52:22Z
+
+**Why this task:**
+
+First unchecked task in the Tasks section — a standalone refactor with no dependencies on other unchecked work. Mirrors the prior `commands/package/` split so the pattern is already established.
+
+**What was done:**
+
+Replaced the single-file `src/commands/plugin.rs` with a new `src/commands/plugin/` module directory containing:
+
+1. `mod.rs` — declares the two submodules and re-exports the public API (`add`, `list`, `list_remote`, `remove` from `registry`; `cat`, `cd` from `view`).
+
+2. `registry.rs` — contains `list`/`list_to`, the `GitHubSearchResponse`/`GitHubRepo`/`RemotePlugin` structs, `fetch_remote_plugins`/`list_remote`/`list_remote_to`, `check_repo_exists`, `add`/`add_local`/`add_with`, and `remove`/`remove_to`. Tests and fixtures (`fixture`, `fixture_with_config`, `create_local_git_repo`, `create_local_plugin_repo`) are local to this submodule.
+
+3. `view.rs` — contains `cat`/`cat_to`, `cd`/`resolve_cd_target`. Tests and fixtures (`fixture`, `fixture_with_config`) are local to this submodule.
+
+Named the second submodule `view` (parallel to `registry`) since `cat` and `cd` both concern viewing/navigating plugin contents. No behavior changes — functions, signatures, and call sites in `main.rs` are untouched (the public path `commands::plugin::*` is preserved via re-exports).
+
+**What was changed:**
+
+- src/commands/plugin/mod.rs (new — re-exports)
+- src/commands/plugin/registry.rs (new — list/list-remote/add/remove + tests)
+- src/commands/plugin/view.rs (new — cat/cd + tests)
+- src/commands/plugin.rs (deleted)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 491 tests pass (unchanged count — same tests, just redistributed across the two submodules). Clippy shows the same 3 pre-existing `type_complexity` warnings in `commands/package/mod.rs` noted in prior entries; no new warnings introduced by this change.
+- Function ordering within each submodule already matches the README command order (list, list-remote, add, remove, cat, cd), so no reordering was needed. The re-exports in `mod.rs` are alphabetical, consistent with `commands/package/mod.rs`.
+- Test fixture helpers (`fixture`, `fixture_with_config`) are duplicated in both submodules as the task required ("each submodule keeps its own tests and fixtures"). `create_local_git_repo` and `create_local_plugin_repo` live only in `registry.rs` since only `add` tests need them.
+
+---
+
+
