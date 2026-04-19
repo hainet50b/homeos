@@ -3607,3 +3607,35 @@ Created a new `git` module at `src/git.rs` exposing `clone(url: &str, target: &P
 ---
 
 
+---
+
+# Ralph Loop — 2026-04-19T12:46:11Z
+
+## Task: Add `#[command(version)]` attribute to the Cli struct in main.rs
+
+**Timestamp:**
+
+2026-04-19T12:46:11Z
+
+**Why this task:**
+
+Small, self-contained task with no dependencies on other unchecked work. Picked to make focused progress without touching the larger in-flight refactors (plugin.rs split, rename, --dry-run).
+
+**What was done:**
+
+Added `version` to the `#[command(...)]` attribute on `Cli` in `src/main.rs` so clap derives the version from `CARGO_PKG_VERSION`. This enables `homeos --version` and `homeos -V`. Added three unit tests: one asserting `Cli::command().get_version()` equals `env!("CARGO_PKG_VERSION")`, and two asserting that parsing `--version` and `-V` returns `clap::error::ErrorKind::DisplayVersion` (clap's standard short-circuit behavior for version flags). The two flag tests use `match` instead of `unwrap_err` because `Cli` does not implement `Debug`.
+
+**What was changed:**
+
+- src/main.rs (added `version` attribute to Cli `#[command(...)]`, added 3 new tests)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 491 tests pass (3 new tests added). Clippy shows the same 3 pre-existing `type_complexity` warnings in `commands/package/mod.rs` test module noted in the previous progress entry — unchanged by this task.
+- No function or CLI ordering changes needed — only attribute addition.
+
+---
+
+

@@ -20,6 +20,7 @@ mod topo;
 #[derive(Parser)]
 #[command(
     name = "homeos",
+    version,
     about = "Manage application install scripts and configurations across environments"
 )]
 pub struct Cli {
@@ -462,6 +463,44 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_cli_version_matches_cargo_pkg_version() {
+        // Arrange
+        let cmd = Cli::command();
+
+        // Act
+        let version = cmd.get_version();
+
+        // Assert
+        assert_eq!(version, Some(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn test_cli_version_flag_long() {
+        // Arrange & Act
+        let result = Cli::try_parse_from(["homeos", "--version"]);
+
+        // Assert
+        let err = match result {
+            Ok(_) => panic!("expected DisplayVersion error"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn test_cli_version_flag_short() {
+        // Arrange & Act
+        let result = Cli::try_parse_from(["homeos", "-V"]);
+
+        // Assert
+        let err = match result {
+            Ok(_) => panic!("expected DisplayVersion error"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
     }
 
     #[test]
