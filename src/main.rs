@@ -21,7 +21,7 @@ mod topo;
 #[command(
     name = "homeos",
     version,
-    about = "Manage application install scripts and configurations across environments"
+    about = "Manage install scripts in one place, reproducible on any machine"
 )]
 pub struct Cli {
     #[command(subcommand)]

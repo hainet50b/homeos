@@ -2,6 +2,7 @@
 name = "homeos"
 version = "0.1.0"
 edition = "2024"
+description = "Manage install scripts in one place, reproducible on any machine"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
