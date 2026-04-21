@@ -634,12 +634,17 @@ mod tests {
         // Arrange
         let tmp = TempDir::new().unwrap();
         let marker_path = tmp.path().join("marker.txt");
-        let script_path = tmp.path().join("test.sh");
-        std::fs::write(
-            &script_path,
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
-        )
-        .unwrap();
+        let ext = script_extension();
+        let script_path = tmp.path().join(format!("test.{ext}"));
+        let content = if cfg!(windows) {
+            format!(
+                "New-Item -Path '{}' -ItemType File | Out-Null\n",
+                marker_path.display()
+            )
+        } else {
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display())
+        };
+        std::fs::write(&script_path, content).unwrap();
 
         // Act
         execute_script(&script_path).unwrap();
@@ -652,8 +657,14 @@ mod tests {
     fn test_execute_script_returns_error_on_failure() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let script_path = tmp.path().join("fail.sh");
-        std::fs::write(&script_path, "#!/usr/bin/env sh\nexit 1\n").unwrap();
+        let ext = script_extension();
+        let script_path = tmp.path().join(format!("fail.{ext}"));
+        let content = if cfg!(windows) {
+            "exit 1\n".to_string()
+        } else {
+            "#!/usr/bin/env sh\nexit 1\n".to_string()
+        };
+        std::fs::write(&script_path, content).unwrap();
 
         // Act
         let result = execute_script(&script_path);
