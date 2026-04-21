@@ -1,6 +1,7 @@
 # homeos
 
-<!-- TODO: badges (build status, release version, license) -->
+![Build](https://github.com/hainet50b/homeos/actions/workflows/build.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
 
 **Making install script hell feel like *home*.**  
 ⚠️ This project is under active development.
