@@ -18,6 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
       - name: Check formatting
         run: cargo fmt --check
 
