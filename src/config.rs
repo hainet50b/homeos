@@ -12,7 +12,8 @@ pub struct Config {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct PluginConfig {
-    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -471,8 +472,8 @@ plugins:
         // Assert
         assert_eq!(sut.plugins.len(), 1);
         assert_eq!(
-            sut.plugins["dnf"].url,
-            "https://github.com/hainet50b/homeos-plugin-dnf"
+            sut.plugins["dnf"].url.as_deref(),
+            Some("https://github.com/hainet50b/homeos-plugin-dnf")
         );
     }
 
@@ -511,7 +512,7 @@ plugins:
             plugins: BTreeMap::from([(
                 "dnf".to_string(),
                 PluginConfig {
-                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                    url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
                 },
             )]),
         };
@@ -532,7 +533,7 @@ plugins:
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
             },
         );
         let tmp = NamedTempFile::new().unwrap();
@@ -543,9 +544,68 @@ plugins:
 
         // Assert
         assert_eq!(
-            sut.plugins["dnf"].url,
-            "https://github.com/hainet50b/homeos-plugin-dnf"
+            sut.plugins["dnf"].url.as_deref(),
+            Some("https://github.com/hainet50b/homeos-plugin-dnf")
         );
+    }
+
+    #[test]
+    fn test_plugin_config_default_url_is_none() {
+        // Arrange / Act
+        let sut = PluginConfig::default();
+
+        // Assert
+        assert_eq!(sut.url, None);
+    }
+
+    #[test]
+    fn test_parse_plugin_without_url() {
+        // Arrange
+        let yaml = r#"
+packages: {}
+plugins:
+  custom: {}
+"#;
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins.len(), 1);
+        assert_eq!(sut.plugins["custom"].url, None);
+    }
+
+    #[test]
+    fn test_serialize_skips_none_url() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::new(),
+            plugins: BTreeMap::from([("custom".to_string(), PluginConfig { url: None })]),
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(sut.contains("custom"));
+        assert!(!sut.contains("url"));
+    }
+
+    #[test]
+    fn test_save_and_reload_with_local_plugin() {
+        // Arrange
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("custom".to_string(), PluginConfig { url: None });
+        let tmp = NamedTempFile::new().unwrap();
+
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins["custom"].url, None);
     }
 
     #[test]

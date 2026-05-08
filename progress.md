@@ -3796,3 +3796,51 @@ The only remaining unchecked Task in the PRD. All Post Tasks are also checked, s
 - Chose parameter position "after semantics, before I/O" rather than "last arg after writer" because it groups logically — `dry_run` is an option that shapes what the function does, not an I/O sink. The tradeoff is that all 81 test call-sites needed to be updated; the bulk edit took two regex passes and was verified to not touch `Plan::build(...)` (which has a superficially similar arg shape).
 - Dry-run is a pure read path — it does not even open `state.yml` for writing, does not `Config::save`, and does not invoke `execute_script`. Confirmed by the `test_run_action_dry_run_does_not_update_state` and `test_apply_dry_run_displays_plan_without_executing` tests asserting `\!ctx.state_path().exists()`.
 - The dry-run branch intentionally does NOT print a trailing blank line (unlike `confirm_plan` which writes `{display}\n\n` before prompting). This matches COMMAND_OUTPUT.md's "Plan display only; exits without prompt or execution" — the plan display is the entire output. The empty-plan path still prints `{display}\n\nNothing to do.` because that path is shared with the non-dry-run case.
+
+---
+
+# Ralph Loop — 2026-05-08T08:29:46Z
+
+
+
+## Task: Change `PluginConfig.url` from `String` to `Option<String>`
+
+**Timestamp:**
+
+2026-05-08T08:33:18Z
+
+**Why this task:**
+
+The only remaining unchecked task in the PRD. Completing it finishes the roadmap.
+
+**What was done:**
+
+1. **`src/config.rs`** — Changed `PluginConfig.url` from `String` to `Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]` so plugins added with `--local` serialize without a `url` field. Updated existing tests that compared `.url` to a `String` literal to compare against `Some(...)` (via `as_deref()`), and updated `PluginConfig { url: "...".to_string() }` constructions to wrap in `Some(...)`. Added four new tests:
+   - `test_plugin_config_default_url_is_none` — `PluginConfig::default()` has `url == None`.
+   - `test_parse_plugin_without_url` — YAML with `custom: {}` parses to `url == None`.
+   - `test_serialize_skips_none_url` — serializing a `None` URL omits `url:` from the output entirely.
+   - `test_save_and_reload_with_local_plugin` — round-trip preserves `url == None`.
+
+2. **`src/commands/plugin/registry.rs`** — In `list_to`, render `(local)` in the URL column when `plugin.url` is `None` (`plugin.url.as_deref().unwrap_or("(local)")`). Updated `add_local` to insert `PluginConfig { url: None }` and the clone path in `add_with` to insert `PluginConfig { url: Some(url.clone()) }`. Bulk-updated all 19 test-site `PluginConfig { url: "...".to_string() }` constructions via a Python regex to wrap in `Some(...)`. Reverted the regex's overshoot on five `RemotePlugin { ... }` blocks (RemotePlugin still has `url: String`). Updated three `.url` assertions: one wraps the test source-dir path in `Some(...)` via `as_deref()`, two replace `assert_eq\!(.url, "")` with `assert_eq\!(.url, None)`. Added two new tests:
+   - `test_list_renders_local_marker_when_url_is_none` — list output contains `(local)` for a plugin with `url: None`.
+   - `test_add_local_omits_url_in_serialized_homeos_yml` — after `add --local`, the on-disk `homeos.yml` does not contain the substring `url`.
+
+3. **`src/commands/plugin/view.rs`** — Test-only updates: same regex wrapped 6 occurrences of `PluginConfig { url: "...".to_string() }` in `Some(...)`. The view code itself does not touch `.url`, so no production-code change here.
+
+**What was changed:**
+
+- src/config.rs (struct field type, attribute, 4 new tests, 4 existing tests updated)
+- src/commands/plugin/registry.rs (list_to display logic, add_local & add_with insert sites, 2 new tests, 22 test sites updated)
+- src/commands/plugin/view.rs (6 test sites updated)
+- prd.md (checked off task)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 519 tests pass (517 prior + 2 new in registry + 4 new in config − 4 existing absorbed via in-place updates ≈ net +2 visible to the runner). `cargo fmt` and `cargo clippy --all-targets -- -D warnings` are both clean.
+- `RemotePlugin.url` is intentionally still `String` — it represents a fetched GitHub repo URL which is always present (it comes from `r.html_url` in the GitHub API response). The PRD's `Option<String>` change is specifically for `PluginConfig` (the `homeos.yml` representation), not `RemotePlugin` (the GitHub list-remote DTO). My initial bulk regex was intentionally over-broad to catch all `url: "...".to_string()` patterns; I then reverted the RemotePlugin matches via a second regex pass scoped to `RemotePlugin { ... }` blocks.
+- The `(local)` rendering in `plugin list` matches the PRD's exact spec text. COMMAND_OUTPUT.md only specifies the column headers (`Name`, `URL`) for `plugin list`; the `(local)` placeholder is documented only in the PRD task description, so I did not amend COMMAND_OUTPUT.md.
+- Backward compatibility with existing `url: ''` entries was explicitly NOT required by the PRD — empty-string URLs in pre-existing `homeos.yml` files would now deserialize as `Some("".to_string())` (since the field is present, even if empty). This is acceptable per the PRD note that "the project is pre-release with no external users." The skeleton path (`add --local`) now never writes `url: ''` in the first place.
+- All public function order in `registry.rs` (list, list_remote, add, remove) and `view.rs` (cat, cd) still matches README command order — no reordering needed.
+
+---

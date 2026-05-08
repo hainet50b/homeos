@@ -113,7 +113,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
@@ -172,7 +172,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
@@ -198,7 +198,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
@@ -227,7 +227,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
@@ -286,7 +286,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
@@ -338,7 +338,7 @@ mod tests {
         config.plugins.insert(
             "dnf".to_string(),
             PluginConfig {
-                url: "https://example.com".to_string(),
+                url: Some("https://example.com".to_string()),
             },
         );
         config.save(&ctx.config_path()).unwrap();
