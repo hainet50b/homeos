@@ -190,7 +190,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Any | stdout | Table: `Name`, `URL` columns (empty table if no plugins) |
+| Any | stdout | Table: `Name`, `URL` columns (empty table if no plugins). `URL` shows `(local)` when the plugin has no remote URL. |
 
 ## homeos plugin list-remote
 
