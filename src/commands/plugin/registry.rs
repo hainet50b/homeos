@@ -50,12 +50,13 @@ pub struct RemotePlugin {
 }
 
 fn fetch_remote_plugins() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
-    let response: GitHubSearchResponse = client
-        .get("https://api.github.com/search/repositories?q=homeos-plugin-+in:name+user:hainet50b")
-        .header("User-Agent", "homeos")
-        .send()?
-        .json()?;
+    let response: GitHubSearchResponse = ureq::get(
+        "https://api.github.com/search/repositories?q=homeos-plugin-+in:name+user:hainet50b",
+    )
+    .header("User-Agent", "homeos")
+    .call()?
+    .body_mut()
+    .read_json()?;
 
     let plugins = response
         .items
@@ -131,18 +132,15 @@ fn check_repo_exists(plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
         "https://api.github.com/repos/hainet50b/homeos-plugin-{}",
         plugin
     );
-    let client = reqwest::blocking::Client::new();
-    let response = client.get(&api_url).header("User-Agent", "homeos").send()?;
-
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err(format!(
+    match ureq::get(&api_url).header("User-Agent", "homeos").call() {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::StatusCode(404)) => Err(format!(
             "Plugin '{}' not found on GitHub (homeos-plugin-{})",
             plugin, plugin
         )
-        .into());
+        .into()),
+        Err(e) => Err(e.into()),
     }
-
-    Ok(())
 }
 
 pub fn add(

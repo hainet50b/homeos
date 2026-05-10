@@ -10,7 +10,7 @@ See `README.md` for the full specification of commands, directory structure, and
 - Rust (latest stable)
 - clap (CLI argument parsing)
 - serde / yaml_serde (configuration parsing)
-- reqwest with `blocking` feature (HTTP client for GitHub API)
+- ureq (HTTP client for GitHub API)
 - dirs (OS-appropriate data directory resolution)
 
 ## Data Model
@@ -203,7 +203,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Implement `homeos package rename <old> <new>` — rename the package directory on disk and update the entry key in `homeos.yml`. Update `state.yml` if the package is installed. Update any `depends_on` references in other packages to point to the new name. Error if a package with the new name already exists.
 - [x] Add `--dry-run` flag to `homeos apply`, `homeos package install`, `homeos package update`, and `homeos package uninstall`. When set, display the plan and exit successfully without prompting for confirmation or executing scripts. This supports automation and AI agent workflows where non-interactive plan inspection is required.
 - [x] Change `PluginConfig.url` from `String` to `Option<String>`. Plugins created via `plugin add --local` must be serialized without a `url` field in `homeos.yml` (no `url: ''`). Use `#[serde(skip_serializing_if = "Option::is_none")]` so `None` is omitted on write. Backward compatibility with existing `url: ''` entries is explicitly NOT required — the project is pre-release with no external users, so the cleanest representation takes precedence. Update all consumers (clone logic in `plugin add`, plugin lookup, `plugin list` display) to handle `Option<String>`. In `plugin list`, render `(local)` in the URL column when the URL is `None`. Update tests accordingly.
-- [ ] Replace `reqwest` with `ureq` as the HTTP client. Update `Cargo.toml` (remove `reqwest`, add `ureq` with the `json` feature) and migrate the two call sites in `homeos plugin list-remote` (GitHub Search API fetch) and `homeos plugin add` (URL existence check) to use ureq's synchronous API. Update the Tech Stack section of this PRD to reference ureq instead of reqwest. Update tests accordingly.
+- [x] Replace `reqwest` with `ureq` as the HTTP client. Update `Cargo.toml` (remove `reqwest`, add `ureq` with the `json` feature) and migrate the two call sites in `homeos plugin list-remote` (GitHub Search API fetch) and `homeos plugin add` (URL existence check) to use ureq's synchronous API. Update the Tech Stack section of this PRD to reference ureq instead of reqwest. Update tests accordingly.
 
 ## Completion Criteria
 
