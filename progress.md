@@ -3918,3 +3918,45 @@ The only remaining unchecked task in the PRD. Completing it finishes the roadmap
 - All Tasks and Post Tasks in the PRD are now checked. The Completion Criteria are satisfied: every task is checked off, `cargo clippy` produces no warnings, `cargo test` passes with no failures.
 
 ---
+
+---
+
+# Ralph Loop — 2026-05-11T08:47:35Z
+
+## Task: Change `Context::new` to use `dirs::data_local_dir()` instead of `dirs::data_dir()`
+
+**Timestamp:**
+
+2026-05-11T08:48:36Z
+
+**Why this task:**
+
+The only remaining unchecked task in the PRD. All other Tasks and Post Tasks were already complete, so this finishes the roadmap.
+
+**What was done:**
+
+1. **`src/context.rs:11`** — Changed the default base-directory resolution in `Context::new` from `dirs::data_dir()` to `dirs::data_local_dir()`. The `.expect("could not determine data directory")` message stayed the same — the `dirs` crate's failure semantics are identical between the two functions (both return `Option<PathBuf>`, both can only fail when the underlying OS environment variable is unset), so the error wording remains accurate.
+
+2. **`src/context.rs:213`** — Updated the `test_default_base_dir` test's `expected` value to use `dirs::data_local_dir()` as well, so the assertion compares against the same function the production code now calls. The test still follows the 3A pattern (Arrange: build `expected`; Act: `Context::new(None, "default".to_string())`; Assert: `assert_eq!(sut.base_dir, expected)`).
+
+3. **`prd.md:59`** — Updated the Data Model section's prose: `Base directory is resolved by the dirs crate (data_dir())` → `(data_local_dir())`. Did NOT change the `<data_dir>` angle-bracket placeholder in the directory tree on line 62 — that is a generic name for "the resolved base directory," not a reference to the API call, and the PRD task only asks to swap the function name reference.
+
+**Why this matters (preserved from PRD context):** On Windows, `data_dir()` resolves to `%APPDATA%` (the Roaming directory, which is synced across machines for the same user account by Windows account roaming), while `data_local_dir()` resolves to `%LOCALAPPDATA%` (machine-local, not synced). Since homeos stores machine-specific data (`state.yml` tracks which packages are installed on *this* machine; cloned plugins under `plugins/` are machine-local clones), roaming would cause incorrect cross-machine sync of state. On Linux and macOS, `data_dir()` and `data_local_dir()` return the same path (`$XDG_DATA_HOME` / `~/.local/share` on Linux, `~/Library/Application Support` on macOS), so behavior is unchanged.
+
+**What was changed:**
+
+- src/context.rs (production: line 11; test: line 213)
+- prd.md (Data Model section line 59; task checked off line 207)
+- progress.md (added this entry)
+
+**Remarks:**
+
+- All 519 tests pass. `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- No new tests added. The PRD task explicitly directs to update the existing `test_default_base_dir` test (which is the only test that exercises the default-base-dir code path); adding a redundant test would duplicate the same assertion. The non-default branch is already covered by the other 9 tests in `tests` that pass `Some(...)` for `base_dir`.
+- Function order in `Context` (`new`, `repos_dir`, `repo_dir`, `packages_dir`, `config_path`, `state_path`, `plugins_dir`, `gitignore_path`) is unchanged. No README ordering implications since `Context` is an internal struct, not a CLI command surface.
+- This is a Windows-correctness fix that cannot be verified locally on Linux (the platform on which this Ralph Loop runs) — both `data_dir()` and `data_local_dir()` resolve to `$XDG_DATA_HOME` / `~/.local/share`, so the test output is identical to before. On Windows it now resolves to `%LOCALAPPDATA%\homeos` instead of `%APPDATA%\homeos`, matching the README's documented base-directory table.
+- All Tasks and Post Tasks in the PRD are now checked. Completion Criteria are satisfied: every task is checked off, `cargo clippy` produces no warnings, `cargo test` passes with no failures.
+
+---
+
+

@@ -56,7 +56,7 @@ Tests create temporary scripts that output a known marker string to stdout. Capt
 
 ### Directory structure (created by `homeos init`)
 
-Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/share/homeos` on Linux, `%LOCALAPPDATA%/homeos` on Windows.
+Base directory is resolved by the `dirs` crate (`data_local_dir()`), e.g., `~/.local/share/homeos` on Linux, `%LOCALAPPDATA%/homeos` on Windows.
 
 ```
 <data_dir>/homeos/
@@ -204,7 +204,7 @@ Base directory is resolved by the `dirs` crate (`data_dir()`), e.g., `~/.local/s
 - [x] Add `--dry-run` flag to `homeos apply`, `homeos package install`, `homeos package update`, and `homeos package uninstall`. When set, display the plan and exit successfully without prompting for confirmation or executing scripts. This supports automation and AI agent workflows where non-interactive plan inspection is required.
 - [x] Change `PluginConfig.url` from `String` to `Option<String>`. Plugins created via `plugin add --local` must be serialized without a `url` field in `homeos.yml` (no `url: ''`). Use `#[serde(skip_serializing_if = "Option::is_none")]` so `None` is omitted on write. Backward compatibility with existing `url: ''` entries is explicitly NOT required — the project is pre-release with no external users, so the cleanest representation takes precedence. Update all consumers (clone logic in `plugin add`, plugin lookup, `plugin list` display) to handle `Option<String>`. In `plugin list`, render `(local)` in the URL column when the URL is `None`. Update tests accordingly.
 - [x] Replace `reqwest` with `ureq` as the HTTP client. Update `Cargo.toml` (remove `reqwest`, add `ureq` with the `json` feature) and migrate the two call sites in `homeos plugin list-remote` (GitHub Search API fetch) and `homeos plugin add` (URL existence check) to use ureq's synchronous API. Update the Tech Stack section of this PRD to reference ureq instead of reqwest. Update tests accordingly.
-- [ ] Change `Context::new` in `src/context.rs` to use `dirs::data_local_dir()` instead of `dirs::data_dir()`. On Windows this resolves the base directory to `%LOCALAPPDATA%\homeos` (matching the README spec) instead of the current `%APPDATA%\homeos` (which is the Roaming directory and would incorrectly sync machine-specific `state.yml` and plugin clones across machines via Windows account roaming). On Linux and macOS the behavior is unchanged because `data_dir()` and `data_local_dir()` return the same path. Update the test at `src/context.rs:213` (and any other test that references `dirs::data_dir()`) to use `data_local_dir()`. Also update the Data Model section of this PRD to say `data_local_dir()` instead of `data_dir()`.
+- [x] Change `Context::new` in `src/context.rs` to use `dirs::data_local_dir()` instead of `dirs::data_dir()`. On Windows this resolves the base directory to `%LOCALAPPDATA%\homeos` (matching the README spec) instead of the current `%APPDATA%\homeos` (which is the Roaming directory and would incorrectly sync machine-specific `state.yml` and plugin clones across machines via Windows account roaming). On Linux and macOS the behavior is unchanged because `data_dir()` and `data_local_dir()` return the same path. Update the test at `src/context.rs:213` (and any other test that references `dirs::data_dir()`) to use `data_local_dir()`. Also update the Data Model section of this PRD to say `data_local_dir()` instead of `data_dir()`.
 
 ## Completion Criteria
 

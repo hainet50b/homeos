@@ -8,7 +8,7 @@ pub struct Context {
 impl Context {
     pub fn new(base_dir: Option<PathBuf>, repo: String) -> Self {
         let base_dir = base_dir.unwrap_or_else(|| {
-            dirs::data_dir()
+            dirs::data_local_dir()
                 .expect("could not determine data directory")
                 .join("homeos")
         });
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn test_default_base_dir() {
         // Arrange
-        let expected = dirs::data_dir().unwrap().join("homeos");
+        let expected = dirs::data_local_dir().unwrap().join("homeos");
 
         // Act
         let sut = Context::new(None, "default".to_string());
