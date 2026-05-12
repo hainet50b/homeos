@@ -1,5 +1,5 @@
 use crate::config::{Config, PackageConfig};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -57,6 +57,9 @@ pub struct Plan {
     pub not_installed: Vec<String>,
     /// Packages involved in a circular dependency (skipped).
     pub circular_dependency: Vec<String>,
+    /// Packages skipped because a dependency is disabled (directly or transitively).
+    /// Maps package name to the most direct unavailable dependency name.
+    pub dependency_disabled: BTreeMap<String, String>,
     /// Warnings per package (e.g., unmodified skeleton scripts).
     pub warnings: BTreeMap<String, Vec<String>>,
     /// Plugin name per package (only for packages that use a plugin).
@@ -120,12 +123,38 @@ impl Plan {
             }
         }
 
+        // For Install, propagate disabled status: any enabled package whose dependency
+        // chain includes a disabled package is reclassified as skipped with
+        // "dependency disabled: <name>" annotation, where <name> is the most direct
+        // unavailable dependency.
+        let mut dependency_disabled: BTreeMap<String, String> = BTreeMap::new();
+        if action == Action::Install && !enabled.is_empty() {
+            let unavailable = compute_unavailable_packages(config);
+            let mut still_enabled: Vec<String> = Vec::new();
+            for name in std::mem::take(&mut enabled) {
+                let pkg = &config.packages[&name];
+                let mut unavailable_direct_deps: Vec<&String> = pkg
+                    .depends_on
+                    .iter()
+                    .filter(|d| unavailable.contains(d.as_str()))
+                    .collect();
+                if unavailable_direct_deps.is_empty() {
+                    still_enabled.push(name);
+                } else {
+                    unavailable_direct_deps.sort();
+                    dependency_disabled.insert(name, unavailable_direct_deps[0].clone());
+                }
+            }
+            enabled = still_enabled;
+        }
+
         let mut plugins: BTreeMap<String, String> = BTreeMap::new();
         for name in enabled
             .iter()
             .chain(disabled.iter())
             .chain(already_installed.iter())
             .chain(not_installed.iter())
+            .chain(dependency_disabled.keys())
         {
             if let Some(pkg) = config.packages.get(name)
                 && let Some(ref plugin_name) = pkg.plugin
@@ -159,6 +188,7 @@ impl Plan {
             already_installed,
             not_installed,
             circular_dependency: Vec::new(),
+            dependency_disabled,
             warnings,
             plugins,
             notes: BTreeMap::new(),
@@ -226,6 +256,16 @@ impl Plan {
                 .unwrap_or_default();
             skipped.push(format!("  {name} (circular dependency{plugin_suffix})"));
         }
+        for (name, blamed) in &self.dependency_disabled {
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!(
+                "  {name} (dependency disabled: {blamed}{plugin_suffix})"
+            ));
+        }
         if !skipped.is_empty() {
             lines.push("The following packages will be skipped:".to_string());
             lines.extend(skipped);
@@ -238,6 +278,41 @@ impl Plan {
     pub fn is_empty(&self) -> bool {
         self.enabled.is_empty()
     }
+}
+
+/// Compute the set of packages that are unavailable for install, i.e. disabled
+/// directly OR transitively reachable from a disabled package via the reverse
+/// dependency graph. Used by `Plan::build` to propagate disabled status to dependents.
+fn compute_unavailable_packages(config: &Config) -> HashSet<String> {
+    let mut reverse_graph: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (name, pkg) in &config.packages {
+        for dep in &pkg.depends_on {
+            reverse_graph
+                .entry(dep.as_str())
+                .or_default()
+                .push(name.as_str());
+        }
+    }
+
+    let mut unavailable: HashSet<String> = config
+        .packages
+        .iter()
+        .filter(|(_, pkg)| !pkg.enabled)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let mut queue: VecDeque<String> = unavailable.iter().cloned().collect();
+    while let Some(name) = queue.pop_front() {
+        if let Some(dependents) = reverse_graph.get(name.as_str()) {
+            for &dependent in dependents {
+                if unavailable.insert(dependent.to_string()) {
+                    queue.push_back(dependent.to_string());
+                }
+            }
+        }
+    }
+
+    unavailable
 }
 
 /// Resolve the script filename for a given action, considering aliases.
@@ -374,6 +449,7 @@ mod tests {
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -402,6 +478,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -427,6 +504,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -449,6 +527,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -537,6 +616,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -566,6 +646,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -585,6 +666,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -642,6 +724,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -733,6 +816,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -758,6 +842,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -786,6 +871,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -809,6 +895,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec!["ripgrep".to_string()],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1201,6 +1288,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings,
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1257,6 +1345,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1282,6 +1371,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1307,6 +1397,7 @@ The following packages will be skipped:
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1332,6 +1423,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1362,6 +1454,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings,
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1384,6 +1477,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1472,6 +1566,7 @@ The following packages will be installed:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
@@ -1503,6 +1598,7 @@ The following packages will be uninstalled:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
             warnings,
             plugins: BTreeMap::from([("editor".to_string(), "dnf".to_string())]),
             notes: BTreeMap::from([("editor".to_string(), "depends on git".to_string())]),
@@ -1530,6 +1626,7 @@ The following packages will be uninstalled:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string(), "b".to_string()],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1558,6 +1655,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string(), "b".to_string()],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::new(),
             notes: BTreeMap::new(),
@@ -1584,6 +1682,7 @@ The following packages will be skipped:
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string()],
+            dependency_disabled: BTreeMap::new(),
             warnings: BTreeMap::new(),
             plugins: BTreeMap::from([("a".to_string(), "dnf".to_string())]),
             notes: BTreeMap::new(),
@@ -1597,5 +1696,245 @@ The following packages will be skipped:
             sut,
             "The following packages will be skipped:\n  a (circular dependency, plugin: dnf)"
         );
+    }
+
+    // --- Dependency-disabled propagation tests ---
+
+    fn fixture_config_with_deps(packages: Vec<(&str, bool, Vec<&str>)>) -> Config {
+        let mut map = BTreeMap::new();
+        for (name, enabled, deps) in packages {
+            map.insert(
+                name.to_string(),
+                PackageConfig {
+                    enabled,
+                    depends_on: deps.into_iter().map(String::from).collect(),
+                    ..Default::default()
+                },
+            );
+        }
+        Config {
+            packages: map,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_build_propagates_disabled_dep_directly() {
+        // Arrange — A enabled depends on B disabled
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", false, vec![])]);
+        let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert — a moved out of enabled into dependency_disabled blaming b
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["b"]);
+        assert_eq!(sut.dependency_disabled.get("a"), Some(&"b".to_string()));
+    }
+
+    #[test]
+    fn test_build_propagates_disabled_dep_transitively_blames_direct() {
+        // Arrange — A → B → C, C disabled
+        let config = fixture_config_with_deps(vec![
+            ("a", true, vec!["b"]),
+            ("b", true, vec!["c"]),
+            ("c", false, vec![]),
+        ]);
+        let packages: Vec<String> = vec!["a", "b", "c"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert — each blames its most direct unavailable dep
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.disabled, vec!["c"]);
+        assert_eq!(sut.dependency_disabled.get("a"), Some(&"b".to_string()));
+        assert_eq!(sut.dependency_disabled.get("b"), Some(&"c".to_string()));
+    }
+
+    #[test]
+    fn test_build_picks_alphabetically_first_unavailable_direct_dep() {
+        // Arrange — A depends on [b, c, d]; b enabled, c disabled, d disabled
+        let config = fixture_config_with_deps(vec![
+            ("a", true, vec!["b", "c", "d"]),
+            ("b", true, vec![]),
+            ("c", false, vec![]),
+            ("d", false, vec![]),
+        ]);
+        let packages: Vec<String> = vec!["a"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert — alphabetically first of unavailable deps (c, d) is c
+        assert_eq!(sut.dependency_disabled.get("a"), Some(&"c".to_string()));
+    }
+
+    #[test]
+    fn test_build_does_not_propagate_for_update_action() {
+        // Arrange — A enabled depends on B disabled; both in state
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", false, vec![])]);
+        let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
+        let installed = vec!["a".to_string(), "b".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Update, &installed, None).unwrap();
+
+        // Assert — update is unaffected; a runs, b skipped as disabled
+        assert_eq!(sut.enabled, vec!["a"]);
+        assert_eq!(sut.disabled, vec!["b"]);
+        assert!(sut.dependency_disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_does_not_propagate_for_uninstall_action() {
+        // Arrange — A enabled depends on B disabled; both in state
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", false, vec![])]);
+        let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
+        let installed = vec!["a".to_string(), "b".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Uninstall, &installed, None).unwrap();
+
+        // Assert — uninstall ignores disabled and does not propagate
+        assert_eq!(sut.enabled, vec!["a", "b"]);
+        assert!(sut.dependency_disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_does_not_propagate_when_no_disabled_deps() {
+        // Arrange — A enabled depends on B enabled
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", true, vec![])]);
+        let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["a", "b"]);
+        assert!(sut.dependency_disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_propagates_when_disabled_dep_outside_input_list() {
+        // Arrange — A enabled depends on B disabled; only A is in the input list
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", false, vec![])]);
+        let packages: Vec<String> = vec!["a"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert — propagation reads from config, not just the input list
+        assert!(sut.enabled.is_empty());
+        assert!(sut.disabled.is_empty());
+        assert_eq!(sut.dependency_disabled.get("a"), Some(&"b".to_string()));
+    }
+
+    #[test]
+    fn test_build_handles_cycle_without_disabled_dep() {
+        // Arrange — A ↔ B cycle, both enabled, no disabled deps
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", true, vec!["a"])]);
+        let packages: Vec<String> = vec!["a", "b"].into_iter().map(String::from).collect();
+
+        // Act — must not loop forever
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert — neither classified as dependency_disabled
+        assert!(sut.dependency_disabled.is_empty());
+    }
+
+    #[test]
+    fn test_display_shows_dependency_disabled_in_skipped() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["zed".to_string()],
+            disabled: vec!["b".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::from([("a".to_string(), "b".to_string())]),
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be installed:
+  zed
+The following packages will be skipped:
+  b (disabled)
+  a (dependency disabled: b)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_only_dependency_disabled_when_all_skipped() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::from([("a".to_string(), "b".to_string())]),
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        let expected = "\
+The following packages will be skipped:
+  a (dependency disabled: b)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_dependency_disabled_with_plugin() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::from([("a".to_string(), "b".to_string())]),
+            warnings: BTreeMap::new(),
+            plugins: BTreeMap::from([("a".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display();
+
+        // Assert
+        assert_eq!(
+            sut,
+            "The following packages will be skipped:\n  a (dependency disabled: b, plugin: dnf)"
+        );
+    }
+
+    #[test]
+    fn test_is_empty_when_all_dependency_disabled() {
+        // Arrange — A is classified as dependency_disabled, no enabled packages
+        let config = fixture_config_with_deps(vec![("a", true, vec!["b"]), ("b", false, vec![])]);
+        let packages: Vec<String> = vec!["a"].into_iter().map(String::from).collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert!(sut.is_empty());
     }
 }

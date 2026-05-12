@@ -290,6 +290,7 @@ The following packages will be skipped:
   {name} (already installed)
   {name} (not installed)
   {name} (circular dependency)
+  {name} (dependency disabled: {dep})    # install/apply only — dep chain includes a disabled package
 
 Proceed? [y/N]
 ```
@@ -301,6 +302,7 @@ The following packages will be skipped:
   {name} (disabled)
   {name} (already installed)
   {name} (circular dependency)
+  {name} (dependency disabled: {dep})
 
 Nothing to do.
 ```

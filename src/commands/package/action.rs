@@ -4145,4 +4145,125 @@ mod tests {
             "state.yml must not be created during dry-run"
         );
     }
+
+    #[test]
+    fn test_install_skips_package_with_disabled_direct_dependency() {
+        // Arrange — neovim (enabled) depends on git (disabled)
+        let marker_dir = TempDir::new().unwrap();
+        let neovim_marker = marker_dir.path().join("neovim_should_not_run");
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on: [git]\n  git:\n    enabled: false\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — neovim is in the skipped section with "dependency disabled: git"
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("neovim (dependency disabled: git)"));
+        assert!(written.contains("git (disabled)"));
+        assert!(written.contains("Nothing to do."));
+        assert!(!written.contains("Installing neovim"));
+        assert!(!neovim_marker.exists());
+    }
+
+    #[test]
+    fn test_install_propagates_disabled_dep_transitively() {
+        // Arrange — neovim (enabled) → git (enabled) → curl (disabled)
+        let marker_dir = TempDir::new().unwrap();
+        let neovim_marker = marker_dir.path().join("neovim_should_not_run");
+        let git_marker = marker_dir.path().join("git_should_not_run");
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    depends_on: [git]\n  git:\n    depends_on: [curl]\n  curl:\n    enabled: false\n",
+        );
+        let ext = script_extension();
+        for (name, marker) in [("neovim", &neovim_marker), ("git", &git_marker)] {
+            let pkg_dir = ctx.packages_dir().join(name);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            std::fs::write(
+                pkg_dir.join(format!("install.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker.display()),
+            )
+            .unwrap();
+        }
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — each blames its most direct unavailable dep
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("neovim (dependency disabled: git)"));
+        assert!(written.contains("git (dependency disabled: curl)"));
+        assert!(written.contains("curl (disabled)"));
+        assert!(!neovim_marker.exists());
+        assert!(!git_marker.exists());
+    }
+
+    #[test]
+    fn test_update_unaffected_by_disabled_dependency() {
+        // Arrange — neovim (enabled, in state) depends on git (disabled, in state)
+        let marker_dir = TempDir::new().unwrap();
+        let neovim_marker = marker_dir.path().join("neovim_update_marker");
+        let (_tmp, ctx) =
+            fixture("packages:\n  neovim:\n    depends_on: [git]\n  git:\n    enabled: false\n");
+        State {
+            installed: vec!["neovim".to_string(), "git".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("update.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Update,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — neovim runs the update; git is shown as disabled but not blamed
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Updating neovim...\ndone"));
+        assert!(!written.contains("dependency disabled"));
+        assert!(neovim_marker.exists());
+    }
 }

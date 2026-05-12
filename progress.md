@@ -4069,3 +4069,76 @@ This is the next unchecked task in PRD order after task 208 (which I completed i
 
 
 
+
+## Task: Propagate disabled dependency to dependents in install plans
+
+**Timestamp:**
+
+2026-05-12T09:39:26Z
+
+**Why this task:**
+
+PRD task 210 is one of two remaining unchecked tasks (210 and 211). Task 210 is more substantial (a real propagation rule that changes plan classification semantics), while task 211 is a narrower output cleanup that depends on `apply_to`'s shape — doing 210 first means 211 can be tackled against the final propagation behavior rather than a moving target. The previous Ralph Loop entry (task 209) explicitly flagged 210 and 211 as the remaining work.
+
+**What was done:**
+
+1. **New `Plan` field `dependency_disabled: BTreeMap<String, String>` (src/plan.rs:60-62)** — Maps a package name to its most direct unavailable dependency (the "blame"). Placed between `circular_dependency` (the previous skip-classification) and `warnings` (metadata), keeping classification fields grouped.
+
+2. **Propagation pass in `Plan::build` (src/plan.rs:127-149)** — After the initial enabled/disabled/already_installed/not_installed classification, if `action == Action::Install`, compute the set of unavailable packages via the new helper `compute_unavailable_packages(config)`, then for each name in the (still-)`enabled` list:
+   - Collect that package's direct `depends_on` that are in the unavailable set.
+   - If non-empty, sort alphabetically, take the first, and move the package from `enabled` into `dependency_disabled` keyed to that blame.
+   The propagation is keyed off `Action::Install` only — `Update` and `Uninstall` paths leave `dependency_disabled` empty by construction. Iteration uses `std::mem::take(&mut enabled)` to consume the previous `enabled` vec without cloning.
+
+3. **`compute_unavailable_packages` helper (src/plan.rs:267-296)** — A BFS from all directly-disabled packages through the reverse-dependency graph (`dep → packages that depend on it`). Returns a `HashSet<String>` of every package that is disabled directly OR transitively reachable from a disabled package via reverse deps. The BFS form handles cycles correctly (the `HashSet::insert` returns false on re-visit, so we don't enqueue duplicates). Lives next to `resolve_script_name` since both are private helpers used by `Plan::build`.
+
+4. **`Plan::display` rendering (src/plan.rs:215-224)** — Added a section after `circular_dependency` that renders each `dependency_disabled` entry as `  {name} (dependency disabled: {blamed}{plugin_suffix})`. The plugin suffix follows the same pattern as the other skipped rows.
+
+5. **Plugin lookup updated to include dependency_disabled (src/plan.rs:151-157)** — The plugin-map population loop now chains `dependency_disabled.keys()` so a propagation-skipped package that uses a plugin still gets its plugin name attached for display.
+
+6. **COMMAND_OUTPUT.md Plan Display section (lines 281-307)** — Added `{name} (dependency disabled: {dep})` to both the with-execution and all-skipped variants of the skipped list, with the comment `# install/apply only — dep chain includes a disabled package` to clarify the scope. The annotation slots in naturally alongside the existing `(circular dependency)` annotation.
+
+7. **24 existing `Plan { ... }` test literals updated (src/plan.rs)** — Every test that constructs a `Plan` literal now includes `dependency_disabled: BTreeMap::new(),` between `circular_dependency` and `warnings`. Done via three `replace_all` edits covering the three observed patterns (`circular_dependency: vec\![],\n warnings: BTreeMap::new(),`, `circular_dependency: vec\![],\n warnings,`, and `circular_dependency: vec\!["a"...],\n warnings: BTreeMap::new(),`). The production `Plan::build` constructor was handled separately in step 2's diff.
+
+8. **12 new unit tests in src/plan.rs (lines 1697-1923):**
+   - `test_build_propagates_disabled_dep_directly` — A enabled → B disabled, both in input: A moves to `dependency_disabled[a] = "b"`, B stays in `disabled`.
+   - `test_build_propagates_disabled_dep_transitively_blames_direct` — A → B → C, C disabled: A blames B, B blames C (pins "most direct" semantics).
+   - `test_build_picks_alphabetically_first_unavailable_direct_dep` — A → [b, c, d] with c,d disabled and b enabled: A blames c (alphabetically first of the unavailable subset).
+   - `test_build_does_not_propagate_for_update_action` — Update path leaves `dependency_disabled` empty; disabled deps still show as `disabled` but don't propagate.
+   - `test_build_does_not_propagate_for_uninstall_action` — Uninstall ignores disabled and doesn't propagate (disabled package still enters `enabled` if in state).
+   - `test_build_does_not_propagate_when_no_disabled_deps` — Baseline: A → B with both enabled, neither is propagation-skipped.
+   - `test_build_propagates_when_disabled_dep_outside_input_list` — A is the only package in the input but config has B disabled; A still blames B because `compute_unavailable_packages` walks `config`, not the input list. This is critical for `apply` and direct `install` where the user may not have passed B.
+   - `test_build_handles_cycle_without_disabled_dep` — A ↔ B cycle, both enabled: must not loop forever; neither gets propagation-classified. The BFS handles cycles via the visited set.
+   - `test_display_shows_dependency_disabled_in_skipped` — Display includes `a (dependency disabled: b)` under the skipped header.
+   - `test_display_shows_only_dependency_disabled_when_all_skipped` — Display works when `dependency_disabled` is the only skip reason.
+   - `test_display_shows_dependency_disabled_with_plugin` — Plugin suffix renders alongside (`a (dependency disabled: b, plugin: dnf)`).
+   - `test_is_empty_when_all_dependency_disabled` — `is_empty()` returns true when every package gets propagation-classified, since `enabled` is now empty.
+
+   Added a new fixture helper `fixture_config_with_deps(packages: Vec<(&str, bool, Vec<&str>)>)` (lines 1697-1714) that builds a `Config` from `(name, enabled, deps)` tuples — strictly Arrange-only (no implicit Act).
+
+9. **3 new end-to-end integration tests in src/commands/package/action.rs (lines 1340-1442):**
+   - `test_install_skips_package_with_disabled_direct_dependency` — Direct dep propagation through `run_action` with `Action::Install`. neovim depends on disabled git; asserts the rendered plan contains both `neovim (dependency disabled: git)` and `git (disabled)`, asserts no `Installing neovim` line, and asserts the install script's side-effect marker file does NOT exist. Confirms classification AND non-execution.
+   - `test_install_propagates_disabled_dep_transitively` — Three-level chain neovim → git → curl with curl disabled. Asserts each blames its most direct dep: `neovim (dependency disabled: git)`, `git (dependency disabled: curl)`, `curl (disabled)`. Two markers verify nothing ran.
+   - `test_update_unaffected_by_disabled_dependency` — neovim (enabled, in state) → git (disabled, in state). Update path: asserts `Updating neovim...\ndone` ran, marker exists, and the output does not contain "dependency disabled". Pins the "update is unaffected" invariant end-to-end.
+
+**What was changed:**
+
+- src/plan.rs — `Plan` struct field, `Plan::build` propagation pass, `Plan::display` rendering, new `compute_unavailable_packages` helper, 24 test literal updates, 12 new unit tests + new fixture
+- src/commands/package/action.rs — 3 new integration tests
+- COMMAND_OUTPUT.md — Plan Display section annotation
+- prd.md — task 210 checked off
+- progress.md — this entry
+
+**Remarks:**
+
+- All 542 tests pass (527 → 542, +15 new). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- I chose BFS over recursive memoization for `compute_unavailable_packages` because the recursive form has a subtle cache-invalidation bug in graphs with cycles: a node visited mid-cycle can return "not unavailable" (the conservative cycle-break answer) and get cached, even when a non-cycle sibling path would later prove it unavailable. BFS via reverse edges sidesteps this — the `HashSet` of unavailable packages monotonically grows, and the loop terminates once no new packages are enqueued. Trade-off: BFS doesn't memoize "definitely available" answers, but the cost is bounded by O(V+E), which is fine for any realistic config size.
+- The "most direct unavailable dep" semantics: for each `enabled` package P, I scan P's *direct* `depends_on` only (not transitive) and pick the alphabetically-first dep that's in the `unavailable` set. So if A depends on [b, c] and only c is unavailable, A blames c. If A → B → C with C disabled, then when processing A, both A's direct dep B and the transitive C are unavailable — but only B is in A's `depends_on`, so A blames B. B itself (also being processed) sees C in its direct `depends_on` and blames C. Each package blames its immediate dep, which matches the task wording ("most direct unavailable dependency") and gives a debuggable error chain.
+- The alphabetical tiebreaker (when a package has multiple disabled direct deps) is for determinism only. The task spec doesn't pin the tiebreaker, but the test `test_build_picks_alphabetically_first_unavailable_direct_dep` locks it in so a future refactor can't silently flip the choice.
+- The propagation walks `config.packages` (via the `unavailable` set), not the `packages` slice passed to `Plan::build`. This means even if a package's disabled dep is NOT in the input list (which is the common case for `apply` where only enabled packages are in `to_install`/`to_update`), the propagation still triggers. The test `test_build_propagates_when_disabled_dep_outside_input_list` pins this behavior.
+- For `apply_to`, the propagation correctly fires inside `Plan::build`. However, because `apply_to` separately collects `disabled_packages` at the top and renders its own skipped section below the plan, a disabled package B that is also pulled into `expanded_install` (because A depends on it) will appear twice in the output: once under `plan.disabled` (via `plan.display()`) and once under `apply_to`'s own listing. This is the duplicate-header bug described in task 211, which is the next item I'd pick up. I deliberately did not touch `apply_to` here — task 210 says "Update `Plan`, `Plan::display`, the Plan Display section of COMMAND_OUTPUT.md, and tests accordingly" and is silent on `apply_to`. Keeping the change scoped to `Plan` makes 211's filter-out fix straightforward to add on top.
+- For `run_action`'s `Action::Install` path, the existing flow already produces the correct user-visible output: `expand_dependencies` pulls in the disabled dep B, `topological_sort` orders [B, A], `Plan::build` classifies B as disabled and (via the new pass) A as `dependency_disabled[a] = "b"`. The integration test `test_install_skips_package_with_disabled_direct_dependency` confirms this.
+- Function and method ordering in `plan.rs` and `action.rs` was not reordered. `compute_unavailable_packages` was added as a private helper next to `resolve_script_name` (both module-private functions sitting between `Plan` impl and `prompt_confirm`/`confirm_plan` utility fns). README command order (apply → install → update → uninstall) in `action.rs` is unchanged.
+- 3A pattern: all 15 new tests follow Arrange / Act / Assert with the function under test (`Plan::build`, `plan.display()`, or `run_action`) called explicitly in Act. The new `fixture_config_with_deps` fixture handles only Arrange (building a `Config` from package tuples). No test logic is hidden in fixtures.
+- One PRD task remains unchecked: 211 (duplicate-header fix in `apply_to`). The next iteration should pick that up.
+
+---
