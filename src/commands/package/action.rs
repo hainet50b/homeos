@@ -67,8 +67,17 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     // The notes from expand_dependencies are discarded; apply computes its own intra-set
     // requester annotations below (every package in apply is implicitly requested, so
     // expand_dependencies' "skip if explicitly requested" rule produces incomplete notes).
+    //
+    // Filter disabled packages out of `expanded_install` so they no longer reach
+    // `install_names` / `Plan::build`. This leaves `disabled_packages` as the single
+    // source of truth for the `(disabled)` skipped entries, avoiding a duplicate
+    // skipped section when a dependency chain pulls a disabled package into the plan.
     let expanded_install: Vec<String> = if !to_install.is_empty() {
-        expand_dependencies(&config, &to_install).0
+        expand_dependencies(&config, &to_install)
+            .0
+            .into_iter()
+            .filter(|name| config.packages.get(name).is_none_or(|p| p.enabled))
+            .collect()
     } else {
         Vec::new()
     };
@@ -131,15 +140,26 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .map(|(n, _)| n.clone())
         .collect();
 
-    let install_plan = if !install_names.is_empty() {
+    // install_plan absorbs disabled_packages (top-level disabled in config) and
+    // cycle_packages so that all skipped reasons render under a single consolidated
+    // skipped section via `display_skipped()`. Plan::build classifies disabled
+    // packages as `disabled` (with plugin lookup), and dependents whose dep chain
+    // is unavailable as `dependency_disabled` — both rendered together.
+    let install_input: Vec<String> = install_names
+        .iter()
+        .chain(disabled_packages.iter())
+        .cloned()
+        .collect();
+    let install_plan = if !install_input.is_empty() || !cycle_packages.is_empty() {
         let mut plan = Plan::build(
             &config,
-            &install_names,
+            &install_input,
             Action::Install,
             &installed,
             Some(&ctx.packages_dir()),
         )?;
         plan.notes = intra_set_notes.clone();
+        plan.circular_dependency = cycle_packages.clone();
         Some(plan)
     } else {
         None
@@ -158,26 +178,25 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         None
     };
 
-    // Display combined plan
+    // Display: enabled sections first (install, then update) so the order matches
+    // README — installed → updated → skipped — followed by one consolidated skipped
+    // section sourced from install_plan (which absorbs all skipped entries).
     if let Some(ref plan) = install_plan {
-        let display = plan.display();
-        if !display.is_empty() {
-            writeln!(writer, "{display}")?;
+        let s = plan.display_enabled();
+        if !s.is_empty() {
+            writeln!(writer, "{s}")?;
         }
     }
     if let Some(ref plan) = update_plan {
-        let display = plan.display();
-        if !display.is_empty() {
-            writeln!(writer, "{display}")?;
+        let s = plan.display_enabled();
+        if !s.is_empty() {
+            writeln!(writer, "{s}")?;
         }
     }
-    if !disabled_packages.is_empty() || !cycle_packages.is_empty() {
-        writeln!(writer, "The following packages will be skipped:")?;
-        for name in &disabled_packages {
-            writeln!(writer, "  {name} (disabled)")?;
-        }
-        for name in &cycle_packages {
-            writeln!(writer, "  {name} (circular dependency)")?;
+    if let Some(ref plan) = install_plan {
+        let s = plan.display_skipped();
+        if !s.is_empty() {
+            writeln!(writer, "{s}")?;
         }
     }
 
@@ -3939,6 +3958,118 @@ mod tests {
         assert!(written.contains("a (circular dependency)"));
         assert!(written.contains("b (circular dependency)"));
         assert!(marker_path.exists(), "c should have been installed");
+    }
+
+    #[test]
+    fn test_apply_renders_single_skipped_header_when_dep_disabled() {
+        // Arrange — neovim (enabled) depends on git (disabled). expand_dependencies
+        // would naively pull git into expanded_install, and pre-fix that produced two
+        // consecutive "The following packages will be skipped:" headers (one from
+        // plan.display(), one from apply_to's top-level disabled section).
+        let yaml = "packages:\n  neovim:\n    depends_on: [git]\n  git:\n    enabled: false\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — only one skipped header, both entries present, no duplicate listing of git
+        let written = String::from_utf8(output).unwrap();
+        let header_count = written
+            .matches("The following packages will be skipped:")
+            .count();
+        assert_eq!(
+            header_count, 1,
+            "expected exactly one skipped header, got {header_count}; output:\n{written}"
+        );
+        assert!(written.contains("git (disabled)"));
+        assert!(written.contains("neovim (dependency disabled: git)"));
+        // git should appear only once in the skipped section, not duplicated
+        assert_eq!(
+            written.matches("git (disabled)").count(),
+            1,
+            "git (disabled) should appear exactly once, output:\n{written}"
+        );
+        assert!(written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_apply_orders_skipped_after_install_and_update() {
+        // Arrange — neovim install (enabled+not-in-state), ripgrep update (enabled+in-state),
+        // docker disabled. The consolidated skipped section must appear AFTER both the
+        // install and update sections (matching README's installed → updated → skipped).
+        let marker_dir = TempDir::new().unwrap();
+        let neo_marker = marker_dir.path().join("neo_install");
+        let rg_marker = marker_dir.path().join("rg_update");
+        let yaml = "packages:\n  docker:\n    enabled: false\n  neovim: {}\n  ripgrep: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "neovim", "install", &neo_marker);
+        write_script(&ctx, "ripgrep", "update", &rg_marker);
+        State {
+            installed: vec!["ripgrep".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — sections in canonical order: installed, updated, skipped
+        let written = String::from_utf8(output).unwrap();
+        let install_pos = written
+            .find("The following packages will be installed:")
+            .expect("missing installed section");
+        let update_pos = written
+            .find("The following packages will be updated:")
+            .expect("missing updated section");
+        let skipped_pos = written
+            .find("The following packages will be skipped:")
+            .expect("missing skipped section");
+        assert!(
+            install_pos < update_pos,
+            "installed should come before updated; output:\n{written}"
+        );
+        assert!(
+            update_pos < skipped_pos,
+            "updated should come before skipped; output:\n{written}"
+        );
+        // Only one skipped header
+        assert_eq!(
+            written
+                .matches("The following packages will be skipped:")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_apply_skipped_section_orders_disabled_before_dependency_disabled() {
+        // Arrange — neovim (enabled) depends on git (disabled). In the consolidated
+        // skipped section, `(disabled)` must come before `(dependency disabled:)` to
+        // match the COMMAND_OUTPUT.md Plan Display order.
+        let yaml = "packages:\n  neovim:\n    depends_on: [git]\n  git:\n    enabled: false\n";
+        let (_tmp, ctx) = fixture(yaml);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let disabled_pos = written
+            .find("git (disabled)")
+            .expect("missing git (disabled) entry");
+        let dep_disabled_pos = written
+            .find("neovim (dependency disabled: git)")
+            .expect("missing neovim (dependency disabled) entry");
+        assert!(
+            disabled_pos < dep_disabled_pos,
+            "(disabled) should come before (dependency disabled:); output:\n{written}"
+        );
     }
 
     #[test]

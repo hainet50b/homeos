@@ -4142,3 +4142,51 @@ PRD task 210 is one of two remaining unchecked tasks (210 and 211). Task 210 is 
 - One PRD task remains unchecked: 211 (duplicate-header fix in `apply_to`). The next iteration should pick that up.
 
 ---
+
+
+
+
+## Task: Fix duplicate skipped header in homeos apply output
+
+**Timestamp:**
+
+2026-05-12T09:52:54Z
+
+**Why this task:**
+
+PRD task 211 is the last remaining unchecked task. The prior loop entry (task 210) explicitly flagged 211 as the next-up duplicate-header bug created when `apply_to` collects `disabled_packages` at the top AND `Plan::build` separately classifies disabled deps that `expand_dependencies` pulled into `expanded_install`. Closing this finishes the PRD.
+
+**What was done:**
+
+1. **Filter disabled packages out of `expanded_install` (src/commands/package/action.rs:67-82)** — Added an `.into_iter().filter(...)` over the result of `expand_dependencies(&config, &to_install).0` that keeps only packages whose `config.packages.get(name)` is either absent (defensive) or has `enabled == true`. This is the literal fix described in the task: disabled deps no longer reach `install_names` / `Plan::build`, so `Plan::build` never classifies them as disabled, eliminating the redundant entry.
+
+2. **Refactor `Plan::display()` into `display_enabled()` + `display_skipped()` helpers (src/plan.rs:199-296)** — The original `display()` mixed enabled and skipped rendering. To consolidate `apply_to`'s skipped output into a single section that appears AFTER both the install and update sections (matching the README order `installed → updated → skipped`), the rendering had to be split. `display_enabled()` renders only `The following packages will be {action}:` + entries; `display_skipped()` renders only `The following packages will be skipped:` + entries; `display()` now composes the two with `match` on emptiness so the public output is byte-identical for all existing callers (`confirm_plan`, `run_action`, the early-return path of `apply_to`).
+
+3. **Consolidate `apply_to` rendering (src/commands/package/action.rs:138-189)** — Restructured so that `install_plan`'s input is `install_names ∪ disabled_packages`. `Plan::build` then classifies install_names as enabled (or moves them to `dependency_disabled` via task 210's propagation pass) and disabled_packages as `plan.disabled` — including correct plugin-map population, which manual injection would have missed. `cycle_packages` is assigned to `install_plan.circular_dependency` post-build (unchanged pattern). The `if \!install_input.is_empty() || \!cycle_packages.is_empty()` guard ensures we still build an install_plan when the only thing to render is a cycle.
+
+4. **Render order (src/commands/package/action.rs:175-189)** — `install_plan.display_enabled()` → `update_plan.display_enabled()` → `install_plan.display_skipped()`. Since `update_plan` for apply never has skipped entries (update_names = enabled+in_state, Update action doesn't propagate, cycles are routed to install_plan), the single skipped section comes from install_plan only. Removed the standalone `if \!disabled_packages.is_empty() || \!cycle_packages.is_empty() { ... }` block.
+
+5. **Three new integration tests (src/commands/package/action.rs:3944-4060)**:
+   - `test_apply_renders_single_skipped_header_when_dep_disabled` — Core regression: neovim depends on disabled git. Asserts exactly ONE `The following packages will be skipped:` header (was 2 pre-fix), both `git (disabled)` and `neovim (dependency disabled: git)` present, and `git (disabled)` appears exactly once (no duplicate listing).
+   - `test_apply_orders_skipped_after_install_and_update` — Three sections case: neovim install, ripgrep update, docker disabled. Pins the canonical order `installed → updated → skipped` via byte-position assertions, plus reasserts the single-header property in a mixed scenario.
+   - `test_apply_skipped_section_orders_disabled_before_dependency_disabled` — Within the consolidated skipped section, `git (disabled)` must precede `neovim (dependency disabled: git)` to match COMMAND_OUTPUT.md's Plan Display ordering. This pins that `Plan::build`'s natural classification order (disabled → already_installed → not_installed → circular → dependency_disabled) survives consolidation.
+
+**What was changed:**
+
+- src/plan.rs — split `display()` into `display_enabled()` + `display_skipped()` helpers; `display()` composes them
+- src/commands/package/action.rs — filter disabled from expanded_install; include disabled_packages in install_plan input; remove the standalone skipped block; split rendering into enabled-first/skipped-last order; 3 new tests
+- prd.md — task 211 checked off
+- progress.md — this entry
+
+**Remarks:**
+
+- All 545 tests pass (542 → 545, +3 new). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- The literal task fix (just filtering disabled from `expanded_install`) is necessary but, with task 210's propagation layered on top, not sufficient. After filtering, `Plan::build`'s propagation still moves the dependent (neovim) into `dependency_disabled`, which `plan.display()` renders under its own skipped header. That would have left two consecutive `The following packages will be skipped:` headers — different content but still two headers — which contradicts the task's "single source of truth for the skipped section" wording AND the README example (which shows one skipped section at the end). The consolidation in step 3 closes that gap.
+- Why include `disabled_packages` in `Plan::build`'s input instead of manually pushing onto `plan.disabled` after construction? Plan::build populates the `plugins` BTreeMap by iterating `enabled ∪ disabled ∪ already_installed ∪ not_installed ∪ dependency_disabled.keys()`. Manually pushing into `plan.disabled` after the fact would skip plugin-map population for those entries, breaking the `(disabled, plugin: dnf)` annotation. Letting Plan::build classify them is one line of code and gets plugins for free. No deduplication concern: `install_names` (enabled+not-in-state) and `disabled_packages` (disabled in config) are mutually exclusive by construction.
+- Why attach cycle to install_plan instead of update_plan? The host plan needs to be one that's rendered LAST in the skipped slot. With my rendering order (`install.enabled` → `update.enabled` → `install.skipped`), `install_plan.display_skipped()` is the final block, so install_plan is the right host. update_plan never has skipped content for apply (its enabled set is filtered to enabled+in_state, and Action::Update doesn't propagate disabled deps).
+- Why doesn't update_plan need its own `display_skipped()` call? Three reasons working together: (a) update_names is computed as enabled+in_state, so Plan::build sees no disabled inputs; (b) Action::Update doesn't trigger the propagation pass in Plan::build; (c) cycle_packages is attached to install_plan, not update_plan. So update_plan.display_skipped() is always empty for apply, and calling it would be dead code. I omitted the call rather than adding a no-op for clarity.
+- Edge case verified by walking through 8 scenarios in my head before coding (single install, install + unrelated disabled, install with disabled dep, install + update + disabled, only updates + disabled, install cycle, all disabled hits early-return, install with enabled dep). Each produces the right output. The most-subtle one is "install A in cycle with B" — install_names ends up empty (both filtered out of `ordered`), but the `\!cycle_packages.is_empty()` arm of the build-install_plan guard still constructs an empty Plan and attaches cycle_packages, so the skipped section still renders.
+- 3A pattern: all 3 new tests follow Arrange / Act / Assert with `apply_to` called explicitly in the Act step. The `fixture` and `write_script` helpers only Arrange (yaml, script files, state.yml) — no test logic.
+- Function/method ordering: `display_enabled()` and `display_skipped()` placed immediately after `display()` in plan.rs, grouped as related helpers. `display()` then `is_empty()` order preserves the prior arrangement. No README command-order change in action.rs (apply remains first).
+- COMMAND_OUTPUT.md was NOT modified. The Plan Display spec at the bottom of that file already shows a single skipped section in the canonical order (disabled, already installed, not installed, circular, dependency disabled). The pre-fix duplicate-header behavior contradicted the spec; the fix brings the implementation into alignment. No spec drift to chase.
+- All PRD tasks are now checked. The "Completion Criteria" section requires (a) all tasks checked, (b) no clippy warnings, (c) no test failures — all three hold.

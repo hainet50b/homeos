@@ -197,32 +197,50 @@ impl Plan {
 
     /// Format the plan as a human-readable string for display.
     pub fn display(&self) -> String {
-        let mut lines = Vec::new();
+        let enabled_part = self.display_enabled();
+        let skipped_part = self.display_skipped();
+        match (enabled_part.is_empty(), skipped_part.is_empty()) {
+            (true, true) => String::new(),
+            (false, true) => enabled_part,
+            (true, false) => skipped_part,
+            (false, false) => format!("{enabled_part}\n{skipped_part}"),
+        }
+    }
 
+    /// Render only the "will be {action}" section. Returns an empty string when no
+    /// enabled packages. Used by `apply` to keep enabled sections grouped before the
+    /// consolidated skipped section.
+    pub fn display_enabled(&self) -> String {
+        if self.enabled.is_empty() {
+            return String::new();
+        }
         let verb = self.action.past_tense();
-
-        if !self.enabled.is_empty() {
-            lines.push(format!("The following packages will be {verb}:"));
-            for name in &self.enabled {
-                let mut annotations = Vec::new();
-                if let Some(note) = self.notes.get(name) {
-                    annotations.push(note.clone());
-                }
-                if let Some(plugin_name) = self.plugins.get(name) {
-                    annotations.push(format!("plugin: {plugin_name}"));
-                }
-                if let Some(warns) = self.warnings.get(name) {
-                    annotations.extend(warns.iter().cloned());
-                }
-                if annotations.is_empty() {
-                    lines.push(format!("  {name}"));
-                } else {
-                    let annotation_str = annotations.join(", ");
-                    lines.push(format!("  {name} ({annotation_str})"));
-                }
+        let mut lines = Vec::new();
+        lines.push(format!("The following packages will be {verb}:"));
+        for name in &self.enabled {
+            let mut annotations = Vec::new();
+            if let Some(note) = self.notes.get(name) {
+                annotations.push(note.clone());
+            }
+            if let Some(plugin_name) = self.plugins.get(name) {
+                annotations.push(format!("plugin: {plugin_name}"));
+            }
+            if let Some(warns) = self.warnings.get(name) {
+                annotations.extend(warns.iter().cloned());
+            }
+            if annotations.is_empty() {
+                lines.push(format!("  {name}"));
+            } else {
+                let annotation_str = annotations.join(", ");
+                lines.push(format!("  {name} ({annotation_str})"));
             }
         }
+        lines.join("\n")
+    }
 
+    /// Render only the "will be skipped" section (header + entries). Returns an empty
+    /// string when nothing is skipped.
+    pub fn display_skipped(&self) -> String {
         let mut skipped: Vec<String> = Vec::new();
         for name in &self.disabled {
             let plugin_suffix = self
@@ -266,12 +284,13 @@ impl Plan {
                 "  {name} (dependency disabled: {blamed}{plugin_suffix})"
             ));
         }
-        if !skipped.is_empty() {
-            lines.push("The following packages will be skipped:".to_string());
+        if skipped.is_empty() {
+            String::new()
+        } else {
+            let mut lines = vec!["The following packages will be skipped:".to_string()];
             lines.extend(skipped);
+            lines.join("\n")
         }
-
-        lines.join("\n")
     }
 
     /// Returns true if there are no enabled packages to act on.
