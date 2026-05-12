@@ -283,6 +283,8 @@ The following packages will be {installed|updated|uninstalled}:
   {name}
   {name} (plugin: {plugin_name})
   {name} (warning: {script} is unmodified)
+  {name} (required by {package})    # install/apply only — pulled in as a forward dependency
+  {name} (depends on {package})     # uninstall only — pulled in as a reverse dependency
 The following packages will be skipped:
   {name} (disabled)
   {name} (already installed)
