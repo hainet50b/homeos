@@ -3960,3 +3960,61 @@ The only remaining unchecked task in the PRD. All other Tasks and Post Tasks wer
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-12T08:48:47Z
+
+## Task: Annotate forward-dependency packages in the install plan with `(required by <requester>)`
+
+**Timestamp:**
+
+2026-05-12T08:54:34Z
+
+**Why this task:**
+
+The only remaining unchecked task in the PRD. All other Tasks and Post Tasks were already complete.
+
+**What was done:**
+
+1. **`expand_dependencies` signature change (src/commands/package/action.rs:497-528)** — Changed the function to return `(Vec<String>, BTreeMap<String, String>)` instead of just `Vec<String>`. The notes map carries `{pulled-in package → "required by {requester}"}` entries. Implementation:
+   - The stack now stores `(name, requester)` tuples instead of bare names. The requester for top-level packages is `None`.
+   - On the first visit to a package (when `visited.insert(name.clone())` returns `true`), we record `"required by {req}"` if there is a requester AND the package is not in the originally requested set. This guarantees explicitly requested packages never receive a note even if they are also (redundantly) reachable as someone else's dependency.
+   - For transitive chains (A → B → C), each pulled-in dependency is annotated with its *direct* requester: B gets "required by A", C gets "required by B". This is because when B is popped and pushes C onto the stack, B becomes C's requester. The DFS visit order makes each child's recorded requester be its immediate parent.
+
+2. **`apply_to` integration (src/commands/package/action.rs:67-71, 109-132)** — Captures the notes from forward-expansion and attaches them to BOTH `install_plan` and `update_plan`. Rationale: a pulled-in dep can end up in either plan in `apply`. The interesting case is `to_install = [A]`, A depends on B, B is enabled+in_state (i.e., in `to_update`). After expansion, B is in the merged set, gets classified as Update (since in state), and ends up in `update_plan.enabled`. Setting notes on both plans means the note shows in whichever plan B lands in. (Conceptually, packages in `install_plan` that were pulled in from outside `to_install` cannot be enabled, so the note attached to install_plan only fires when the user explicitly invokes `install` — see `run_action`.)
+
+3. **`run_action` integration for `Action::Install` (src/commands/package/action.rs:330-336)** — Renamed `reverse_dep_notes` to the more general `plan_notes`. For Install, capture forward-expansion notes from `expand_dependencies(packages)` and assign to `plan.notes` via the existing field. The display loop in `plan.rs` already renders `plan.notes` as the first annotation segment for enabled packages, producing output like `  git (required by neovim)` under `The following packages will be installed:`.
+
+4. **`run_action` integration for `Action::Uninstall` (src/commands/package/action.rs:339-348)** — Explicitly discards forward-expansion notes via `let (fully_expanded, _) = expand_dependencies(&config, &reverse_expanded);`. Reasoning: uninstall already populates `plan.notes` with reverse-dep annotations like `"depends on X"`. Mixing forward `"required by"` notes would be semantically wrong (we are not uninstalling curl because editor *requires* curl — we are uninstalling curl because we are tearing down the dependency closure of editor). The reverse-dep notes are the correct annotation for uninstall, so the forward notes are intentionally dropped. Added an explanatory comment in the code.
+
+5. **Updated 4 existing `expand_dependencies` tests** (src/commands/package/action.rs:2076-2179) to destructure the tuple return. All four tests previously asserted `sut == ...` on the raw `Vec<String>`; they now destructure as `let (sut, _notes) = ...` and continue to assert on the package vec. Test `test_expand_dependencies_no_deps` was upgraded to also assert `notes.is_empty()` since it's the simplest "no notes" case.
+
+6. **Added 3 new unit tests for `expand_dependencies` notes** (src/commands/package/action.rs:2183-2253):
+   - `test_expand_dependencies_annotates_direct_dependency` — A direct dependency case: neovim → git, request neovim. Asserts `notes["git"] == "required by neovim"` and no note for neovim.
+   - `test_expand_dependencies_annotates_transitive_with_most_direct_requester` — Three-level chain a → b → c. Asserts b is "required by a" and c is "required by b" (not "required by a"). Pinned the "most direct" semantics.
+   - `test_expand_dependencies_no_note_for_explicitly_requested_package` — Both packages explicitly requested (a, b) where a → b. Asserts notes is empty: explicit requests override implicit pull-in.
+
+7. **Added 2 new integration tests** (src/commands/package/action.rs:2315-2367 and 2980-3007):
+   - `test_install_plan_annotates_pulled_in_dependencies` — End-to-end through `run_action` with Action::Install. Sets up neovim → git → curl, requests only neovim, declines the prompt (`b"n\n"`). Asserts the displayed plan contains `git (required by neovim)`, `curl (required by git)`, and a bare `  neovim\n` (no annotation on the explicitly requested package).
+   - `test_apply_annotates_pulled_in_update_with_required_by` — End-to-end through `apply_to`. neovim depends on git, git is in state (update target), neovim is not (install target). Asserts plan output contains `git (required by neovim)` (git ended up in update_plan because it's in state, but the note carries over via apply_to's notes propagation to both plans) and bare `neovim` with no annotation.
+
+**What was changed:**
+
+- src/commands/package/action.rs (function signature, two callers, unit tests, integration tests)
+- prd.md (task checked off)
+- progress.md (this entry)
+
+**Remarks:**
+
+- All 524 tests pass (+5 new tests over the previous 519). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- The `Plan::notes` field and its display logic in `plan.rs` (lines 178-180) were already in place from the earlier "Respect dependency order in uninstall" task — that task added the field for reverse-dep `"depends on X"` annotations. The current task piggybacks on the same machinery for the symmetric forward-dep case. No changes needed in `plan.rs` itself.
+- The `apply_to` case for notes is largely defensive. In practice, an enabled-but-pulled-in dep can only land in `update_plan.enabled` (not `install_plan.enabled`), because any enabled+not-in-state package is already in the `to_install` set before expansion, so it can't be pulled in. The expansion can only pull in (a) disabled packages, which go to the disabled/skipped section where notes are not displayed, or (b) enabled+in-state packages, which go to update_plan. Setting the notes on `install_plan` too is harmless — it just won't display because those packages won't be in `install_plan.enabled`. Code is symmetric and easier to reason about.
+- COMMAND_OUTPUT.md was not updated. The plan display section uses example annotations like `(disabled)`, `(plugin: X)`, `(warning: X)` but does not currently mention either `(depends on X)` (the existing reverse-dep annotation) or `(required by X)` (this task). Both follow the same plan.notes mechanism. Updating the spec to enumerate every notes variant felt out of scope for this task; the inconsistency was pre-existing. Leaving as-is preserves the principle of minimal change.
+- Function and method ordering in `action.rs` is unchanged. README command order (apply → install → update → uninstall) is already reflected in the public-fn layout at the top of the file. Helpers (`expand_dependencies`, `expand_reverse_dependencies`, etc.) are internal and not ordered by README.
+- 3A pattern: all new tests follow Arrange / Act / Assert structure with the function under test called explicitly in the Act section (not hidden in a fixture). The `fixture()` and `write_script()` helpers handle only preconditions (config file, package directories, scripts), consistent with the existing test style in this file.
+- All Tasks and Post Tasks in the PRD are now checked. Completion Criteria are satisfied: every task is checked off, `cargo clippy` produces no warnings, `cargo test` passes with no failures.
+
+---
+
+

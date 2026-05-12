@@ -64,10 +64,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     // Expand install dependencies — some deps may already be installed (update targets)
-    let expanded_install = if !to_install.is_empty() {
+    let (expanded_install, forward_dep_notes) = if !to_install.is_empty() {
         expand_dependencies(&config, &to_install)
     } else {
-        Vec::new()
+        (Vec::new(), std::collections::BTreeMap::new())
     };
 
     // Merge all packages (install + update + expanded deps) into a single set,
@@ -106,25 +106,27 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .collect();
 
     let install_plan = if !install_names.is_empty() {
-        let plan = Plan::build(
+        let mut plan = Plan::build(
             &config,
             &install_names,
             Action::Install,
             &installed,
             Some(&ctx.packages_dir()),
         )?;
+        plan.notes = forward_dep_notes.clone();
         Some(plan)
     } else {
         None
     };
     let update_plan = if !update_names.is_empty() {
-        let plan = Plan::build(
+        let mut plan = Plan::build(
             &config,
             &update_names,
             Action::Update,
             &installed,
             Some(&ctx.packages_dir()),
         )?;
+        plan.notes = forward_dep_notes;
         Some(plan)
     } else {
         None
@@ -324,11 +326,12 @@ pub fn run_action<R: BufRead, W: Write>(
 
     // For install, expand to include transitive dependencies and sort topologically.
     // For uninstall, expand reverse deps (dependents) + forward deps, then reverse order.
-    let mut reverse_dep_notes = std::collections::BTreeMap::new();
+    let mut plan_notes = std::collections::BTreeMap::new();
     let mut cycle_packages = Vec::new();
     let ordered_packages = match action {
         Action::Install => {
-            let expanded = expand_dependencies(&config, packages);
+            let (expanded, notes) = expand_dependencies(&config, packages);
+            plan_notes = notes;
             let topo_result = topological_sort(&config, &expanded)?;
             cycle_packages = topo_result.cycle;
             topo_result.sorted
@@ -336,9 +339,11 @@ pub fn run_action<R: BufRead, W: Write>(
         Action::Uninstall => {
             // Expand reverse dependencies: find all packages that depend on requested ones
             let (reverse_expanded, notes) = expand_reverse_dependencies(&config, packages);
-            reverse_dep_notes = notes;
-            // Also expand forward dependencies (existing behavior)
-            let fully_expanded = expand_dependencies(&config, &reverse_expanded);
+            plan_notes = notes;
+            // Also expand forward dependencies (existing behavior).
+            // Forward-dep "required by" notes are not used for uninstall — reverse-dep
+            // "depends on" notes are the semantically correct annotation here.
+            let (fully_expanded, _) = expand_dependencies(&config, &reverse_expanded);
             let topo_result = topological_sort(&config, &fully_expanded)?;
             cycle_packages = topo_result.cycle;
             let mut sorted = topo_result.sorted;
@@ -355,7 +360,7 @@ pub fn run_action<R: BufRead, W: Write>(
         &installed,
         Some(&ctx.packages_dir()),
     )?;
-    plan.notes = reverse_dep_notes;
+    plan.notes = plan_notes;
     plan.circular_dependency = cycle_packages;
 
     if plan.is_empty() {
@@ -486,27 +491,40 @@ fn execute_script(script_path: &Path) -> Result<(), Box<dyn std::error::Error>> 
 }
 
 /// Expand a list of packages to include all transitive dependencies.
-/// Returns the expanded set as a Vec in no particular order.
-fn expand_dependencies(config: &Config, packages: &[String]) -> Vec<String> {
+/// Returns the expanded set as a Vec in no particular order, and a map of
+/// pulled-in packages to "required by {requester}" notes for plan display.
+/// The most direct requester is recorded (e.g., for A → B → C, C's requester is B).
+fn expand_dependencies(
+    config: &Config,
+    packages: &[String],
+) -> (Vec<String>, std::collections::BTreeMap<String, String>) {
+    let requested: HashSet<String> = packages.iter().cloned().collect();
     let mut result: Vec<String> = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = packages.to_vec();
+    let mut notes: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    let mut stack: Vec<(String, Option<String>)> =
+        packages.iter().map(|p| (p.clone(), None)).collect();
 
-    while let Some(name) = stack.pop() {
+    while let Some((name, requester)) = stack.pop() {
         if !visited.insert(name.clone()) {
             continue;
+        }
+        if let Some(req) = requester
+            && !requested.contains(&name)
+        {
+            notes.insert(name.clone(), format!("required by {req}"));
         }
         result.push(name.clone());
         if let Some(pkg_config) = config.packages.get(&name) {
             for dep in &pkg_config.depends_on {
                 if !visited.contains(dep) {
-                    stack.push(dep.clone());
+                    stack.push((dep.clone(), Some(name.clone())));
                 }
             }
         }
     }
 
-    result
+    (result, notes)
 }
 
 /// Expand a list of packages to include all reverse (dependent) packages.
@@ -2065,10 +2083,11 @@ mod tests {
         };
 
         // Act
-        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+        let (sut, notes) = expand_dependencies(&config, &["neovim".to_string()]);
 
         // Assert
         assert_eq!(sut, vec!["neovim"]);
+        assert!(notes.is_empty());
     }
 
     #[test]
@@ -2096,7 +2115,7 @@ mod tests {
         };
 
         // Act
-        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+        let (sut, _notes) = expand_dependencies(&config, &["neovim".to_string()]);
 
         // Assert — all three packages included
         let mut sorted = sut.clone();
@@ -2129,7 +2148,8 @@ mod tests {
         };
 
         // Act
-        let sut = expand_dependencies(&config, &["neovim".to_string(), "zed".to_string()]);
+        let (sut, _notes) =
+            expand_dependencies(&config, &["neovim".to_string(), "zed".to_string()]);
 
         // Assert — git appears only once
         let git_count = sut.iter().filter(|s| s.as_str() == "git").count();
@@ -2152,12 +2172,94 @@ mod tests {
         };
 
         // Act
-        let sut = expand_dependencies(&config, &["neovim".to_string()]);
+        let (sut, _notes) = expand_dependencies(&config, &["neovim".to_string()]);
 
         // Assert — unknown_pkg is included (Plan::build will error on it)
         let mut sorted = sut.clone();
         sorted.sort();
         assert_eq!(sorted, vec!["neovim", "unknown_pkg"]);
+    }
+
+    #[test]
+    fn test_expand_dependencies_annotates_direct_dependency() {
+        // Arrange — neovim depends on git; only request neovim
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                (
+                    "neovim".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["git".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                ("git".to_string(), PackageConfig::default()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (_expanded, notes) = expand_dependencies(&config, &["neovim".to_string()]);
+
+        // Assert
+        assert_eq!(notes.get("git").unwrap(), "required by neovim");
+        assert!(!notes.contains_key("neovim")); // requested package has no note
+    }
+
+    #[test]
+    fn test_expand_dependencies_annotates_transitive_with_most_direct_requester() {
+        // Arrange — a depends on b, b depends on c; only request a
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                (
+                    "a".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["b".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "b".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["c".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                ("c".to_string(), PackageConfig::default()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (_expanded, notes) = expand_dependencies(&config, &["a".to_string()]);
+
+        // Assert — c is required by b (its direct requester), not a
+        assert_eq!(notes.get("b").unwrap(), "required by a");
+        assert_eq!(notes.get("c").unwrap(), "required by b");
+        assert!(!notes.contains_key("a"));
+    }
+
+    #[test]
+    fn test_expand_dependencies_no_note_for_explicitly_requested_package() {
+        // Arrange — a depends on b; both requested explicitly
+        let config = Config {
+            packages: std::collections::BTreeMap::from([
+                (
+                    "a".to_string(),
+                    PackageConfig {
+                        depends_on: vec!["b".to_string()],
+                        ..Default::default()
+                    },
+                ),
+                ("b".to_string(), PackageConfig::default()),
+            ]),
+            ..Default::default()
+        };
+
+        // Act
+        let (_expanded, notes) = expand_dependencies(&config, &["a".to_string(), "b".to_string()]);
+
+        // Assert — neither gets a note since both were explicitly requested
+        assert!(notes.is_empty());
     }
 
     // --- Dependency ordering integration tests ---
@@ -2207,6 +2309,56 @@ mod tests {
         assert!(git_pos < neovim_pos, "git must be installed before neovim");
         assert!(marker_dir.path().join("git_marker").exists());
         assert!(marker_dir.path().join("neovim_marker").exists());
+    }
+
+    #[test]
+    fn test_install_plan_annotates_pulled_in_dependencies() {
+        // Arrange — neovim depends on git, git depends on curl; only request neovim
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = concat!(
+            "packages:\n",
+            "  neovim:\n",
+            "    depends_on:\n",
+            "      - git\n",
+            "  git:\n",
+            "    depends_on:\n",
+            "      - curl\n",
+            "  curl: {}\n",
+        );
+        let (_tmp, ctx) = fixture(yaml);
+
+        let ext = script_extension();
+        for pkg in ["neovim", "git", "curl"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(format!("install.{ext}")),
+                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            )
+            .unwrap();
+        }
+
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act — only request neovim
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — plan shows pulled-in deps annotated with their direct requester,
+        // neovim (explicitly requested) has no annotation
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("git (required by neovim)"));
+        assert!(written.contains("curl (required by git)"));
+        assert!(written.contains("  neovim\n"));
     }
 
     #[test]
@@ -2821,6 +2973,35 @@ mod tests {
             git_pos < neo_pos,
             "git should be updated before neovim is installed"
         );
+    }
+
+    #[test]
+    fn test_apply_annotates_pulled_in_update_with_required_by() {
+        // Arrange: neovim (new install) depends on git (already installed → update).
+        // apply expands [neovim]'s deps and pulls git in. git ends up in the update plan
+        // but should be annotated with "required by neovim" since it was pulled in via
+        // forward expansion from neovim.
+        let marker_dir = TempDir::new().unwrap();
+        let git_marker = marker_dir.path().join("git_update");
+        let neo_marker = marker_dir.path().join("neo_install");
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "update", &git_marker);
+        write_script(&ctx, "neovim", "install", &neo_marker);
+        let state = State {
+            installed: vec!["git".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert: git is annotated under the update section; neovim has no annotation
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("git (required by neovim)"));
+        assert!(written.contains("  neovim\n"));
     }
 
     #[test]
