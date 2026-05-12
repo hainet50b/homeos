@@ -138,3 +138,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-12T09:31:02Z,a3c1adf,"Surface intra-set dependency notes in homeos apply plan",332,43,30798,3.8815089999999994
 2026-05-12T09:40:51Z,3359d50,"Skip dependents of disabled packages in install plans",585,70,48925,6.520241500000001
 2026-05-12T09:54:12Z,519e219,"Consolidate skipped section in homeos apply output",796,45,81937,6.217265249999999
+2026-05-12T10:56:28Z,9ef96d3,"Skip unmodified skeleton scripts instead of warning",374,64,29717,5.453416249999998
