@@ -63,11 +63,14 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    // Expand install dependencies — some deps may already be installed (update targets)
-    let (expanded_install, forward_dep_notes) = if !to_install.is_empty() {
-        expand_dependencies(&config, &to_install)
+    // Expand install dependencies — some deps may already be installed (update targets).
+    // The notes from expand_dependencies are discarded; apply computes its own intra-set
+    // requester annotations below (every package in apply is implicitly requested, so
+    // expand_dependencies' "skip if explicitly requested" rule produces incomplete notes).
+    let expanded_install: Vec<String> = if !to_install.is_empty() {
+        expand_dependencies(&config, &to_install).0
     } else {
-        (Vec::new(), std::collections::BTreeMap::new())
+        Vec::new()
     };
 
     // Merge all packages (install + update + expanded deps) into a single set,
@@ -81,6 +84,29 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     let topo_result = topological_sort(&config, &all_packages)?;
     let ordered = topo_result.sorted;
     let cycle_packages = topo_result.cycle;
+
+    // Compute intra-set "required by" notes. For each package in the merged ordered set,
+    // find a direct requester among the other packages in the set; if multiple, pick the
+    // first alphabetically for determinism.
+    let mut intra_set_notes: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for name in &ordered {
+        let mut requesters: Vec<&str> = Vec::new();
+        for other in &ordered {
+            if other == name {
+                continue;
+            }
+            if let Some(other_cfg) = config.packages.get(other)
+                && other_cfg.depends_on.contains(name)
+            {
+                requesters.push(other.as_str());
+            }
+        }
+        if !requesters.is_empty() {
+            requesters.sort();
+            intra_set_notes.insert(name.clone(), format!("required by {}", requesters[0]));
+        }
+    }
 
     // Classify each package: if in state -> update, else -> install
     let installed_set: HashSet<&str> = installed.iter().map(|s| s.as_str()).collect();
@@ -113,7 +139,7 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             &installed,
             Some(&ctx.packages_dir()),
         )?;
-        plan.notes = forward_dep_notes.clone();
+        plan.notes = intra_set_notes.clone();
         Some(plan)
     } else {
         None
@@ -126,7 +152,7 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             &installed,
             Some(&ctx.packages_dir()),
         )?;
-        plan.notes = forward_dep_notes;
+        plan.notes = intra_set_notes;
         Some(plan)
     } else {
         None
@@ -3002,6 +3028,101 @@ mod tests {
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("git (required by neovim)"));
         assert!(written.contains("  neovim\n"));
+    }
+
+    #[test]
+    fn test_apply_annotates_intra_set_direct_dependency() {
+        // Arrange: both neovim and git are enabled+not-in-state. neovim depends on git.
+        // Both come from the enabled set (implicitly requested), so the dep relationship
+        // within the install set should be annotated — git is required by neovim.
+        let marker_dir = TempDir::new().unwrap();
+        let git_marker = marker_dir.path().join("git_install");
+        let neo_marker = marker_dir.path().join("neo_install");
+        let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "git", "install", &git_marker);
+        write_script(&ctx, "neovim", "install", &neo_marker);
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert: git is annotated as required by neovim; neovim has no annotation
+        let written = String::from_utf8(output).unwrap();
+        assert!(
+            written.contains("git (required by neovim)"),
+            "expected 'git (required by neovim)' in output, got:\n{written}"
+        );
+        assert!(
+            written.contains("  neovim\n"),
+            "expected unannotated '  neovim' in output, got:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_apply_annotates_intra_set_transitive_dependencies() {
+        // Arrange: chain a → b → c (a depends on b, b depends on c). All are
+        // enabled+not-in-state. Each pulled-in dep should be annotated with its
+        // most direct (immediate parent) requester: c is required by b, b by a,
+        // a by nobody.
+        let marker_dir = TempDir::new().unwrap();
+        let a_marker = marker_dir.path().join("a_install");
+        let b_marker = marker_dir.path().join("b_install");
+        let c_marker = marker_dir.path().join("c_install");
+        let yaml = "packages:\n  a:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - c\n  c: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "a", "install", &a_marker);
+        write_script(&ctx, "b", "install", &b_marker);
+        write_script(&ctx, "c", "install", &c_marker);
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(
+            written.contains("c (required by b)"),
+            "expected 'c (required by b)' in output, got:\n{written}"
+        );
+        assert!(
+            written.contains("b (required by a)"),
+            "expected 'b (required by a)' in output, got:\n{written}"
+        );
+        assert!(
+            written.contains("  a\n"),
+            "expected unannotated '  a' in output, got:\n{written}"
+        );
+    }
+
+    #[test]
+    fn test_apply_intra_set_picks_alphabetically_first_requester() {
+        // Arrange: both alpha and beta directly depend on shared. All enabled+not-in-state.
+        // shared has two direct requesters in the set; the alphabetically first ('alpha')
+        // should be recorded as the requester.
+        let marker_dir = TempDir::new().unwrap();
+        let a_marker = marker_dir.path().join("alpha_install");
+        let b_marker = marker_dir.path().join("beta_install");
+        let s_marker = marker_dir.path().join("shared_install");
+        let yaml = "packages:\n  alpha:\n    depends_on:\n      - shared\n  beta:\n    depends_on:\n      - shared\n  shared: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "alpha", "install", &a_marker);
+        write_script(&ctx, "beta", "install", &b_marker);
+        write_script(&ctx, "shared", "install", &s_marker);
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(
+            written.contains("shared (required by alpha)"),
+            "expected 'shared (required by alpha)' (deterministic alphabetical choice), got:\n{written}"
+        );
     }
 
     #[test]

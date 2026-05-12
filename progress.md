@@ -4018,3 +4018,54 @@ The only remaining unchecked task in the PRD. All other Tasks and Post Tasks wer
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-12T09:25:28Z
+
+## Task: Annotate intra-set dependencies in `homeos apply` plans with `(required by <requester>)`
+
+**Timestamp:**
+
+2026-05-12T09:29:56Z
+
+**Why this task:**
+
+This is the next unchecked task in PRD order after task 208 (which I completed in the previous Ralph Loop). Task 208 added `(required by <requester>)` notes for *pulled-in* dependencies — those outside the originally requested package set. Task 209 extends this to the `apply` path specifically: in `apply`, every package comes from the enabled set in `homeos.yml`, not from an explicit user request, so the notion of "originally requested set" doesn't carve out a meaningful exemption. Any dep relationship within the resulting apply set should be visible. Tasks 210 and 211 are also unchecked but they involve disabled-dep propagation and a duplicate-header fix that depend on `apply_to`'s shape — staying coherent with the PRD order keeps the apply path stable for those follow-ups.
+
+**What was done:**
+
+1. **`apply_to` reshaped (src/commands/package/action.rs:66-104)** — The destructuring of `expand_dependencies`'s return is changed from `let (expanded_install, forward_dep_notes) = ...` to `let expanded_install: Vec<String> = expand_dependencies(&config, &to_install).0` (discarding notes). The discarded notes are a strict subset of the new intra-set notes (any package `expand_dependencies` would have annotated as "required by X" is also reachable as a direct child of X within the final `ordered` set), so dropping them loses no information.
+
+2. **Intra-set notes computation added (src/commands/package/action.rs:88-104)** — After `topological_sort` returns `ordered` (the cycle-free, dep-ordered package list), a fresh pass walks `ordered` × `ordered` and for each package `name` collects every `other ∈ ordered` whose `depends_on` directly contains `name`. The collected requesters are sorted alphabetically and the first is recorded as `notes[name] = "required by {first}"`. Multiple requesters in the set deterministically resolve to the alphabetically-first one — picked over a topological-position tiebreaker because there's no meaningful "more direct" relationship between two siblings that both directly depend on the same child, and alphabetical is stable across runs and trivially documented.
+
+3. **Notes attached to both install_plan and update_plan (lines 142, 155)** — The same `intra_set_notes` map is cloned for the install plan and consumed for the update plan, mirroring how `forward_dep_notes` was previously consumed. `plan.display()` only renders notes for entries in `plan.enabled`, so attaching the full map to both plans is harmless even if a given key (e.g., "git") only appears in one plan's `enabled` list.
+
+4. **`run_action` (src/commands/package/action.rs:336+) intentionally unchanged** — The task explicitly requires "the behavior of `homeos package install` is unchanged." `run_action`'s `Action::Install` branch still uses `expand_dependencies`'s notes directly, which preserves the explicit-user-request exemption (when the user runs `homeos package install A`, A is "requested" and gets no `(required by ...)` annotation even if A is also some other package's dep).
+
+5. **Three new integration tests (src/commands/package/action.rs:3034-3132)**:
+   - `test_apply_annotates_intra_set_direct_dependency` — Both `neovim` and `git` are enabled+not-in-state, `neovim` depends on `git`. Asserts `git (required by neovim)` and bare `  neovim\n`. This is the core new behavior — *previously* this case showed `git` and `neovim` with no annotation because `expand_dependencies` saw both in `to_install` and treated both as "explicitly requested."
+   - `test_apply_annotates_intra_set_transitive_dependencies` — Chain `a → b → c`, all enabled+not-in-state. Asserts each pulled-in dep is annotated with its *immediate* parent: `c (required by b)`, `b (required by a)`, and `a` is bare. Pins the "most direct requester" semantics — c is not annotated as "required by a" even though a transitively depends on c.
+   - `test_apply_intra_set_picks_alphabetically_first_requester` — `alpha` and `beta` both directly depend on `shared`. Asserts `shared (required by alpha)`, locking in the deterministic alphabetical tiebreaker so future changes can't silently flip it.
+
+**What was changed:**
+
+- src/commands/package/action.rs (apply_to logic + 3 new tests)
+- prd.md (task 209 checked off)
+- progress.md (this entry)
+
+**Remarks:**
+
+- All 527 tests pass (524 → 527, +3 new). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- The previously-added test `test_apply_annotates_pulled_in_update_with_required_by` (from task 208) still passes — it tests the case where neovim is to_install and git is to_update, and git gets annotated. With the new intra-set logic, the annotation comes from the intra-set pass (git ∈ ordered, neovim ∈ ordered, neovim's depends_on contains git → notes[git] = "required by neovim") rather than from `expand_dependencies`'s notes. Either way the user-visible output is identical.
+- The existing `test_apply_topological_order_for_install_chain` and `test_apply_topological_order_for_updates` tests also still pass — they assert execution order (`Installing X...\ndone` positions), not plan annotations. Those scripts now print `(required by ...)` notes in the plan section but the order assertions are unaffected.
+- Function ordering in `action.rs`: `apply`, `install`, `update`, `uninstall`, `run_action`, then private helpers. This matches the README command order (`homeos apply`, `homeos package install`, ..., `homeos package uninstall`). No reordering needed.
+- COMMAND_OUTPUT.md's Plan Display section already documents the `{name} (required by {package})` form for install/apply, so no spec change is needed; the spec was already aspirationally correct, and this task narrows the implementation gap.
+- 3A pattern: all three new tests follow Arrange / Act / Assert with the function under test (`apply_to`) called explicitly in the Act step. The `fixture()` and `write_script()` helpers only set up preconditions (config file, package directories with marker scripts) — no test logic hidden in fixtures.
+- The `(required by ...)` annotation does not break any existing plan-render contract because notes were already designed as a generic `BTreeMap<String, String>` and the display layer already renders any note value verbatim as the first annotation. No changes to `plan.rs`.
+- Two PRD tasks remain unchecked (210, 211). The next iteration of the loop should pick one of them.
+
+---
+
+
+
