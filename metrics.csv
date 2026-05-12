@@ -134,3 +134,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-08T08:34:17Z,3284431,"Make PluginConfig.url Option<String>",268,53,14824,3.5890624999999994
 2026-05-10T06:24:22Z,b321791,"Replace reqwest with ureq as the HTTP client",210,31,11860,1.9306675
 2026-05-11T08:49:25Z,0ccc5a5,"Use dirs::data_local_dir() for Windows correctness",106,27,6148,1.1882297499999999
+2026-05-12T08:55:40Z,914d4a8,"Annotate forward-dep packages with "(required by X)" in install plan",411,55,32745,5.1978670000000005
