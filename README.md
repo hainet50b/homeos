@@ -113,7 +113,23 @@ rustup 1.29.0 (28d1352db 2026-03-05)
 
 ## Install
 
-Download the prebuilt binary from [GitHub Releases](https://github.com/hainet50b/homeos/releases).
+### Linux / macOS
+
+```sh
+curl -sSf https://raw.githubusercontent.com/hainet50b/homeos/main/install.sh | sh
+```
+
+Installs to `~/.local/bin/homeos`. Ensure `~/.local/bin` is in your `PATH`.
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/hainet50b/homeos/main/install.ps1 | iex
+```
+
+Installs to `%USERPROFILE%\.homeos\bin\homeos.exe` and adds the directory to your user `PATH`.
+
+Alternatively, download the prebuilt binary directly from [GitHub Releases](https://github.com/hainet50b/homeos/releases).
 
 ## Reference
 
