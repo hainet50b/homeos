@@ -4311,3 +4311,55 @@ PRD task 213 is the only unchecked task. It extends task 212 (which converted un
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-14T10:56:39Z
+
+## Task: Remove forward-dep expansion from `homeos package uninstall` plan
+
+**Timestamp:**
+
+2026-05-14T11:00:19Z
+
+**Why this task:**
+
+PRD task 214 is the only unchecked task. It corrects a long-standing bug: `homeos package uninstall A` (where A depends on B) was scheduling both A and B for uninstall, silently removing packages the user did not request. Closing this satisfies the PRD's Completion Criteria.
+
+**What was done:**
+
+1. **Removed forward-dep expansion from the Uninstall branch of `run_action` (src/commands/package/action.rs:415-426).** The pre-fix code first called `expand_reverse_dependencies` (correct — pulls in dependents), then `expand_dependencies` on the result (the bug — pulled in forward deps of both the requested packages AND the reverse-expanded dependents). The fix drops the second call entirely. The reverse-expanded set is passed directly to `topological_sort`, which already ignores out-of-set deps — so a package whose forward dep is NOT in the reverse-expanded set produces an in_degree of 0 and sorts correctly. Reversing the topo order then yields dependents-before-dependencies among the reverse-expanded set, which is the only correctness requirement on uninstall ordering.
+
+2. **Why dropping forward expansion does not break ordering.** With reverse-expansion only: if user requests B and A depends on B, reverse_expanded = {B, A}. `topological_sort` on {B, A} returns sorted=[B, A] (B has no in-set deps; A depends on B which is in-set, so A waits). Reversed: [A, B] — correct (uninstall A first, then B). If user requests just A (which depends on B), reverse_expanded = {A} (A has no dependents in this scenario). Topo sort returns [A]. Reversed: [A]. Only A is uninstalled. Forward dep B stays untouched.
+
+3. **Why dropping forward expansion does not break circular-dep detection.** The circular-dep test `test_uninstall_circular_dependency_skips_gracefully` requests `a` where a↔b is a cycle. Reverse expansion of [a]: a's dependents (b) are pulled in, then b's dependents (a) are already-visited and skipped, so reverse_expanded = [a, b]. Topo sort on [a, b] with a↔b returns sorted=[], cycle=[a, b]. The cycle is correctly attached to `plan.circular_dependency` and rendered in the skipped section. Verified by passing test runs.
+
+4. **Repurposed 3 existing tests (src/commands/package/action.rs:2552-2695) that asserted the buggy old behavior.**
+   - `test_uninstall_includes_dependencies_in_reverse_order` → `test_uninstall_does_not_pull_in_forward_dependencies`. Now uninstalls neovim (which depends on git) and asserts (a) only neovim is uninstalled, (b) git does not appear anywhere in the plan output, (c) git's uninstall marker file was NOT created (script did not run), (d) git remains in state.yml. This is the primary regression test for the task.
+   - `test_uninstall_chain_dependency_reverse_order` → `test_uninstall_chain_dependency_does_not_pull_in_forward_deps`. Chain case: c depends on b depends on a; uninstall c. Now asserts only c is uninstalled (was: all 3 in reverse order), and a/b stay in state.
+   - `test_uninstall_skips_not_installed_dependencies` → `test_uninstall_does_not_classify_forward_dep_as_not_installed`. Forward dep not in state. Pre-fix asserted `git (not installed)` appeared in the skipped section (because forward expansion pulled git in, then Plan::build classified it as not_installed). Post-fix: git must not appear in the plan at all. This is a subtle but important rename — the prior behavior of showing forward deps in the skipped section was itself a symptom of the same bug, and the new test pins that the forward dep is completely absent.
+
+5. **Renamed `test_uninstall_dependencies_removed_from_state` → `test_uninstall_does_not_remove_forward_dep_from_state` (src/commands/package/action.rs:2728-2766).** Same arrange (neovim depends on git, both installed, uninstall neovim). Old assertion: both removed from state. New assertion: neovim removed, git stays. The function under test and call shape are unchanged; only the assertion flipped to match the new (correct) behavior.
+
+6. **Verified preserved reverse-dep tests pass without changes.** All 5 `test_uninstall_reverse_deps_*` tests (src/commands/package/action.rs:3785-4003) test the OTHER direction — uninstalling B where A depends on B should ALSO uninstall A. The task explicitly requires this behavior to be preserved. Re-ran cargo test: all pass.
+
+**What was changed:**
+
+- src/commands/package/action.rs — `Action::Uninstall` branch of `run_action`: removed the forward `expand_dependencies` call and its comment. 3 existing tests rewritten (forward-deps-must-not-appear assertions). 1 existing test renamed + assertion flipped (state.yml-must-retain-forward-dep).
+- prd.md — task 214 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 550 tests pass. `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean. Net test count unchanged: 3 tests removed (the buggy-behavior tests) + 3 tests added (the correct-behavior tests). The 4th test was renamed in place.
+- The `expand_dependencies` function is still used by the `Install` branch and by `apply_to`, so no dead-code removal is warranted. The function signature and notes-map output are unchanged.
+- README.md and COMMAND_OUTPUT.md required no edits. README's `homeos package uninstall` section already describes uninstall as operating on the requested packages with reverse-dep expansion behavior (see the "Operate packages" behavior matrix). The Plan Display section in COMMAND_OUTPUT.md lists `{name} (depends on {package})` as `# uninstall only — pulled in as a reverse dependency`, which remains accurate. No forward-dep annotation for uninstall was ever documented, so nothing needed removing.
+- Function/method ordering in action.rs is unchanged and continues to match README order: apply → install → update → uninstall → run_action → helpers. The Uninstall match arm sits inside `run_action`, which has not moved.
+- Edge case considered: what if the user uninstalls a package that has both forward AND reverse deps? Example: `uninstall B` where A depends on B and B depends on C. Pre-fix: schedules A, B, C. Post-fix: schedules A, B (forward dep C is not pulled in). This is the correct behavior per the task spec — C might still be needed elsewhere. The chain test (`test_uninstall_chain_dependency_does_not_pull_in_forward_deps`) covers a related shape (c depends on b depends on a, uninstall c → only c removed), and the reverse-deps tests cover the inverse (uninstall a where b depends on a → both removed). Combined, they pin the asymmetry.
+- `test_uninstall_circular_dependency_skips_gracefully` (line 2698) and `test_uninstall_skips_circular_dependency_packages` (line 4071) — both cycle-related uninstall tests — pass without changes. Reverse expansion handles cycles correctly via its `visited` set, and topological_sort's cycle separation continues to feed `plan.circular_dependency` regardless of which expansion path produced the input set.
+- 3A pattern: all rewritten and added tests follow Arrange / Act / Assert with `run_action` called explicitly in the Act step. The `fixture` helper handles only Arrange (yaml + Context). Marker file writes and `state.save()` calls are also Arrange. No test logic is hidden in fixtures.
+- All PRD tasks are now checked. The Completion Criteria — (a) all tasks checked, (b) no clippy warnings, (c) no test failures — all hold.
+
+---
+
+

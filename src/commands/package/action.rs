@@ -413,14 +413,13 @@ pub fn run_action<R: BufRead, W: Write>(
             topo_result.sorted
         }
         Action::Uninstall => {
-            // Expand reverse dependencies: find all packages that depend on requested ones
+            // Expand reverse dependencies only — include packages that transitively
+            // depend on the requested ones. Forward dependencies are intentionally NOT
+            // included: removing them is outside the scope of what the user requested
+            // and other packages may still rely on them.
             let (reverse_expanded, notes) = expand_reverse_dependencies(&config, packages);
             plan_notes = notes;
-            // Also expand forward dependencies (existing behavior).
-            // Forward-dep "required by" notes are not used for uninstall — reverse-dep
-            // "depends on" notes are the semantically correct annotation here.
-            let (fully_expanded, _) = expand_dependencies(&config, &reverse_expanded);
-            let topo_result = topological_sort(&config, &fully_expanded)?;
+            let topo_result = topological_sort(&config, &reverse_expanded)?;
             cycle_packages = topo_result.cycle;
             let mut sorted = topo_result.sorted;
             sorted.reverse();
@@ -2549,9 +2548,10 @@ mod tests {
     }
 
     #[test]
-    fn test_uninstall_includes_dependencies_in_reverse_order() {
-        // Arrange — neovim depends on git; uninstall neovim should include git,
-        // but neovim (dependent) must be uninstalled before git (dependency).
+    fn test_uninstall_does_not_pull_in_forward_dependencies() {
+        // Arrange — neovim depends on git. Uninstalling neovim must NOT also uninstall
+        // git: git is a forward dep that the user did not request to remove and may
+        // still be needed by other packages on the machine.
         let marker_dir = TempDir::new().unwrap();
         let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
         let (_tmp, ctx) = fixture(yaml);
@@ -2573,7 +2573,7 @@ mod tests {
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
-        // Act — only request neovim, git should be pulled in as dependency
+        // Act — only request neovim; git must stay
         run_action(
             &ctx,
             &["neovim".to_string()],
@@ -2584,23 +2584,28 @@ mod tests {
         )
         .unwrap();
 
-        // Assert — neovim uninstalled before git (reverse dependency order)
+        // Assert — neovim uninstalled, git never appears in the plan and stays in state
         let written = String::from_utf8(output).unwrap();
-        let neovim_pos = written
-            .find("Uninstalling neovim")
-            .expect("neovim should be uninstalled");
-        let git_pos = written
-            .find("Uninstalling git")
-            .expect("git should be uninstalled");
+        assert!(written.contains("Uninstalling neovim...\ndone"));
         assert!(
-            neovim_pos < git_pos,
-            "neovim (dependent) must be uninstalled before git (dependency)"
+            !written.contains("Uninstalling git"),
+            "git must not be uninstalled (forward dep); output:\n{written}"
         );
+        assert!(
+            !written.contains("git"),
+            "git must not appear in plan at all; output:\n{written}"
+        );
+        assert!(marker_dir.path().join("neovim_marker").exists());
+        assert!(!marker_dir.path().join("git_marker").exists());
+        let state_after = State::load(&ctx.state_path()).unwrap();
+        assert!(state_after.installed.contains(&"git".to_string()));
+        assert!(!state_after.installed.contains(&"neovim".to_string()));
     }
 
     #[test]
-    fn test_uninstall_chain_dependency_reverse_order() {
-        // Arrange — c depends on b, b depends on a. Uninstall order: c, b, a.
+    fn test_uninstall_chain_dependency_does_not_pull_in_forward_deps() {
+        // Arrange — c depends on b, b depends on a; only c is requested for uninstall.
+        // After the forward-dep removal: only c is uninstalled. a and b stay.
         let marker_dir = TempDir::new().unwrap();
         let yaml = "packages:\n  c:\n    depends_on:\n      - b\n  b:\n    depends_on:\n      - a\n  a: {}\n";
         let (_tmp, ctx) = fixture(yaml);
@@ -2633,18 +2638,22 @@ mod tests {
         )
         .unwrap();
 
-        // Assert — c before b before a
+        // Assert — only c uninstalled; a and b remain in state and have no plan entries
         let written = String::from_utf8(output).unwrap();
-        let c_pos = written.find("Uninstalling c").unwrap();
-        let b_pos = written.find("Uninstalling b").unwrap();
-        let a_pos = written.find("Uninstalling a").unwrap();
-        assert!(c_pos < b_pos, "c must be uninstalled before b");
-        assert!(b_pos < a_pos, "b must be uninstalled before a");
+        assert!(written.contains("Uninstalling c...\ndone"));
+        assert!(!written.contains("Uninstalling b"));
+        assert!(!written.contains("Uninstalling a"));
+        let state_after = State::load(&ctx.state_path()).unwrap();
+        assert!(state_after.installed.contains(&"a".to_string()));
+        assert!(state_after.installed.contains(&"b".to_string()));
+        assert!(!state_after.installed.contains(&"c".to_string()));
     }
 
     #[test]
-    fn test_uninstall_skips_not_installed_dependencies() {
-        // Arrange — neovim depends on git; git is not in state
+    fn test_uninstall_does_not_classify_forward_dep_as_not_installed() {
+        // Arrange — neovim depends on git; git is not in state. The forward dep should
+        // not appear in the plan at all (not even as `(not installed)`), because
+        // forward-dep expansion was removed for uninstall.
         let marker_dir = TempDir::new().unwrap();
         let neovim_marker = marker_dir.path().join("neovim_marker");
         let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
@@ -2675,11 +2684,13 @@ mod tests {
         )
         .unwrap();
 
-        // Assert — neovim uninstalled, git skipped as not installed
+        // Assert — neovim uninstalled, git not in any section of the plan
         let written = String::from_utf8(output).unwrap();
         assert!(written.contains("Uninstalling neovim...\ndone"));
-        assert!(written.contains("git (not installed)"));
-        assert!(written.contains("will be skipped"));
+        assert!(
+            !written.contains("git"),
+            "git must not appear in plan; output:\n{written}"
+        );
         assert!(neovim_marker.exists());
     }
 
@@ -2715,7 +2726,7 @@ mod tests {
     }
 
     #[test]
-    fn test_uninstall_dependencies_removed_from_state() {
+    fn test_uninstall_does_not_remove_forward_dep_from_state() {
         // Arrange — neovim depends on git; both installed
         let marker_dir = TempDir::new().unwrap();
         let yaml = "packages:\n  neovim:\n    depends_on:\n      - git\n  git: {}\n";
@@ -2749,10 +2760,10 @@ mod tests {
         )
         .unwrap();
 
-        // Assert — both removed from state
+        // Assert — neovim removed, git remains (git is a forward dep, untouched)
         let state = State::load(&ctx.state_path()).unwrap();
-        assert!(!state.installed.contains(&"git".to_string()));
         assert!(!state.installed.contains(&"neovim".to_string()));
+        assert!(state.installed.contains(&"git".to_string()));
     }
 
     #[test]
