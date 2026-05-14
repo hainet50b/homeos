@@ -129,7 +129,7 @@ irm https://raw.githubusercontent.com/hainet50b/homeos/main/install.ps1 | iex
 
 Installs to `%USERPROFILE%\.homeos\bin\homeos.exe` and adds the directory to your user `PATH`.
 
-Alternatively, download the prebuilt binary directly from [GitHub Releases](https://github.com/hainet50b/homeos/releases).
+Alternatively, download the prebuilt binary directly from [GitHub Releases](https://github.com/hainet50b/homeos/releases) and place it on your `PATH` manually.
 
 ## Reference
 
