@@ -93,10 +93,41 @@ rustup 1.29.0 (28d1352db 2026-03-05)
 <details>
 <summary>Using a plugin</summary>
 
+1. Browse official plugins
+
 ```sh
-# 1. Browse official plugins
-# 2. Add a plugin and create a package with it
-# 3. Apply
+$ homeos plugin list-remote
+Name     Description                                URL
+dnf      DNF package manager plugin for homeos      https://github.com/hainet50b/homeos-plugin-dnf
+scoop    scoop package manager plugin for homeos    https://github.com/hainet50b/homeos-plugin-scoop
+winget   winget package manager plugin for homeos   https://github.com/hainet50b/homeos-plugin-winget
+```
+
+2. Add a plugin to your repository
+
+```sh
+$ homeos plugin add dnf
+Plugin 'dnf' added successfully
+```
+
+3. Create a package using the plugin — the plugin's templates render automatically, no script editing needed
+
+```sh
+$ homeos package add neovim --plugin dnf --param name=neovim
+Added package 'neovim'
+```
+
+4. Apply
+
+```sh
+$ homeos apply
+The following packages will be installed:
+  neovim (plugin: dnf)
+
+Proceed? [y/N] y
+Installing neovim...
+(dnf output)
+done
 ```
 
 </details>
