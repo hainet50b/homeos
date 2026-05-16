@@ -632,6 +632,15 @@ List all plugins.
 Usage: homeos plugin list
 ```
 
+Displays a table with plugin name, description, and URL. `Description` is loaded from each plugin's `plugin.yml`.
+
+```
+$ homeos plugin list
+Name  Description                              URL
+----  ---------------------------------------  ---
+dnf   DNF package manager plugin for homeos.   https://github.com/hainet50b/homeos-plugin-dnf
+```
+
 #### `homeos plugin list-remote`
 
 List official plugins available from GitHub.
@@ -841,9 +850,10 @@ install.sh.tmpl   uninstall.ps1.tmpl  update.ps1.tmpl
 
 ### 2. Define parameters
 
-Edit `plugin.yml` to define the parameters that users must provide when using your plugin:
+Edit `plugin.yml` to set a `description` (a one-line summary of the plugin's purpose) and define the parameters that users must provide when using your plugin:
 
 ```yaml
+description: My provider plugin for homeos.
 params:
   - name
 ```

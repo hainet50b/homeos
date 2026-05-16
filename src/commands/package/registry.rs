@@ -1466,7 +1466,7 @@ mod tests {
         std::fs::create_dir_all(&plugin_dir).unwrap();
         std::fs::write(
             plugin_dir.join("plugin.yml"),
-            "params:\n  - name\n  - repo\n",
+            "description: DNF plugin\nparams:\n  - name\n  - repo\n",
         )
         .unwrap();
 
@@ -1503,7 +1503,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             plugin_dir.join("plugin.yml"),
-            "params:\n  - name\n  - repo\n",
+            "description: DNF plugin\nparams:\n  - name\n  - repo\n",
         )
         .unwrap();
         let mut params = BTreeMap::new();

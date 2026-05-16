@@ -190,7 +190,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Any | stdout | Table: `Name`, `URL` columns (empty table if no plugins). `URL` shows `(local)` when the plugin has no remote URL. |
+| Any | stdout | Table: `Name`, `Description`, `URL` columns (empty table if no plugins). `Description` is loaded from each plugin's `plugin.yml`. `URL` shows `(local)` when the plugin has no remote URL. |
 
 ## homeos plugin list-remote
 
@@ -227,7 +227,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Success | stdout | Plugin details: URL (or `(local)`), parameters, action templates |
+| Success | stdout | Plugin details: description, URL (or `(local)`), parameters, action templates |
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 
 ## homeos plugin cat

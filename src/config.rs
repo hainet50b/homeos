@@ -18,6 +18,7 @@ pub struct PluginConfig {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
+    pub description: String,
     #[serde(default)]
     pub params: Vec<String>,
 }
@@ -611,36 +612,39 @@ plugins:
     #[test]
     fn test_parse_plugin_manifest() {
         // Arrange
-        let yaml = "params:\n  - name\n  - repo\n";
+        let yaml = "description: DNF plugin\nparams:\n  - name\n  - repo\n";
 
         // Act
         let sut: PluginManifest = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
+        assert_eq!(sut.description, "DNF plugin");
         assert_eq!(sut.params, vec!["name", "repo"]);
     }
 
     #[test]
     fn test_parse_plugin_manifest_empty_params() {
         // Arrange
-        let yaml = "params: []\n";
+        let yaml = "description: A plugin\nparams: []\n";
 
         // Act
         let sut: PluginManifest = yaml_serde::from_str(yaml).unwrap();
 
         // Assert
+        assert_eq!(sut.description, "A plugin");
         assert!(sut.params.is_empty());
     }
 
     #[test]
     fn test_load_plugin_manifest_from_file() {
         // Arrange
-        let tmp = fixture_file("params:\n  - name\n");
+        let tmp = fixture_file("description: DNF plugin\nparams:\n  - name\n");
 
         // Act
         let sut = PluginManifest::load(tmp.path()).unwrap();
 
         // Assert
+        assert_eq!(sut.description, "DNF plugin");
         assert_eq!(sut.params, vec!["name"]);
     }
 
@@ -651,6 +655,18 @@ plugins:
 
         // Act
         let result = PluginManifest::load(path);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_plugin_manifest_requires_description() {
+        // Arrange
+        let yaml = "params:\n  - name\n";
+
+        // Act
+        let result: Result<PluginManifest, _> = yaml_serde::from_str(yaml);
 
         // Assert
         assert!(result.is_err());

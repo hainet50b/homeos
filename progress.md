@@ -4474,4 +4474,57 @@ PRD task 216 is one of two remaining unchecked tasks. Task 217 (require `descrip
 
 # Ralph Loop — 2026-05-16T11:37:55Z
 
+## Task: Add required `description` field to `plugin.yml`
+
+**Timestamp:**
+
+2026-05-16T11:45:21Z
+
+**Why this task:**
+
+PRD task 217 was the only remaining unchecked task. With it complete, the PRD's Completion Criteria — all tasks checked, no clippy warnings, no test failures — is fully satisfied.
+
+**What was done:**
+
+1. **Added `description: String` to `PluginManifest` (src/config.rs:20-24).** Placed before the existing `params` field. Crucially, did NOT annotate `description` with `#[serde(default)]`, so deserialization of a `plugin.yml` that lacks the field now returns an error. The struct still derives `Default`, which yields `description: String::new()` via the `String` trait impl — used as the fallback value in `info_to` and `list_to` when loading fails or the file is missing. Updated three existing tests (`test_parse_plugin_manifest`, `test_parse_plugin_manifest_empty_params`, `test_load_plugin_manifest_from_file`) to include `description:` in their fixtures and assert on the parsed value, and added `test_parse_plugin_manifest_requires_description` to pin the new "description is required" contract.
+
+2. **Updated `plugin add --local` skeleton (src/commands/plugin/registry.rs:171-174).** The hardcoded `params: []\n` skeleton became `description: Brief description of what this plugin does.\nparams: []\n`. The placeholder string is the literal example given in the PRD; it produces a valid `plugin.yml` on first creation so the plugin can be `package add`-ed without manual edits to the manifest file.
+
+3. **Added `Description` column to `homeos plugin list` (src/commands/plugin/registry.rs:13-79).** Restructured `list_to` to collect `(name, description, url)` triples up front, then render a 3-column table with name/desc/url widths computed from the data. Added a `load_plugin_description` helper that reads each plugin's `plugin.yml` and gracefully degrades to an empty string when the file is missing or fails to parse (so a corrupt plugin doesn't kill the whole `plugin list` command). Column width minimums: `Name` → 4 chars, `Description` → 11 chars (matches the header), mirroring the `list-remote` column-width approach. Updated `test_list_table_header_format` to additionally assert `Description` appears in the header. Added two new tests: `test_list_shows_description_from_plugin_yml` (description from disk renders in the output) and `test_list_description_empty_when_plugin_yml_missing` (no plugin.yml → blank description column, no error).
+
+4. **Included description in `homeos plugin info` (src/commands/plugin/view.rs:14-49).** Refactored `info_to` to load the `PluginManifest` once (instead of just reading `params`) and emit both the description and the params from the same load. The new output order is `Plugin:` → `Description:` → `URL:` → `Parameters:` → `Templates:`, which matches the column order in `plugin list` (name, description, url) and the README placement of the field. Updated `test_info_displays_plugin_details` to write a `description:` to the plugin.yml and assert it renders. Updated `test_info_shows_none_when_params_empty` and `test_info_lists_templates_with_full_path_when_present` to include `description:` in their fixtures (otherwise the load would fail and the params section would silently be empty, masking the params test's intent). Added two new tests: `test_info_displays_description_from_plugin_yml` (load from disk, render) and `test_info_shows_empty_description_when_plugin_yml_missing` (no plugin.yml → `Description: \n`, no error — graceful degradation matching the existing pattern for missing params).
+
+5. **Updated `plugin/registry.rs` test fixture `create_local_plugin_repo` (src/commands/plugin/registry.rs:417-421)** to write a valid `plugin.yml` (`description: Test plugin\nparams: []\n`) instead of the old `name: test\n` content. Previously this fixture wrote whatever; the existing tests that called it didn't read the file's contents back. With the new schema, when a future test wants to call `add` (which would parse the manifest), the fixture now produces a parseable file.
+
+6. **Updated `package/registry.rs` test fixtures** (src/commands/package/registry.rs:1467-1471 and 1504-1508) to prepend `description: DNF plugin\n` to the `params:` content. These tests exercise `package add --plugin dnf ...` which calls `PluginManifest::load`; without the description field they would now fail to parse and the `add` would error out before reaching the per-parameter validation that those tests are asserting on.
+
+7. **Updated COMMAND_OUTPUT.md** (`## homeos plugin list` row) to document the three-column output with the `Description` column populated from each plugin's `plugin.yml`. Updated `## homeos plugin info` row to include `description` in the list of fields shown on success.
+
+8. **Updated README.md `homeos plugin list` section (lines 627-643)** to add a one-line description-of-output sentence and a worked example showing the new three-column format. The example uses `dnf` for consistency with other plugin examples in the file. Mirrors the structure of the existing `homeos package list` subsection (one-line summary line + Usage block + descriptor sentence + example block).
+
+9. **Updated README.md Plugin Development Guide step 2 (`### 2. Define parameters`)** so the example `plugin.yml` includes a `description:` line. Adjusted the surrounding prose to mention both fields ("set a `description` ... and define the parameters").
+
+**What was changed:**
+
+- src/config.rs — added `description: String` to `PluginManifest`; updated 3 tests; added 1 new test (`test_parse_plugin_manifest_requires_description`).
+- src/commands/plugin/registry.rs — added `load_plugin_description` helper, restructured `list_to` for 3-column rendering, updated `add_local` skeleton plugin.yml content; updated `create_local_plugin_repo` test fixture; updated 1 test (`test_list_table_header_format`, `test_add_local_plugin_yml_content`); added 2 new tests for description rendering / missing-file fallback.
+- src/commands/plugin/view.rs — restructured `info_to` to load manifest once for both description+params, added `Description:` line; updated 3 existing tests' plugin.yml fixtures; added 2 new tests for description rendering / missing-file fallback.
+- src/commands/package/registry.rs — updated 2 test fixtures' plugin.yml content.
+- COMMAND_OUTPUT.md — updated `plugin list` and `plugin info` rows.
+- README.md — added `plugin list` example output; updated Plugin Development Guide `plugin.yml` example.
+- prd.md — task 217 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 564 tests pass (was 559 before this task; +5 new tests). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **What I deliberately did NOT change in README.md.** The task author specified "do not modify the Quick Tour, Official Plugins table, or any other curated sections of `README.md`." The `homeos plugin info` example block (lines 696-710, added in task 216) is a curated section in the strict reading of that constraint — it's a hand-written documentation example, not the `plugin list` example, not the Plugin Development Guide. So I left it as-is even though the actual `plugin info` output now includes a `Description:` line that the README example does not show. The COMMAND_OUTPUT.md specification (updated) and the unit test (`test_info_displays_description_from_plugin_yml`) are now the source of truth for `plugin info` output. If the project owner later wants the README's `plugin info` example refreshed for consistency, it's a one-line addition (`Description: DNF package manager plugin for homeos.` between the `Plugin:` and `URL:` lines), but that wasn't in this task's scope.
+- **Graceful degradation chosen on the `plugin list` / `plugin info` read paths.** A missing or unparseable `plugin.yml` results in an empty `Description` column / `Description: ` line, not an error. Two reasons: (a) the rest of the project follows this pattern — `package info` works regardless of whether the package's script files exist, `info_to` already used `unwrap_or_default()` for params — so consistency wins; (b) `plugin list` is a read-only inventory command, and forcing it to crash when one plugin out of N is malformed would make troubleshooting harder, not easier. The `plugin add --local` path always writes a valid manifest, so the empty-description code path only matters for hand-edited or partially-deleted plugin directories.
+- **Why `description` is required at the deserialization level (not `#[serde(default)]`).** The PRD says the field is "required". If I had added `#[serde(default)]`, a YAML file without `description:` would parse silently into an empty string, which contradicts "required" — invalid manifests would deserialize OK and the user would only notice when running `plugin list` and seeing a blank column. Making it serde-required means `PluginManifest::load` returns Err on a missing-field manifest, which is the correct behavior for `homeos package add --plugin X` (a typo'd or schema-incompatible plugin.yml should fail loudly, not produce a half-broken package). The Default-trait fallback in `info_to`/`list_to` only kicks in when `manifest_path.is_file()` is false OR `load` returns Err — both of which represent "no usable manifest available" states where rendering blank/empty is the most useful UX.
+- **Function ordering in source files matches README command order.** `plugin/registry.rs`: `list` → `list_remote` → `add` → `remove` (unchanged). `plugin/view.rs`: `info` → `cat` → `cd` (unchanged). I only inserted within the existing `list_to` function body; no function-level reordering needed.
+- **3A pattern.** Every new test follows Arrange / Act / Assert with the function under test called explicitly in the Act step. Fixtures (`fixture`, `fixture_with_config`, `create_local_plugin_repo`) only handle preconditions — temp directories, default Config, valid plugin.yml content. The `info_to` / `list_to` calls happen directly in each test's Act block, not in a fixture.
+- **PRD Completion Criteria.** All tasks in the Tasks section are now checked. No clippy warnings. No test failures. The PRD is complete.
+
+---
+
 

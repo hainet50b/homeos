@@ -21,7 +21,23 @@ fn info_to<W: Write>(
 
     let plugin_dir = ctx.plugins_dir().join(plugin);
 
+    let manifest_path = plugin_dir.join("plugin.yml");
+    let manifest = if manifest_path.is_file() {
+        PluginManifest::load(&manifest_path).ok()
+    } else {
+        None
+    };
+    let description = manifest
+        .as_ref()
+        .map(|m| m.description.as_str())
+        .unwrap_or("");
+    let params: Vec<String> = manifest
+        .as_ref()
+        .map(|m| m.params.clone())
+        .unwrap_or_default();
+
     writeln!(writer, "Plugin: {plugin}")?;
+    writeln!(writer, "Description: {description}")?;
     writeln!(
         writer,
         "URL: {}",
@@ -29,14 +45,6 @@ fn info_to<W: Write>(
     )?;
 
     writeln!(writer, "Parameters:")?;
-    let manifest_path = plugin_dir.join("plugin.yml");
-    let params = if manifest_path.is_file() {
-        PluginManifest::load(&manifest_path)
-            .map(|m| m.params)
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
     if params.is_empty() {
         writeln!(writer, "  (none)")?;
     } else {
@@ -180,7 +188,11 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
-        std::fs::write(plugin_dir.join("plugin.yml"), "params:\n  - name\n").unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: DNF package manager plugin for homeos.\nparams:\n  - name\n",
+        )
+        .unwrap();
         let mut output = Vec::new();
 
         // Act
@@ -190,6 +202,7 @@ mod tests {
         assert!(result.is_ok());
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("Plugin: dnf"));
+        assert!(text.contains("Description: DNF package manager plugin for homeos."));
         assert!(text.contains("URL: https://github.com/hainet50b/homeos-plugin-dnf"));
         assert!(text.contains("Parameters:"));
         assert!(text.contains("  name"));
@@ -232,7 +245,11 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
-        std::fs::write(plugin_dir.join("plugin.yml"), "params: []\n").unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: A plugin\nparams: []\n",
+        )
+        .unwrap();
         let mut output = Vec::new();
 
         // Act
@@ -283,7 +300,11 @@ mod tests {
         config.save(&ctx.config_path()).unwrap();
         let plugin_dir = ctx.plugins_dir().join("dnf");
         std::fs::create_dir_all(&plugin_dir).unwrap();
-        std::fs::write(plugin_dir.join("plugin.yml"), "params: []\n").unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: A plugin\nparams: []\n",
+        )
+        .unwrap();
         std::fs::write(plugin_dir.join("install.sh.tmpl"), "sh install\n").unwrap();
         std::fs::write(plugin_dir.join("update.ps1.tmpl"), "ps1 update\n").unwrap();
         let mut output = Vec::new();
@@ -338,6 +359,59 @@ mod tests {
         assert!(text.contains("  update.ps1.tmpl (not found)"));
         assert!(text.contains("  uninstall.sh.tmpl (not found)"));
         assert!(text.contains("  uninstall.ps1.tmpl (not found)"));
+    }
+
+    #[test]
+    fn test_info_displays_description_from_plugin_yml() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: DNF package manager plugin for homeos.\nparams: []\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        info_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Description: DNF package manager plugin for homeos."));
+    }
+
+    #[test]
+    fn test_info_shows_empty_description_when_plugin_yml_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        info_to(&ctx, "dnf", &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Description: \n"));
     }
 
     #[test]

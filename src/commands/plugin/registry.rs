@@ -1,31 +1,71 @@
-use crate::config::{Config, PluginConfig};
+use crate::config::{Config, PluginConfig, PluginManifest};
 use crate::context::Context;
 use crate::git;
 use crate::plan::prompt_confirm;
 use serde::Deserialize;
 use std::io::{BufRead, Write};
+use std::path::Path;
 
 pub fn list(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     list_to(ctx, &mut std::io::stdout())
 }
 
+fn load_plugin_description(plugin_dir: &Path) -> String {
+    let manifest_path = plugin_dir.join("plugin.yml");
+    if manifest_path.is_file() {
+        PluginManifest::load(&manifest_path)
+            .map(|m| m.description)
+            .unwrap_or_default()
+    } else {
+        String::new()
+    }
+}
+
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let name_width = config
+    let descriptions: Vec<(String, String, String)> = config
         .plugins
-        .keys()
-        .map(|n| n.len())
+        .iter()
+        .map(|(name, plugin)| {
+            let desc = load_plugin_description(&ctx.plugins_dir().join(name));
+            let url = plugin.url.clone().unwrap_or_else(|| "(local)".to_string());
+            (name.clone(), desc, url)
+        })
+        .collect();
+
+    let name_width = descriptions
+        .iter()
+        .map(|(n, _, _)| n.len())
         .max()
         .unwrap_or(0)
         .max(4); // "Name" header length
 
-    writeln!(writer, "{:<name_width$}  URL", "Name")?;
-    writeln!(writer, "{:<name_width$}  ---", "-".repeat(name_width))?;
+    let desc_width = descriptions
+        .iter()
+        .map(|(_, d, _)| d.len())
+        .max()
+        .unwrap_or(0)
+        .max(11); // "Description" header length
 
-    for (name, plugin) in &config.plugins {
-        let url = plugin.url.as_deref().unwrap_or("(local)");
-        writeln!(writer, "{:<name_width$}  {}", name, url)?;
+    writeln!(
+        writer,
+        "{:<name_width$}  {:<desc_width$}  URL",
+        "Name", "Description"
+    )?;
+    writeln!(
+        writer,
+        "{:<name_width$}  {:<desc_width$}  ---",
+        "-".repeat(name_width),
+        "-".repeat(desc_width)
+    )?;
+
+    for (name, desc, url) in &descriptions {
+        writeln!(
+            writer,
+            "{:<name_width$}  {:<desc_width$}  {}",
+            name, desc, url
+        )?;
     }
 
     Ok(())
@@ -170,7 +210,10 @@ fn add_local(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Erro
     std::fs::create_dir_all(&target)?;
 
     // Create plugin.yml
-    std::fs::write(target.join("plugin.yml"), "params: []\n")?;
+    std::fs::write(
+        target.join("plugin.yml"),
+        "description: Brief description of what this plugin does.\nparams: []\n",
+    )?;
 
     // Create template files for all OS (both .sh and .ps1)
     for action in &["install", "update", "uninstall"] {
@@ -376,7 +419,11 @@ mod tests {
 
     fn create_local_plugin_repo(dir: &std::path::Path) {
         create_local_git_repo(dir);
-        std::fs::write(dir.join("plugin.yml"), "name: test\n").unwrap();
+        std::fs::write(
+            dir.join("plugin.yml"),
+            "description: Test plugin\nparams: []\n",
+        )
+        .unwrap();
         Command::new("git")
             .args(["-C", &dir.to_string_lossy(), "add", "plugin.yml"])
             .output()
@@ -493,9 +540,66 @@ mod tests {
         let text = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines[0].starts_with("Name"));
+        assert!(lines[0].contains("Description"));
         assert!(lines[0].contains("URL"));
         assert!(lines[1].starts_with("----"));
         assert!(lines[1].contains("---"));
+    }
+
+    #[test]
+    fn test_list_shows_description_from_plugin_yml() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir);
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: DNF package manager plugin for homeos.\nparams:\n  - name\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("DNF package manager plugin for homeos."));
+    }
+
+    #[test]
+    fn test_list_description_empty_when_plugin_yml_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir);
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert — header + separator + plugin row; description column is blank
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[2].starts_with("dnf"));
+        assert!(lines[2].contains("https://example.com"));
     }
 
     #[test]
@@ -1101,7 +1205,10 @@ mod tests {
 
         // Assert
         let content = std::fs::read_to_string(ctx.plugins_dir().join("custom/plugin.yml")).unwrap();
-        assert_eq!(content, "params: []\n");
+        assert_eq!(
+            content,
+            "description: Brief description of what this plugin does.\nparams: []\n"
+        );
     }
 
     #[test]
