@@ -95,6 +95,11 @@ pub enum PluginCommands {
         #[arg(long)]
         purge: bool,
     },
+    /// Display plugin details
+    Info {
+        /// Plugin name
+        plugin: String,
+    },
     /// Display plugin.yml and all template files for a plugin
     Cat {
         /// Plugin name
@@ -302,6 +307,12 @@ fn main() {
             }
             PluginCommands::Remove { plugin, purge } => {
                 if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Info { plugin } => {
+                if let Err(e) = commands::plugin::info(&ctx, &plugin) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
                 }

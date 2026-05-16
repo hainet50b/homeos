@@ -681,6 +681,34 @@ Options:
 > [!NOTE]
 > The plugin directory is not deleted. To update a plugin, run `remove`, then `plugin cd` to navigate to the plugins directory, delete the plugin directory, and `add` again.
 
+#### `homeos plugin info`
+
+Display plugin details.
+
+```
+Usage: homeos plugin info <PLUGIN>
+
+Arguments:
+  <PLUGIN>  Plugin name
+```
+
+Shows URL (or `(local)`), parameters, and action templates.
+
+```
+$ homeos plugin info dnf
+Plugin: dnf
+URL: https://github.com/hainet50b/homeos-plugin-dnf
+Parameters:
+  name
+Templates:
+  install.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/install.sh.tmpl)
+  install.ps1.tmpl (not found)
+  update.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/update.sh.tmpl)
+  update.ps1.tmpl (not found)
+  uninstall.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/uninstall.sh.tmpl)
+  uninstall.ps1.tmpl (not found)
+```
+
 #### `homeos plugin cat`
 
 Display `plugin.yml` and all template files for a plugin.

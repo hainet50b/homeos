@@ -4411,3 +4411,67 @@ PRD task 215 is the only unchecked task. The GitHub Search API returns results i
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-16T11:34:05Z
+
+## Task: Implement `homeos plugin info <plugin>`
+
+**Timestamp:**
+
+2026-05-16T11:37:55Z
+
+**Why this task:**
+
+PRD task 216 is one of two remaining unchecked tasks. Task 217 (require `description` in `plugin.yml`) explicitly references `homeos plugin info` and modifies its output — so 216 is a strict prerequisite. Closing 216 unblocks 217 next loop, after which the PRD's Completion Criteria can be satisfied.
+
+**What was done:**
+
+1. **Added `info` / `info_to` in `src/commands/plugin/view.rs:6-65`.** Mirrors the structure of `homeos package info` (`src/commands/package/registry.rs:587-677`): load `Config`, look up plugin, fail with `Plugin '{plugin}' not found` if absent, then write `Plugin:`, `URL:`, `Parameters:`, `Templates:` sections in that order. URL falls back to `(local)` when `PluginConfig.url` is `None`. Parameters come from `PluginManifest::load(plugin_dir/plugin.yml)`; if the manifest file is missing or fails to parse, params are treated as empty and rendered as `  (none)` — graceful degradation matching the package-info pattern where missing-on-disk artifacts (scripts) do not abort the command. Template section iterates `["install", "update", "uninstall"]` × `["sh", "ps1"]` to produce 6 rows of either `  {file}.tmpl ({path})` or `  {file}.tmpl (not found)`.
+
+2. **Public re-export updated (`src/commands/plugin/mod.rs:5`)** to include `info` alongside `cat, cd`. Kept the alphabetical-within-group convention.
+
+3. **Added CLI subcommand `PluginCommands::Info` in `src/main.rs:98-102`** between `Remove` and `Cat`, matching the README ordering invariant (list, list-remote, add, remove, info, cat, cd). Added the corresponding match arm in `src/main.rs:309-314` that calls `commands::plugin::info` and forwards errors via the standard `eprintln!("Error: {e}"); std::process::exit(1)` pattern used by every other subcommand handler.
+
+4. **Added 8 unit tests (`src/commands/plugin/view.rs:168-368`) before the existing `test_cat_*` tests** to keep test order consistent with README/source-file ordering:
+   - `test_info_displays_plugin_details` — primary happy-path assertion (Plugin/URL/Parameters/Templates all present).
+   - `test_info_shows_local_when_url_is_none` — covers the `(local)` rendering for `PluginConfig.url == None`.
+   - `test_info_shows_none_when_params_empty` — `params: []` in plugin.yml renders `  (none)`.
+   - `test_info_shows_none_when_plugin_yml_missing` — missing plugin.yml renders `  (none)` instead of erroring (graceful degradation).
+   - `test_info_lists_templates_with_full_path_when_present` — verifies the absolute-path rendering for templates that exist on disk, plus `(not found)` for missing ones in the same listing.
+   - `test_info_lists_all_templates_not_found_when_none_exist` — when no template files are written, all 6 rows show `(not found)`.
+   - `test_info_errors_when_plugin_not_found` — error message exactly equals `Plugin 'nonexistent' not found` (matches the spec in `COMMAND_OUTPUT.md:231`).
+   - `test_info_errors_when_not_initialized` — fails when `homeos.yml` does not exist (delegates to `Config::load`).
+   All follow 3A: Arrange constructs `Context` + writes `homeos.yml`/plugin files; Act calls `info_to` explicitly; Assert checks string contents. No logic hidden in fixtures.
+
+5. **Added README subsection `#### \`homeos plugin info\`` (`README.md:684-710`)** between `homeos plugin remove` and `homeos plugin cat` — matching the README plugin command order (list, list-remote, add, remove, info, cat, cd). Format mirrors the existing `homeos package info` subsection: a short prose description, a Usage block, a "Shows ..." line summarizing the output, and an example block showing real output. The example uses the `dnf` plugin (consistent with other plugin examples in the README), shows `https://github.com/hainet50b/homeos-plugin-dnf` as the URL, lists `name` as the only parameter, and renders three `.sh.tmpl` files at their full path plus three `.ps1.tmpl` files as `(not found)` — matching what a freshly-cloned `homeos-plugin-dnf` plugin would produce on Linux.
+
+**What was changed:**
+
+- src/commands/plugin/view.rs — added `info` (public) and `info_to` (private writer-injectable) functions; imported `PluginManifest`; added 8 new tests.
+- src/commands/plugin/mod.rs — added `info` to the `pub use view::{...}` re-export.
+- src/main.rs — added `PluginCommands::Info { plugin }` variant and its handler arm.
+- README.md — added `#### \`homeos plugin info\`` subsection under `## Manage plugins`.
+- prd.md — task 216 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 559 tests pass (was 551 before this task; +8 new tests). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean. `cargo fmt` reformatted a couple of lines in the new test code (long format-string concatenations); no semantic changes.
+- Function ordering in `view.rs` now is: `info`, `info_to`, `cat`, `cat_to`, `cd`, `resolve_cd_target` — matches the README order (info before cat before cd). Existing `cat` and `cd` did not need reordering since they were already in README-consistent order; `info` slotted in cleanly at the top of the file.
+- `COMMAND_OUTPUT.md` already specified `## homeos plugin info` (lines 226-231) with the exact error string `Error: Plugin '{name}' not found`. My implementation matches: the inner error message is `Plugin '{name}' not found` (no `Error:` prefix in the function), and main.rs's handler wraps it as `eprintln!("Error: {e}")` to produce the spec-compliant final stderr output. Same pattern as every other error in the project.
+- The PluginManifest fallback (treat missing/invalid `plugin.yml` as empty params) was a judgment call. The alternative — return `Err` if `plugin.yml` is missing — would surface plugin-directory corruption earlier but also makes `info` brittle in a way `package info` is not. `package info` works regardless of whether the package's script files exist; for parity, `plugin info` works regardless of whether `plugin.yml` exists on disk. The task spec is silent on this edge case, and both behaviors are defensible. The test `test_info_shows_none_when_plugin_yml_missing` pins the chosen behavior; if the project changes its mind later, only that test + the `is_file()` branch need updating.
+- Task 217 modifies the `plugin.yml` schema to require a `description` field and changes the `plugin info` output to include it. That work belongs to its own loop; the present implementation does not anticipate it. When task 217 lands, the `info_to` body will need one extra `writeln!` for the description, and the test `test_info_displays_plugin_details` will need an assertion on the new field, but the surrounding scaffolding (CLI wiring, README subsection, error handling) is already in place and won't need to change.
+- 3A pattern: every new test follows Arrange / Act / Assert with `info_to` called explicitly in the Act step. Fixtures (`fixture`, `fixture_with_config`) only set up the temp directory and an empty config — no test-specific arrangement or assertion logic is hidden inside them.
+- Task 217 remains the last unchecked item in the PRD. The Completion Criteria — (a) all tasks checked, (b) no clippy warnings, (c) no test failures — is one task away.
+
+---
+
+
+
+---
+
+# Ralph Loop — 2026-05-16T11:37:55Z
+
+
