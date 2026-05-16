@@ -34,6 +34,19 @@ try {
 
     Write-Host "Installed homeos to $InstallDir\homeos.exe"
 
+    $CompletionDir = Join-Path $env:USERPROFILE ".homeos"
+    $CompletionFile = Join-Path $CompletionDir "completion.ps1"
+    if (-not (Test-Path $CompletionDir)) {
+        New-Item -ItemType Directory -Force -Path $CompletionDir | Out-Null
+    }
+    & (Join-Path $InstallDir "homeos.exe") completion powershell | Out-File -FilePath $CompletionFile -Encoding utf8
+    Write-Host ""
+    Write-Host "Installed PowerShell completion to $CompletionFile"
+    Write-Host "Add the following line to your `$PROFILE to enable completion:"
+    Write-Host ""
+    Write-Host "    . `"$CompletionFile`""
+    Write-Host ""
+
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $PathParts = if ($UserPath) { $UserPath -split ';' | Where-Object { $_ -ne '' } } else { @() }
     if ($PathParts -notcontains $InstallDir) {

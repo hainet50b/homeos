@@ -43,6 +43,63 @@ chmod +x "$INSTALL_DIR/homeos"
 
 echo "Installed homeos to $INSTALL_DIR/homeos"
 
+SHELL_NAME="$(basename "${SHELL:-}")"
+case "$SHELL_NAME" in
+    bash)
+        COMP_DIR="$HOME/.local/share/bash-completion/completions"
+        COMP_FILE="$COMP_DIR/homeos"
+        mkdir -p "$COMP_DIR"
+        "$INSTALL_DIR/homeos" completion bash > "$COMP_FILE"
+        echo ""
+        echo "Installed bash completion to $COMP_FILE"
+        echo "If bash-completion is installed, completion will be available in new shells."
+        ;;
+    zsh)
+        COMP_DIR="$HOME/.local/share/zsh/site-functions"
+        COMP_FILE="$COMP_DIR/_homeos"
+        mkdir -p "$COMP_DIR"
+        "$INSTALL_DIR/homeos" completion zsh > "$COMP_FILE"
+        echo ""
+        echo "Installed zsh completion to $COMP_FILE"
+        echo "Add the following to your ~/.zshrc (before 'compinit') if not already present:"
+        echo ""
+        echo "    fpath=($COMP_DIR \$fpath)"
+        echo ""
+        ;;
+    fish)
+        COMP_DIR="$HOME/.config/fish/completions"
+        COMP_FILE="$COMP_DIR/homeos.fish"
+        mkdir -p "$COMP_DIR"
+        "$INSTALL_DIR/homeos" completion fish > "$COMP_FILE"
+        echo ""
+        echo "Installed fish completion to $COMP_FILE"
+        ;;
+    elvish)
+        COMP_DIR="$HOME/.config/elvish/lib"
+        COMP_FILE="$COMP_DIR/homeos.elv"
+        mkdir -p "$COMP_DIR"
+        "$INSTALL_DIR/homeos" completion elvish > "$COMP_FILE"
+        echo ""
+        echo "Installed elvish completion to $COMP_FILE"
+        echo "Add the following to your ~/.config/elvish/rc.elv:"
+        echo ""
+        echo "    use homeos"
+        echo ""
+        ;;
+    nu)
+        COMP_DIR="$HOME/.config/nushell/completions"
+        COMP_FILE="$COMP_DIR/homeos.nu"
+        mkdir -p "$COMP_DIR"
+        "$INSTALL_DIR/homeos" completion nushell > "$COMP_FILE"
+        echo ""
+        echo "Installed nushell completion to $COMP_FILE"
+        echo "Add the following to your config.nu:"
+        echo ""
+        echo "    source $COMP_FILE"
+        echo ""
+        ;;
+esac
+
 case ":$PATH:" in
     *":$INSTALL_DIR:"*)
         echo ""

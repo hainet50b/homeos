@@ -4588,3 +4588,51 @@ PRD task 218 was selected. It is the first of two remaining unchecked tasks and 
 - **PRD progress.** Task 218 done. Task 219 (extend `install.sh` / `install.ps1` to auto-install completion files) remains the last unchecked item in the Tasks section, and it now has its prerequisite — a working `homeos completion <shell>` command — to call from the install scripts.
 
 
+
+## Task: Extend `install.sh` and `install.ps1` to auto-install shell completion
+
+**Timestamp:**
+
+2026-05-16T13:02:53Z
+
+**Why this task:**
+
+PRD task 219 was the only remaining unchecked task in the Tasks section and the final item before the PRD Completion Criteria can be declared satisfied. It directly depends on task 218 (the `homeos completion <shell>` command), which was completed in the previous Ralph Loop iteration — so the prerequisite call site is now available for the install scripts to invoke. Completing this task makes the PRD fully checked off.
+
+**What was done:**
+
+1. **Extended `install.sh` with a shell-detection block placed between `Installed homeos to ...` (the existing success line for the binary) and the `case ":$PATH:"` PATH-check block.** The new block reads `$SHELL`, takes its `basename`, and matches against five supported shells: `bash`, `zsh`, `fish`, `elvish`, and `nu` (the executable name for nushell). For each match, the block:
+   - Defines the destination directory and filename per the PRD spec: bash → `~/.local/share/bash-completion/completions/homeos`, zsh → `~/.local/share/zsh/site-functions/_homeos`, fish → `~/.config/fish/completions/homeos.fish`, elvish → `~/.config/elvish/lib/homeos.elv`, nushell → `~/.config/nushell/completions/homeos.nu`.
+   - `mkdir -p` the parent directory (creates the standard XDG-style hierarchy if the user hasn't used the shell before).
+   - Runs `"$INSTALL_DIR/homeos" completion <shell>` and redirects stdout to the destination file. The full path is used because `$INSTALL_DIR` may not be on `$PATH` yet at this point in the script (that's exactly what the next `case` block detects and warns about).
+   - Prints a stdout confirmation line: `Installed <shell> completion to <path>`.
+   - For shells that require an extra activation step (zsh fpath, elvish `use`, nushell `source`), prints the exact shell-specific instruction the user needs to paste into their rc/config file. The script itself does NOT modify any rc/profile/config file, per the PRD constraint.
+   - For fish, only the confirmation line is printed — fish auto-loads from `~/.config/fish/completions/` so no manual step is needed.
+   - For bash, the confirmation is followed by a one-liner noting that completion will be available in new shells "if bash-completion is installed" — covering both the common case (bash-completion present) and the edge case (bare bash) without prescribing a specific manual step (the user would have to install bash-completion, which is OS-package-manager-dependent and out of scope for this script).
+   - The fall-through (no shell match) is a bare `case` statement with no default arm, so unsupported shells silently skip the entire block. This matches the PRD requirement: "If `$SHELL` does not match any of the supported shells, skip completion setup entirely without any message."
+
+2. **Extended `install.ps1` with a PowerShell completion block placed between `Installed homeos to ...` and the existing `$UserPath` block.** Because `install.ps1` runs only on Windows and is invoked for PowerShell-based installs, there is no shell detection — PowerShell is the only target. The block:
+   - Defines `$CompletionDir = $env:USERPROFILE\.homeos` and `$CompletionFile = $CompletionDir\completion.ps1` per the PRD spec.
+   - Creates the directory with `New-Item -ItemType Directory -Force -Path $CompletionDir` if it doesn't already exist (idempotent — the binary's install dir `$env:USERPROFILE\.homeos\bin` shares the `.homeos` parent, so on a normal install the parent already exists).
+   - Runs `& (Join-Path $InstallDir "homeos.exe") completion powershell` and pipes the output to `Out-File -FilePath $CompletionFile -Encoding utf8`. UTF-8 encoding is explicit because PowerShell's default encoding for `Out-File` is UTF-16LE on Windows PowerShell 5.x, which would produce a BOM and break sourcing.
+   - Prints stdout guidance: `Installed PowerShell completion to <path>` followed by a blank line, then `Add the following line to your $PROFILE to enable completion:` followed by a blank line, then a four-space-indented `. "<path>"` snippet the user can copy. The script does NOT touch `$PROFILE` itself, per the PRD constraint. Backtick escaping is used inside the double-quoted string literals so `$PROFILE` is printed literally (not expanded to the user's profile path) and the inner double-quotes around `$CompletionFile` are preserved (the path may contain spaces).
+
+3. **Marked task 219 as `[x]` in `prd.md`.** This is the last unchecked task in the Tasks section. All Post Tasks were already checked (there are none in this PRD — the file only has a single Tasks section followed by Completion Criteria).
+
+**What was changed:**
+
+- install.sh — added a `SHELL_NAME="$(basename "${SHELL:-}")"` detection block and a `case "$SHELL_NAME" in ... esac` with five shell arms (bash, zsh, fish, elvish, nu), each writing a completion file and printing guidance.
+- install.ps1 — added a PowerShell completion block that writes `$env:USERPROFILE\.homeos\completion.ps1` and prints `$PROFILE`-sourcing guidance.
+- prd.md — task 219 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **No Rust changes; no Rust-test additions.** The bootstrap install scripts are downloaders that fetch a prebuilt release binary; they live outside `src/` and aren't covered by `cargo test`. The PRD's standard "Update tests accordingly." clause has no concrete target here — there are no shell-script test harnesses in the repository (only `test-command-output.sh`, which exercises homeos commands against a temporary test repo and would not be a natural fit for testing the install scripts because doing so would require actually downloading a release binary). The verification I did do: `sh -n install.sh` passes (valid POSIX-sh syntax) and `cargo fmt` / `cargo clippy --all-targets -- -D warnings` / `cargo test` are all clean (574 tests pass, unchanged from before the task because nothing in the Rust crate moved). PowerShell syntax was not statically checked because `pwsh` is not installed in this environment, but the script follows the same patterns as the rest of `install.ps1` and uses standard cmdlets (`New-Item`, `Out-File`, `Write-Host`) with documented parameters.
+- **Why match on `nu` (not `nushell`) for the nushell detection.** The nushell executable is named `nu` (see `which nu` on a nushell install). When nushell is the user's login shell, `$SHELL` is set to the absolute path to the `nu` binary, so `basename "$SHELL"` yields `nu`, not `nushell`. The `homeos completion` subcommand takes `nushell` (the human-readable shell name), so the `case` arm matches `nu` from `$SHELL` but invokes `homeos completion nushell` — the mismatch is intentional and load-bearing.
+- **Why bash gets a hedged confirmation and fish gets a bare confirmation.** Modern fish auto-loads completions from `~/.config/fish/completions/*.fish` with no further configuration — installing the file is sufficient. bash does not, by default: it needs the `bash-completion` package (or `bash-completion@2` on macOS Homebrew) which sources scripts from `~/.local/share/bash-completion/completions/` via its own auto-loader. Most distros (Fedora, Ubuntu, Arch, Debian, Homebrew on macOS) ship `bash-completion` by default or recommend it strongly, so the practical answer is "it'll usually just work, and if not, install bash-completion." That's what the hedged message conveys. Prescribing a specific install command would be wrong on at least one OS no matter what we chose (apt vs. dnf vs. brew vs. pacman).
+- **Why the completion block goes BEFORE the PATH check, not after.** The PATH check ends the script: in the happy path it prints `homeos --version`, and in the unhappy path it prints a "add this to PATH" snippet and exits via `EOF`. Putting the completion install before this block means (a) the completion is set up regardless of whether the user's PATH already includes the install dir, (b) the final stdout the user sees is still the PATH-status block, which is the most important piece of information for "what do I do next", and (c) the order in the script's body matches the script's narrative — install binary, set up completion, verify PATH.
+- **Why I invoke `"$INSTALL_DIR/homeos" completion <shell>` instead of just `homeos completion <shell>`.** At this point in the script, the install dir may not be on `$PATH` (that's exactly what the next block checks). Calling `homeos` by bare name would fail with "command not found" in that case, breaking the completion install for the most common first-time user (`~/.local/bin` not yet on PATH). Using the full path `"$INSTALL_DIR/homeos"` makes the call work regardless of PATH state.
+- **Why the PowerShell completion file is `$env:USERPROFILE\.homeos\completion.ps1` and not, say, `$env:USERPROFILE\Documents\PowerShell\completion.ps1`.** PowerShell doesn't have a standard system-wide auto-load location for completions (unlike bash-completion's per-distro dirs or zsh's site-functions). The convention is to add a `. "path\to\completion.ps1"` line to `$PROFILE`, and the install script is forbidden from touching `$PROFILE`. So we pick a path that's (a) under the homeos-owned tree (`$env:USERPROFILE\.homeos\`, same parent as `bin\homeos.exe`), (b) stable across PowerShell versions (PowerShell 5 / 7 / Core all expand `$env:USERPROFILE` the same way), and (c) easy to type back into the user's `$PROFILE` via a copy-paste from the install script's stdout. The PRD task description specifies this exact path, so the choice matches the spec.
+- **PRD Completion Criteria.** All tasks (both Tasks and the empty Post Tasks set) are now checked. `cargo clippy --all-targets -- -D warnings` produces no warnings. `cargo test` passes with 574 tests, 0 failures. The PRD is complete.
+
