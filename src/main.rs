@@ -69,6 +69,12 @@ pub enum Commands {
         #[command(subcommand)]
         command: RepoCommands,
     },
+    /// Print a shell completion script to stdout
+    Completion {
+        /// Target shell
+        #[arg(value_enum)]
+        shell: commands::completion::CompletionShell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -356,6 +362,12 @@ fn main() {
                 }
             }
         },
+        Commands::Completion { shell } => {
+            if let Err(e) = commands::completion::run(shell) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Package { command } => match command {
             PackageCommands::List => {
                 if let Err(e) = commands::package::list(&ctx) {

@@ -1,4 +1,5 @@
 pub mod cd;
+pub mod completion;
 pub mod init;
 pub mod package;
 pub mod plugin;

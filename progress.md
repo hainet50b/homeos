@@ -4528,3 +4528,63 @@ PRD task 217 was the only remaining unchecked task. With it complete, the PRD's 
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-16T12:54:26Z
+
+## Task: Implement `homeos completion <shell>`
+
+**Timestamp:**
+
+2026-05-16T12:57:48Z
+
+**Why this task:**
+
+PRD task 218 was selected. It is the first of two remaining unchecked tasks and is a hard prerequisite for task 219 (which extends `install.sh` / `install.ps1` to invoke `homeos completion` for the user's detected shell). Implementing 218 first unblocks 219; the reverse order is not viable because the install scripts would call a command that does not exist.
+
+**What was done:**
+
+1. **Added `clap_complete = "4"` and `clap_complete_nushell = "4"` to `Cargo.toml` `[dependencies]`.** Pinned to the `4` major matching the existing `clap = "4"` entry. Both crates resolved to `4.6.5` and `4.6.0` respectively from the registry. The `clap_complete::Shell` enum (bash, zsh, fish, powershell, elvish) provides five of the six supported shells; `clap_complete_nushell::Nushell` provides the sixth, matching the task's split between the two crates.
+
+2. **Created `src/commands/completion.rs`** with the public `run` entry point and a private `run_to<W: Write>` helper for testability:
+   - Defined `CompletionShell` as a `#[derive(ValueEnum)]` enum with six variants (`Bash`, `Zsh`, `Fish`, `PowerShell`, `Elvish`, `Nushell`) in the README-specified order. Annotated with `#[value(rename_all = "lower")]` so the CLI possible-values render as lowercase (`bash`, `zsh`, `fish`, `powershell`, `elvish`, `nushell`) matching the README spec — not clap's default kebab-case which would have produced `power-shell`.
+   - `run(shell)` is the public entry point used by main.rs; it forwards to `run_to(shell, &mut std::io::stdout())`. `run_to<W: Write>` exists so unit tests can capture the generated script in a `Vec<u8>` instead of stdout.
+   - `run_to` builds `crate::Cli::command()`, then matches on `CompletionShell` to dispatch to `clap_complete::generate` with the appropriate `Shell` variant — or to `clap_complete_nushell::Nushell` for the nushell case. The binary name comes from `cmd.get_name()` so it stays in sync with the `#[command(name = "homeos")]` attribute on `Cli`.
+
+3. **Registered the module in `src/commands.rs`** (inserted `pub mod completion;` in alphabetical position between `cd` and `init`).
+
+4. **Wired up the CLI variant and handler in `src/main.rs`:**
+   - Added a `Completion { shell: commands::completion::CompletionShell }` variant to the `Commands` enum, placed last (after `Repo`) to match the README section ordering (Shell completion appears after Manage repositories). Used `#[arg(value_enum)]` so clap auto-generates the "possible values" help text and emits an `InvalidValue` error for unknown shells — matching the COMMAND_OUTPUT.md spec ("clap-generated argument error listing the supported shells").
+   - Added the match arm `Commands::Completion { shell } => { ... }` immediately after the `Commands::Repo` arm and before `Commands::Package`. The handler calls `commands::completion::run(shell)` and follows the same error-handling pattern as every other command in main.rs (`eprintln!("Error: {e}"); std::process::exit(1);`).
+
+5. **Added 10 unit tests** (`src/commands/completion.rs:tests`), all 3A-structured with the function under test called explicitly in the Act step:
+   - Six per-shell tests (`test_completion_bash_generates_script`, `..._zsh_..`, `..._fish_..`, `..._powershell_..`, `..._elvish_..`, `..._nushell_..`) each invoke `run_to` against a `Vec<u8>` and assert the output is non-empty, contains `homeos`, and contains a shell-specific signature string (e.g., `complete` for bash, `#compdef` for zsh, `complete -c homeos` for fish, `Register-ArgumentCompleter` for powershell, `edit:completion:arg-completer` for elvish, `export extern` for nushell). These signatures are unique to each shell's completion script format and confirm the right generator was dispatched.
+   - `test_completion_parses_lowercase_shell_names` asserts `Cli::try_parse_from(["homeos", "completion", "bash"])` yields `Commands::Completion { shell: CompletionShell::Bash }`.
+   - `test_completion_parses_powershell_as_lowercase` covers the PowerShell variant specifically because it is the only multi-word PascalCase variant and would have been mis-rendered as `power-shell` without the `rename_all = "lower"` annotation.
+   - `test_completion_rejects_unknown_shell` asserts that an invalid shell name (`tcsh`) results in a `clap::error::ErrorKind::InvalidValue` parse error — pinning the COMMAND_OUTPUT.md spec for "Unknown shell (error)". The pattern uses `match result` rather than `unwrap_err()` because `Cli` does not derive `Debug` (a deliberate choice elsewhere in the project), so `unwrap_err()` would not compile.
+   - `test_completion_help_lists_all_supported_shells` introspects the clap `Command` for the `completion` subcommand and asserts the `shell` positional's possible-values list is exactly `["bash", "zsh", "fish", "powershell", "elvish", "nushell"]` in that order, matching the README spec: `<SHELL>  Target shell [possible values: bash, zsh, fish, powershell, elvish, nushell]`.
+
+**What was changed:**
+
+- Cargo.toml — added `clap_complete = "4"` and `clap_complete_nushell = "4"` to `[dependencies]`.
+- Cargo.lock — auto-updated by `cargo add` to include the two new crates and their transitive deps.
+- src/commands.rs — added `pub mod completion;` (alphabetical placement).
+- src/commands/completion.rs — new file: `CompletionShell` enum, `run`, `run_to`, 10 unit tests.
+- src/main.rs — added `Commands::Completion` variant and its handler match arm.
+- prd.md — task 218 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 574 tests pass (was 564 before this task; +10 new tests). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean. The build picked up the two new dependencies (`clap_complete v4.6.5`, `clap_complete_nushell v4.6.0`) and compiled the new module without warnings on the first try after a single test-side fix (described below).
+- **One compile error during development, fixed in place.** The `test_completion_rejects_unknown_shell` test originally used `result.unwrap_err()`, which requires `T: Debug` for the `Ok` variant. Because `Cli` deliberately does not derive `Debug`, this would not compile. The fix was to switch to a `match` expression that panics on `Ok` and extracts the error on `Err`. The same pattern is used elsewhere in main.rs (e.g., `test_cli_version_flag_long`), so the choice matches the project's convention.
+- **Why `rename_all = "lower"` and not the default kebab-case.** Without the annotation, clap's `ValueEnum` derive produces kebab-cased possible-values: `bash`, `zsh`, `fish`, `power-shell`, `elvish`, `nushell`. The README spec (`README.md:823`) and COMMAND_OUTPUT.md explicitly use `powershell` (one word). `lower` produces all-lowercase variant names with no separators, which yields the exact spec output. This is asserted in `test_completion_help_lists_all_supported_shells`.
+- **Module placement and function ordering match the README.** The README places Shell completion after Manage repositories and after the Reference section's command listings; correspondingly, the `Completion` variant is added at the end of the `Commands` enum in main.rs, and its handler arm sits between `Commands::Repo` and `Commands::Package` (the Package handler is the last large match block in `main` for historical reasons — none of the existing handlers was reordered). The function ordering inside `src/commands/completion.rs` is `CompletionShell` (type) → `run` (public entry) → `run_to` (private helper), which mirrors the `info` → `info_to` and `cat` → `cat_to` pattern used in `src/commands/plugin/view.rs` and elsewhere.
+- **Why a separate `CompletionShell` enum instead of `clap_complete::Shell` directly.** `clap_complete::Shell` includes only the five generators that ship in `clap_complete` itself (Bash, Zsh, Fish, PowerShell, Elvish); it does not include Nushell. To support all six shells with a single value enum on the CLI, I defined a project-local `CompletionShell` with all six variants and dispatched to the right generator in `run_to`. The cost is a six-arm match; the gain is a single argument type that the user sees in `--help` and that exposes exactly the spec'd possible-values list.
+- **No changes to README.md needed.** The README already documents `homeos completion <SHELL>` under the `### Shell completion` section (lines 815-849), including the Usage block, possible-values list, and per-shell redirect examples. The implementation matches what the README already promised. The COMMAND_OUTPUT.md `## homeos completion` section (lines 282-287) was already written ahead of time as the specification, and the implementation matches it.
+- **No changes to `homeos.yml`, plan rendering, or any existing commands.** Completion is a pure side-effect-free output command; it does not touch any of the state.yml / homeos.yml machinery. The Context::new call at the top of `main` is still performed (for code-uniformity with all other commands) but the `ctx` is not consumed by the Completion arm — this is harmless because `Context::new` is just a path computation, not I/O.
+- **3A pattern.** Every new test is structured Arrange / Act / Assert with the function under test (`run_to` or `Cli::try_parse_from` or `Cli::command()` introspection) called explicitly in the Act step. There are no fixtures in this module because the completion command is stateless — no temp directory, no Config, no Context required. The per-shell tests share no setup state.
+- **PRD progress.** Task 218 done. Task 219 (extend `install.sh` / `install.ps1` to auto-install completion files) remains the last unchecked item in the Tasks section, and it now has its prerequisite — a working `homeos completion <shell>` command — to call from the install scripts.
+
+
