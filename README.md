@@ -139,21 +139,30 @@ done
 
 Setup steps that several packages share — enabling a COPR repository, adding a Homebrew tap, registering a Scoop bucket — are best expressed as their own package, with dependents declaring `depends_on`. The setup runs once before any dependent and can be uninstalled cleanly.
 
-1. Add a setup package using a setup plugin (e.g., `dnf-copr`, `homebrew-tap`, `scoop-bucket`)
+1. Add the required plugins — both the setup plugin (e.g., `dnf-copr`, `homebrew-tap`, `scoop-bucket`) and the package manager plugin used by the dependent
+
+```sh
+$ homeos plugin add dnf-copr
+Plugin 'dnf-copr' added successfully
+$ homeos plugin add dnf
+Plugin 'dnf' added successfully
+```
+
+2. Add a setup package using the setup plugin
 
 ```sh
 $ homeos package add dnf-copr-mise --plugin dnf-copr --param name=jdxcode/mise
 Added package 'dnf-copr-mise'
 ```
 
-2. Add the actual package depending on it
+3. Add the actual package depending on it
 
 ```sh
 $ homeos package add mise --plugin dnf --param name=mise --depends-on dnf-copr-mise
 Added package 'mise'
 ```
 
-3. Apply — the COPR enable runs first, then the package install
+4. Apply — the COPR enable runs first, then the package install
 
 ```sh
 $ homeos apply
