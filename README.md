@@ -99,10 +99,10 @@ rustup 1.29.0 (28d1352db 2026-03-05)
 $ homeos plugin list-remote
 Name    Description                                URL
 ------  -----------------------------------------  ---
+dnf     DNF package manager plugin for homeos.     https://github.com/hainet50b/homeos-plugin-dnf
 npm     npm package manager plugin for homeos.     https://github.com/hainet50b/homeos-plugin-npm
 scoop   Scoop package manager plugin for homeos.   https://github.com/hainet50b/homeos-plugin-scoop
 winget  WinGet package manager plugin for homeos.  https://github.com/hainet50b/homeos-plugin-winget
-dnf     DNF package manager plugin for homeos.     https://github.com/hainet50b/homeos-plugin-dnf
 ```
 
 2. Add a plugin to your repository
@@ -722,10 +722,10 @@ Official plugins are available. See each plugin's repository for details.
 
 | Name | Description |
 |------|-------------|
+| [dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin for homeos. |
 | [npm](https://github.com/hainet50b/homeos-plugin-npm) | npm package manager plugin for homeos. |
 | [scoop](https://github.com/hainet50b/homeos-plugin-scoop) | Scoop package manager plugin for homeos. |
 | [winget](https://github.com/hainet50b/homeos-plugin-winget) | WinGet package manager plugin for homeos. |
-| [dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin for homeos. |
 
 Built a community plugin? [Open an issue](https://github.com/hainet50b/homeos/issues/new) and we'll list it here.  
 Want a plugin that doesn't exist yet? [Request it](https://github.com/hainet50b/homeos/issues/new) — we'd love to hear what you need.

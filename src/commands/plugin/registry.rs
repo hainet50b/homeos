@@ -83,7 +83,8 @@ fn list_remote_to<W: Write, F>(writer: &mut W, fetch: F) -> Result<(), Box<dyn s
 where
     F: FnOnce() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error>>,
 {
-    let plugins = fetch()?;
+    let mut plugins = fetch()?;
+    plugins.sort_by(|a, b| a.name.cmp(&b.name));
 
     if plugins.is_empty() {
         writeln!(writer, "No remote plugins found.")?;
@@ -622,6 +623,43 @@ mod tests {
         assert_eq!(lines.len(), 4);
         assert!(lines[2].contains("mise"));
         assert!(lines[3].contains("rustup"));
+    }
+
+    #[test]
+    fn test_list_remote_sorts_alphabetically_by_name() {
+        // Arrange
+        let mut output = Vec::new();
+        let fetch = || {
+            Ok(vec![
+                RemotePlugin {
+                    name: "winget".to_string(),
+                    description: "WinGet plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-winget".to_string(),
+                },
+                RemotePlugin {
+                    name: "dnf".to_string(),
+                    description: "DNF plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                },
+                RemotePlugin {
+                    name: "npm".to_string(),
+                    description: "npm plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-npm".to_string(),
+                },
+            ])
+        };
+
+        // Act
+        list_remote_to(&mut output, fetch).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // Header + separator + 3 plugins, sorted alphabetically: dnf, npm, winget
+        assert_eq!(lines.len(), 5);
+        assert!(lines[2].starts_with("dnf"));
+        assert!(lines[3].starts_with("npm"));
+        assert!(lines[4].starts_with("winget"));
     }
 
     #[test]

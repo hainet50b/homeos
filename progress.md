@@ -4363,3 +4363,51 @@ PRD task 214 is the only unchecked task. It corrects a long-standing bug: `homeo
 ---
 
 
+
+---
+
+# Ralph Loop — 2026-05-16T02:57:29Z
+
+## Task: Sort `homeos plugin list-remote` output alphabetically by plugin name
+
+**Timestamp:**
+
+2026-05-16T02:59:05Z
+
+**Why this task:**
+
+PRD task 215 is the only unchecked task. The GitHub Search API returns results in an opaque order that may shift over time; sorting alphabetically brings the remote listing in line with the local `plugin list` UX (which already sorts via `BTreeMap`), makes test assertions stable, and lets the README document the order deterministically. Closing it satisfies the PRD's Completion Criteria.
+
+**What was done:**
+
+1. **Added sort in `list_remote_to` (src/commands/plugin/registry.rs:86-87).** After calling `fetch()`, the returned `Vec<RemotePlugin>` is now sorted in place via `plugins.sort_by(|a, b| a.name.cmp(&b.name))` before the empty check / column width calculation / row rendering pass. Chose `list_remote_to` over `fetch_remote_plugins` as the sort site for two reasons: (a) the display-facing function is where output-ordering invariants belong — sorting in the fetch path would couple the API client to a presentation concern; (b) the sort happens regardless of fetcher implementation, so the test injection points (which pass arbitrary `Vec<RemotePlugin>`) are now exercised by the same sort code path as the real GitHub fetch.
+
+2. **Added a regression test (src/commands/plugin/registry.rs:629-664).** `test_list_remote_sorts_alphabetically_by_name` injects `[winget, dnf, npm]` (deliberately unsorted) and asserts the rendered output lines 2/3/4 start with `dnf`, `npm`, `winget` respectively. Placed immediately after `test_list_remote_multiple_plugins` and before `test_list_remote_table_header_format` so the sort test sits within the cluster of `test_list_remote_*` tests, keeping related coverage adjacent.
+
+3. **Test placement choice.** The existing `test_list_remote_multiple_plugins` already passes `[mise, rustup]` (already sorted) and asserts they render in that order — so it incidentally satisfies the new sort behavior but does not *prove* it (the input is sorted; sort is a no-op). The new test is the load-bearing one; the existing test was left unchanged because removing the explicit-order assertion would weaken it, and re-arranging its input would not add coverage beyond what the new test already provides.
+
+4. **Updated Quick Tour `list-remote` example (README.md:99-106).** Reordered the example from `npm, scoop, winget, dnf` (matching the pre-sort behavior set up by commit 482ae4a) to alphabetical `dnf, npm, scoop, winget`. This is required because the README documents real output and the output now sorts; leaving the example unsorted would mismatch.
+
+5. **Updated Official Plugins table (README.md:723-728).** Reordered the same four plugins alphabetically. The table is a separate Markdown table (not literal command output), but keeping it consistent with the sorted `list-remote` makes the documentation single-source-of-truth on plugin naming order and avoids future drift.
+
+6. **Did not touch the `Reference` section's `list-remote` example (README.md:589-593).** It only shows two plugins, `dnf` then `winget`, which is already in alphabetical order, so no edit is needed.
+
+**What was changed:**
+
+- src/commands/plugin/registry.rs — `let plugins = fetch()?;` → `let mut plugins = fetch()?; plugins.sort_by(...)`. New `test_list_remote_sorts_alphabetically_by_name` test (35 lines, follows 3A pattern: Arrange constructs the unsorted fetch closure, Act calls `list_remote_to`, Assert checks line ordering).
+- README.md — Quick Tour `list-remote` example reordered to alphabetical. Official Plugins table reordered to alphabetical.
+- prd.md — task 215 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 551 tests pass (550 → 551, +1 new). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- COMMAND_OUTPUT.md required no edits. The `homeos plugin list-remote` spec line (`Has plugins | stdout | Table: Name, Description, URL columns`) does not pin a specific row order, so the alphabetical guarantee is documented entirely through the README example and the test assertion. If sort order ever becomes a contract worth pinning in COMMAND_OUTPUT.md, it would belong as a new row condition like "Row order | (always) | Alphabetical by name"; not adding that now because the existing format-only specification has been the project's convention for table output (see `homeos package list`, `homeos plugin list`, `homeos repo list` — none of which document sort order in COMMAND_OUTPUT.md, but all of which sort via `BTreeMap`).
+- Function ordering in registry.rs (list → list_remote → add → remove) was preserved and continues to match README's plugin command sequence (list, list-remote, add, remove). No reordering needed.
+- 3A pattern: the new test follows Arrange / Act / Assert with `list_remote_to` called explicitly in the Act step. The fetch closure is built in Arrange and consumed inside Act, not hidden in a fixture.
+- The `sort_by(|a, b| a.name.cmp(&b.name))` form was chosen over `sort_by_key(|p| p.name.clone())` to avoid the per-element clone. Both produce identical orderings; the closure form costs nothing extra to read.
+- All PRD tasks are now checked. The Completion Criteria — (a) all tasks checked, (b) no clippy warnings, (c) no test failures — all hold.
+
+---
+
+
