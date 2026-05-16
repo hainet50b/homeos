@@ -178,9 +178,25 @@ Proceed? [y/N]
 <details>
 <summary>Setting up a new machine from your repo</summary>
 
+After installing homeos (see [Install](#install)), restore your environment from your existing homeos repository in two commands.
+
+1. Clone your repository as the default repo
+
 ```sh
-# 1. Clone your existing homeos repository
-# 2. Apply — everything gets installed
+$ homeos init https://github.com/<username>/<repo>
+Initialized homeos at /home/<username>/.local/share/homeos/repos/default (cloned from https://github.com/<username>/<repo>)
+```
+
+2. Apply — installs everything declared in `homeos.yml`
+
+```sh
+$ homeos apply
+The following packages will be installed:
+  ...
+
+Proceed? [y/N] y
+Installing ...
+done
 ```
 
 </details>
