@@ -219,7 +219,9 @@ irm https://raw.githubusercontent.com/hainet50b/homeos/main/install.ps1 | iex
 
 Installs to `%USERPROFILE%\.homeos\bin\homeos.exe` and adds the directory to your user `PATH`.
 
-Alternatively, download the prebuilt binary directly from [GitHub Releases](https://github.com/hainet50b/homeos/releases) and place it on your `PATH` manually.
+The install scripts also set up shell completion for your detected shell. If your shell needs an additional manual step, the script prints the exact instruction to follow.
+
+Alternatively, download the prebuilt binary directly from [GitHub Releases](https://github.com/hainet50b/homeos/releases) and place it on your `PATH` manually. In that case, see [Shell completion](#shell-completion) to set up completion yourself.
 
 ## Reference
 
@@ -809,6 +811,42 @@ Arguments:
 
 > [!NOTE]
 > Fails if the repository's `state.yml` contains installed packages. Uninstall them first.
+
+### Shell completion
+
+Print a shell completion script for the given shell to stdout.
+
+```
+Usage: homeos completion <SHELL>
+
+Arguments:
+  <SHELL>  Target shell [possible values: bash, zsh, fish, powershell, elvish, nushell]
+```
+
+Redirect the output to the shell-specific location:
+
+```sh
+# bash
+homeos completion bash > ~/.local/share/bash-completion/completions/homeos
+
+# zsh
+homeos completion zsh > ~/.local/share/zsh/site-functions/_homeos
+
+# fish
+homeos completion fish > ~/.config/fish/completions/homeos.fish
+
+# PowerShell
+homeos completion powershell >> $PROFILE
+
+# Elvish
+homeos completion elvish > ~/.config/elvish/lib/homeos.elv
+
+# Nushell
+homeos completion nushell > ~/.config/nushell/completions/homeos.nu
+```
+
+> [!NOTE]
+> `install.sh` / `install.ps1` set up completion automatically for the detected shell.
 
 ## Official Plugins
 
