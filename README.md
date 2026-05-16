@@ -721,8 +721,8 @@ Official plugins are available. See each plugin's repository for details.
 | Name | Description |
 |------|-------------|
 | [dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin |
-| [npm](https://github.com/hainet50b/homeos-plugin-npm) | npm global package plugin |
-| [winget](https://github.com/hainet50b/homeos-plugin-winget) | Windows Package Manager plugin |
+| [npm](https://github.com/hainet50b/homeos-plugin-npm) | npm package manager plugin |
+| [winget](https://github.com/hainet50b/homeos-plugin-winget) | WinGet package manager plugin |
 | [scoop](https://github.com/hainet50b/homeos-plugin-scoop) | Scoop package manager plugin |
 
 Built a community plugin? [Open an issue](https://github.com/hainet50b/homeos/issues/new) and we'll list it here.  
