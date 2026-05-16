@@ -135,6 +135,38 @@ done
 </details>
 
 <details>
+<summary>Composing packages with a repo (e.g., COPR, tap, bucket)</summary>
+
+Setup steps that several packages share — enabling a COPR repository, adding a Homebrew tap, registering a Scoop bucket — are best expressed as their own package, with dependents declaring `depends_on`. The setup runs once before any dependent and can be uninstalled cleanly.
+
+1. Add a setup package using a setup plugin (e.g., `dnf-copr`, `homebrew-tap`, `scoop-bucket`)
+
+```sh
+$ homeos package add dnf-copr-mise --plugin dnf-copr --param name=jdxcode/mise
+Added package 'dnf-copr-mise'
+```
+
+2. Add the actual package depending on it
+
+```sh
+$ homeos package add mise --plugin dnf --param name=mise --depends-on dnf-copr-mise
+Added package 'mise'
+```
+
+3. Apply — the COPR enable runs first, then the package install
+
+```sh
+$ homeos apply
+The following packages will be installed:
+  dnf-copr-mise (required by mise)
+  mise (plugin: dnf)
+
+Proceed? [y/N]
+```
+
+</details>
+
+<details>
 <summary>Setting up a new machine from your repo</summary>
 
 ```sh
