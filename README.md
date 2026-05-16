@@ -97,12 +97,12 @@ rustup 1.29.0 (28d1352db 2026-03-05)
 
 ```sh
 $ homeos plugin list-remote
-Name    Description                                URL
-------  -----------------------------------------  ---
-dnf     DNF package manager plugin for homeos.     https://github.com/hainet50b/homeos-plugin-dnf
-npm     npm package manager plugin for homeos.     https://github.com/hainet50b/homeos-plugin-npm
-scoop   Scoop package manager plugin for homeos.   https://github.com/hainet50b/homeos-plugin-scoop
-winget  WinGet package manager plugin for homeos.  https://github.com/hainet50b/homeos-plugin-winget
+Name      Description                                  URL
+--------  -------------------------------------------  ---
+apt       APT package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-apt
+dnf       DNF package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-dnf
+homebrew  Homebrew package manager plugin for homeos.  https://github.com/hainet50b/homeos-plugin-homebrew
+winget    WinGet package manager plugin for homeos.    https://github.com/hainet50b/homeos-plugin-winget
 ```
 
 2. Add a plugin to your repository
@@ -722,7 +722,9 @@ Official plugins are available. See each plugin's repository for details.
 
 | Name | Description |
 |------|-------------|
+| [apt](https://github.com/hainet50b/homeos-plugin-apt) | APT package manager plugin for homeos. |
 | [dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin for homeos. |
+| [homebrew](https://github.com/hainet50b/homeos-plugin-homebrew) | Homebrew package manager plugin for homeos. |
 | [npm](https://github.com/hainet50b/homeos-plugin-npm) | npm package manager plugin for homeos. |
 | [scoop](https://github.com/hainet50b/homeos-plugin-scoop) | Scoop package manager plugin for homeos. |
 | [winget](https://github.com/hainet50b/homeos-plugin-winget) | WinGet package manager plugin for homeos. |
