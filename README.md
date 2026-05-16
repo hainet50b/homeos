@@ -767,6 +767,7 @@ Official plugins are available. See each plugin's repository for details.
 | [dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin for homeos. |
 | [dnf-copr](https://github.com/hainet50b/homeos-plugin-dnf-copr) | DNF COPR plugin for homeos. |
 | [homebrew](https://github.com/hainet50b/homeos-plugin-homebrew) | Homebrew package manager plugin for homeos. |
+| [homebrew-cask](https://github.com/hainet50b/homeos-plugin-homebrew-cask) | Homebrew cask plugin for homeos. |
 | [homebrew-tap](https://github.com/hainet50b/homeos-plugin-homebrew-tap) | Homebrew tap plugin for homeos. |
 | [npm](https://github.com/hainet50b/homeos-plugin-npm) | npm package manager plugin for homeos. |
 | [scoop](https://github.com/hainet50b/homeos-plugin-scoop) | Scoop package manager plugin for homeos. |
