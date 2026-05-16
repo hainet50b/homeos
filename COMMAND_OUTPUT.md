@@ -223,6 +223,13 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Success with --purge | stdout | `Removed plugin '{name}' and removed directory` |
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 
+## homeos plugin info
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | Plugin details: URL (or `(local)`), parameters, action templates |
+| Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
+
 ## homeos plugin cat
 
 | Condition | Dest | Output |
