@@ -1,10 +1,10 @@
 # homeos
 
 ![Build](https://github.com/hainet50b/homeos/actions/workflows/build.yml/badge.svg)
+![Release](https://img.shields.io/github/v/release/hainet50b/homeos)
 ![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)
 
-**Making install script hell feel like *home*.**  
-⚠️ This project is under active development.
+**Making install script hell feel like *home*.**
 
 *homeos* (ho-mee-os) — named after *homeostasis*, a layer above your install scripts, managed from a single Git repository.
 
