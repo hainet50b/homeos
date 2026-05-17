@@ -152,3 +152,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-17T03:44:25Z,df7e879,"Flatten data directory layout, drop repos/default segment",515,52,39102,4.633992750000001
 2026-05-17T03:50:53Z,5ac704c,"Honor HOMEOS_DATA_DIR env var in Context::new",383,33,20272,2.2766897499999996
 2026-05-17T03:55:42Z,dfcb0a9,"Update test-command-output.sh for flat layout and HOMEOS_DATA_DIR",285,23,21991,1.8083870000000002
+2026-05-17T10:33:40Z,23ee808,"Drop nushell from supported completion shells",193,31,11743,1.8942147500000002

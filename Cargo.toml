@@ -9,7 +9,7 @@ repository = "https://github.com/hainet50b/homeos"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-clap_complete = "4.6.5"
+clap_complete = { version = "= 4.6.5", features = ["unstable-dynamic"] }
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

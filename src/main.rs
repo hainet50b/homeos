@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -238,6 +238,8 @@ pub enum PackageCommands {
 }
 
 fn main() {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+
     let cli = Cli::parse();
     let ctx = context::Context::new(cli.data_dir);
 

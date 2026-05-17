@@ -1,5 +1,5 @@
-use clap::{CommandFactory, ValueEnum};
-use clap_complete::{Shell, generate};
+use clap::ValueEnum;
+use clap_complete::env::Shells;
 use std::io::Write;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -12,6 +12,18 @@ pub enum CompletionShell {
     Elvish,
 }
 
+impl CompletionShell {
+    fn as_engine_name(self) -> &'static str {
+        match self {
+            CompletionShell::Bash => "bash",
+            CompletionShell::Zsh => "zsh",
+            CompletionShell::Fish => "fish",
+            CompletionShell::PowerShell => "powershell",
+            CompletionShell::Elvish => "elvish",
+        }
+    }
+}
+
 pub fn run(shell: CompletionShell) -> Result<(), Box<dyn std::error::Error>> {
     run_to(shell, &mut std::io::stdout())
 }
@@ -20,15 +32,12 @@ fn run_to<W: Write>(
     shell: CompletionShell,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = crate::Cli::command();
-    let name = cmd.get_name().to_string();
-    match shell {
-        CompletionShell::Bash => generate(Shell::Bash, &mut cmd, name, writer),
-        CompletionShell::Zsh => generate(Shell::Zsh, &mut cmd, name, writer),
-        CompletionShell::Fish => generate(Shell::Fish, &mut cmd, name, writer),
-        CompletionShell::PowerShell => generate(Shell::PowerShell, &mut cmd, name, writer),
-        CompletionShell::Elvish => generate(Shell::Elvish, &mut cmd, name, writer),
-    }
+    let name = shell.as_engine_name();
+    let shells = Shells::builtins();
+    let completer = shells
+        .completer(name)
+        .ok_or_else(|| format!("unknown shell `{name}`"))?;
+    completer.write_registration("COMPLETE", "homeos", "homeos", "homeos", writer)?;
     Ok(())
 }
 
@@ -36,10 +45,10 @@ fn run_to<W: Write>(
 mod tests {
     use super::*;
     use crate::{Cli, Commands};
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
 
     #[test]
-    fn test_completion_bash_generates_script() {
+    fn test_completion_bash_generates_registration_snippet() {
         // Arrange
         let mut buf: Vec<u8> = Vec::new();
 
@@ -48,13 +57,14 @@ mod tests {
 
         // Assert
         let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("complete"));
+        assert!(output.contains("_clap_complete_homeos"));
+        assert!(output.contains("_CLAP_COMPLETE_INDEX"));
+        assert!(output.contains("complete -o nospace"));
+        assert!(output.contains("COMPLETE=\"bash\""));
     }
 
     #[test]
-    fn test_completion_zsh_generates_script() {
+    fn test_completion_zsh_generates_registration_snippet() {
         // Arrange
         let mut buf: Vec<u8> = Vec::new();
 
@@ -63,13 +73,14 @@ mod tests {
 
         // Assert
         let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("#compdef"));
+        assert!(output.contains("#compdef homeos"));
+        assert!(output.contains("_clap_dynamic_completer_homeos"));
+        assert!(output.contains("_CLAP_COMPLETE_INDEX"));
+        assert!(output.contains("COMPLETE=\"zsh\""));
     }
 
     #[test]
-    fn test_completion_fish_generates_script() {
+    fn test_completion_fish_generates_registration_snippet() {
         // Arrange
         let mut buf: Vec<u8> = Vec::new();
 
@@ -78,13 +89,12 @@ mod tests {
 
         // Assert
         let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("complete -c homeos"));
+        assert!(output.contains("complete --keep-order --exclusive --command homeos"));
+        assert!(output.contains("COMPLETE=fish"));
     }
 
     #[test]
-    fn test_completion_powershell_generates_script() {
+    fn test_completion_powershell_generates_registration_snippet() {
         // Arrange
         let mut buf: Vec<u8> = Vec::new();
 
@@ -93,13 +103,13 @@ mod tests {
 
         // Assert
         let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("Register-ArgumentCompleter"));
+        assert!(output.contains("Register-ArgumentCompleter -Native -CommandName homeos"));
+        assert!(output.contains("Invoke-Expression"));
+        assert!(output.contains("$env:COMPLETE"));
     }
 
     #[test]
-    fn test_completion_elvish_generates_script() {
+    fn test_completion_elvish_generates_registration_snippet() {
         // Arrange
         let mut buf: Vec<u8> = Vec::new();
 
@@ -108,9 +118,9 @@ mod tests {
 
         // Assert
         let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("edit:completion:arg-completer"));
+        assert!(output.contains("edit:completion:arg-completer[homeos]"));
+        assert!(output.contains("_CLAP_COMPLETE_INDEX"));
+        assert!(output.contains("COMPLETE=\"elvish\""));
     }
 
     #[test]
