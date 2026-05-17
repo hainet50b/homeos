@@ -11,7 +11,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 | Scaffold success | stdout | `Initialized homeos at {path}` |
 | Clone success | stdout | `Initialized homeos at {path} (cloned from {url})` |
 | Already initialized (error) | stderr | `Error: Already initialized at {path}` |
-| Repository directory already exists (error) | stderr | `Error: Repository directory already exists at {path}` |
+| Data directory not empty (error) | stderr | `Error: Data directory at {path} is not empty` |
 | git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
 | Cloned repository has no homeos.yml (error) | stderr | `Error: Not a valid homeos repository. Cloned directory removed.` |
 
@@ -19,7 +19,7 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Repositories directory not found (error) | stderr | `Error: Repositories directory not found at {path}. Run 'homeos init' first.` |
+| Data directory not found (error) | stderr | `Error: Data directory not found at {path}. Run 'homeos init' first.` |
 
 ## homeos apply
 
@@ -246,38 +246,6 @@ Each table has three columns: **Condition**, **Dest** (stdout or stderr), and **
 |-----------|------|--------|
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` |
 | Directory not found (error) | stderr | `Error: Directory not found at {path}` |
-
-## homeos repo list
-
-| Condition | Dest | Output |
-|-----------|------|--------|
-| Any | stdout | Table: repository names (empty table if no repositories) |
-
-## homeos repo add
-
-| Condition | Dest | Output |
-|-----------|------|--------|
-| Create success | stdout | `Repository '{name}' created` |
-| Clone success | stdout | `Repository '{name}' cloned successfully` |
-| Repository already exists (error) | stderr | `Error: Repository '{name}' already exists` |
-| git clone fails (error) | stderr | `Error: git clone failed: {stderr}` |
-
-## homeos repo cd
-
-| Condition | Dest | Output |
-|-----------|------|--------|
-| Repository not found (error) | stderr | `Error: Repository '{name}' does not exist` |
-
-## homeos repo remove
-
-| Condition | Dest | Output |
-|-----------|------|--------|
-| Confirmation prompt | stdout | `Remove repository '{name}'?` |
-| User declines | stdout | `Aborted.` |
-| Success | stdout | `Repository '{name}' removed` |
-| Removing default (error) | stderr | `Error: Cannot remove the default repository.` |
-| Repository not found (error) | stderr | `Error: Repository '{name}' does not exist` |
-| Has installed packages (error) | stderr | `Error: Repository '{name}' has installed packages. Uninstall them first.` |
 
 ## homeos completion
 

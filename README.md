@@ -24,7 +24,7 @@
 
 ```sh
 $ homeos init
-Initialized homeos at /home/<username>/.local/share/homeos/repos/default
+Initialized homeos at /home/<username>/.local/share/homeos
 ```
 
 2. Add a package
@@ -180,11 +180,11 @@ Proceed? [y/N]
 
 After installing homeos (see [Install](#install)), restore your environment from your existing homeos repository in two commands.
 
-1. Clone your repository as the default repo
+1. Clone your repository
 
 ```sh
 $ homeos init https://github.com/<username>/<repo>
-Initialized homeos at /home/<username>/.local/share/homeos/repos/default (cloned from https://github.com/<username>/<repo>)
+Initialized homeos at /home/<username>/.local/share/homeos (cloned from https://github.com/<username>/<repo>)
 ```
 
 2. Apply — installs everything declared in `homeos.yml`
@@ -227,34 +227,45 @@ Alternatively, download the prebuilt binary directly from [GitHub Releases](http
 
 ### Directory Structure
 
-The base directory depends on the operating system:
+The data directory depends on the operating system:
 
-| OS      | Base directory                         |
+| OS      | Data directory                         |
 |---------|----------------------------------------|
 | Linux   | `~/.local/share/homeos`                |
 | macOS   | `~/Library/Application Support/homeos` |
 | Windows | `%LOCALAPPDATA%/homeos`                |
 
 ```
-<base_dir>/repos/
-├── default/
-│   ├── homeos.yml
-│   ├── state.yml
-│   ├── .gitignore
-│   ├── packages/
-│   │   └── neovim/
-│   │       ├── install.sh
-│   │       ├── update.sh
-│   │       └── uninstall.sh
-│   └── plugins/
-│       └── dnf/
-└── other-repo/
+<data_dir>/
+├── homeos.yml
+├── state.yml
+├── .gitignore
+├── packages/
+│   └── neovim/
+│       ├── install.sh
+│       ├── update.sh
+│       └── uninstall.sh
+└── plugins/
+    └── dnf/
 ```
 
 - `homeos.yml` — package and plugin definitions.
 - `state.yml` — tracks installed packages. Machine-specific, excluded from version control via `.gitignore`.
 - `packages/` — action scripts (`install.sh`, `update.sh`, `uninstall.sh` for Linux/macOS; `.ps1` for Windows).
 - `plugins/` — plugin files.
+
+### Overriding the data directory
+
+Set `HOMEOS_DATA_DIR` to use an alternate data directory:
+
+```sh
+export HOMEOS_DATA_DIR="$HOME/.config/homeos-work"
+homeos apply
+```
+
+Use this to maintain multiple configurations (e.g., work / personal / per-server) by exporting different values in different shell sessions or profiles.
+
+Priority: `HOMEOS_DATA_DIR` overrides the OS default. If unset, the default from the table above applies.
 
 ### Configuration (homeos.yml)
 
@@ -296,7 +307,7 @@ plugins:
 
 #### `homeos init`
 
-Create the initial repository structure. Without arguments, creates an empty repository with a skeleton `homeos.yml`. With a URL, clones the remote repository — use `--repo` to specify a different repository name.
+Create the initial homeos structure at the data directory. Without arguments, creates an empty structure with a skeleton `homeos.yml`. With a URL, clones the remote repository into the data directory.
 
 ```
 Usage: homeos init [OPTIONS] [URL]
@@ -310,7 +321,7 @@ Options:
 
 #### `homeos cd`
 
-Launch a shell in the repositories directory.
+Launch a shell in the data directory.
 
 ```
 Usage: homeos cd
@@ -707,20 +718,21 @@ Arguments:
   <PLUGIN>  Plugin name
 ```
 
-Shows URL (or `(local)`), parameters, and action templates.
+Shows description, URL (or `(local)`), parameters, and action templates.
 
 ```
 $ homeos plugin info dnf
 Plugin: dnf
+Description: DNF package manager plugin for homeos.
 URL: https://github.com/hainet50b/homeos-plugin-dnf
 Parameters:
   name
 Templates:
-  install.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/install.sh.tmpl)
+  install.sh.tmpl (/home/<username>/.local/share/homeos/plugins/dnf/install.sh.tmpl)
   install.ps1.tmpl (not found)
-  update.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/update.sh.tmpl)
+  update.sh.tmpl (/home/<username>/.local/share/homeos/plugins/dnf/update.sh.tmpl)
   update.ps1.tmpl (not found)
-  uninstall.sh.tmpl (/home/<username>/.local/share/homeos/repos/default/plugins/dnf/uninstall.sh.tmpl)
+  uninstall.sh.tmpl (/home/<username>/.local/share/homeos/plugins/dnf/uninstall.sh.tmpl)
   uninstall.ps1.tmpl (not found)
 ```
 
@@ -766,55 +778,6 @@ Usage: homeos plugin cd [PLUGIN]
 Arguments:
   [PLUGIN]  Plugin name (optional — defaults to plugins root)
 ```
-
-### Manage repositories
-
-homeos supports multiple repositories. Each repository contains its own `homeos.yml`, packages and plugins. Use `-r, --repo <name>` on any command to specify which repository to operate on (default: `default`).
-
-#### `homeos repo list`
-
-List all repositories.
-
-```
-Usage: homeos repo list
-```
-
-#### `homeos repo add`
-
-Add a repository. Without a URL, creates an empty local repository. With a URL, clones the remote repository.
-
-```
-Usage: homeos repo add <REPO> [URL]
-
-Arguments:
-  <REPO>  Repository name
-  [URL]   Remote URL to clone
-```
-
-#### `homeos repo cd`
-
-Launch a shell in the specified repository directory.
-
-```
-Usage: homeos repo cd [REPO]
-
-Arguments:
-  [REPO]  Repository name (default: "default")
-```
-
-#### `homeos repo remove`
-
-Delete a local repository.
-
-```
-Usage: homeos repo remove <REPO>
-
-Arguments:
-  <REPO>  Repository name
-```
-
-> [!NOTE]
-> Fails if the repository's `state.yml` contains installed packages. Uninstall them first.
 
 ### Shell completion
 
