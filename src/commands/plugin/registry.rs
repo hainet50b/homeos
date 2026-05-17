@@ -402,8 +402,8 @@ mod tests {
     use tempfile::TempDir;
 
     fn fixture(base_dir: &TempDir) -> Context {
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
-        std::fs::create_dir_all(ctx.repo_dir()).unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
+        std::fs::create_dir_all(ctx.data_dir()).unwrap();
         ctx
     }
 
@@ -697,7 +697,7 @@ mod tests {
     fn test_list_error_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -1125,7 +1125,7 @@ mod tests {
     fn test_add_error_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
 
         // Act
         let result = add(&ctx, "dnf", Some("https://example.com/repo.git"), false);
@@ -1524,7 +1524,7 @@ mod tests {
     fn test_remove_error_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
 
         // Act
         let result = remove_to(

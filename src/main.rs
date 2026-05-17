@@ -27,9 +27,9 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 
-    /// Override the base data directory (defaults to OS data directory)
+    /// Override the data directory (defaults to OS data directory)
     #[arg(long, global = true, hide = true)]
-    pub base_dir: Option<PathBuf>,
+    pub data_dir: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -239,7 +239,7 @@ pub enum PackageCommands {
 
 fn main() {
     let cli = Cli::parse();
-    let ctx = context::Context::new(cli.base_dir, "default".to_string());
+    let ctx = context::Context::new(cli.data_dir);
 
     match cli.command {
         Commands::Init { url, strip_git } => {

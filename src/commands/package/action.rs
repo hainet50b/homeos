@@ -662,8 +662,8 @@ mod tests {
 
     fn fixture(yaml: &str) -> (TempDir, Context) {
         let tmp = TempDir::new().unwrap();
-        let base_dir = tmp.path().to_path_buf();
-        let ctx = Context::new(Some(base_dir), "default".to_string());
+        let data_dir = tmp.path().to_path_buf();
+        let ctx = Context::new(Some(data_dir));
 
         std::fs::create_dir_all(ctx.config_path().parent().unwrap()).unwrap();
         std::fs::write(ctx.config_path(), yaml).unwrap();

@@ -797,8 +797,8 @@ mod tests {
 
     fn fixture(yaml: &str) -> (TempDir, Context) {
         let tmp = TempDir::new().unwrap();
-        let base_dir = tmp.path().to_path_buf();
-        let ctx = Context::new(Some(base_dir), "default".to_string());
+        let data_dir = tmp.path().to_path_buf();
+        let ctx = Context::new(Some(data_dir));
 
         std::fs::create_dir_all(ctx.config_path().parent().unwrap()).unwrap();
         std::fs::write(ctx.config_path(), yaml).unwrap();
@@ -851,7 +851,7 @@ mod tests {
     fn test_list_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -1148,7 +1148,7 @@ mod tests {
     fn test_add_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = add(
@@ -1711,7 +1711,7 @@ mod tests {
     fn test_remove_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
         let mut reader = Cursor::new(b"y\n");
         let mut output = Vec::new();
 
@@ -2475,7 +2475,7 @@ mod tests {
     fn test_add_dep_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = add_dep(&ctx, "neovim", &["git".to_string()]);
@@ -2805,7 +2805,7 @@ mod tests {
     fn test_remove_dep_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = remove_dep(&ctx, "neovim", &["git".to_string()]);
@@ -2992,7 +2992,7 @@ mod tests {
     fn test_add_alias_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = add_alias(
@@ -3128,7 +3128,7 @@ mod tests {
     fn test_remove_alias_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = remove_alias(&ctx, "neovim", &["update".to_string()]);
@@ -3216,7 +3216,7 @@ mod tests {
     fn test_enable_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = enable(&ctx, &["neovim".to_string()]);
@@ -3334,7 +3334,7 @@ mod tests {
     fn test_disable_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = disable(&ctx, &["neovim".to_string()]);
@@ -3515,7 +3515,7 @@ mod tests {
     fn test_info_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -3713,7 +3713,7 @@ mod tests {
     fn test_cat_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -3787,7 +3787,7 @@ mod tests {
     fn test_cd_resolve_target_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
 
         // Act
         let result = resolve_cd_target(&ctx, None);

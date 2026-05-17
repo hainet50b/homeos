@@ -161,8 +161,8 @@ mod tests {
     use tempfile::TempDir;
 
     fn fixture(base_dir: &TempDir) -> Context {
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
-        std::fs::create_dir_all(ctx.repo_dir()).unwrap();
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
+        std::fs::create_dir_all(ctx.data_dir()).unwrap();
         ctx
     }
 
@@ -436,7 +436,7 @@ mod tests {
     fn test_info_errors_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -595,7 +595,7 @@ mod tests {
     fn test_cat_error_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
         let mut output = Vec::new();
 
         // Act
@@ -698,7 +698,7 @@ mod tests {
     fn test_resolve_cd_target_errors_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
-        let ctx = Context::new(Some(base_dir.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(base_dir.path().to_path_buf()));
 
         // Act
         let result = resolve_cd_target(&ctx, None);

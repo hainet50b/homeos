@@ -4773,3 +4773,58 @@ Four tasks remain unchecked in the PRD: #222 (drop `homeos repo` and `--repo`), 
 - **Three tasks remain in the PRD** (#223 flat layout, #224 `HOMEOS_DATA_DIR` env var, #225 update test script). Leaving them for subsequent loop iterations as instructed.
 
 
+## Task: Flatten the directory layout (drop `repos/default/` segment)
+
+**Timestamp:**
+
+2026-05-17T03:42:16Z
+
+**Why this task:**
+
+Three tasks remain unchecked in the PRD: #223 (flatten the directory layout to put `homeos.yml`, `state.yml`, `packages/`, `plugins/` directly under the data directory), #224 (honor `HOMEOS_DATA_DIR` env var), and #225 (update `test-command-output.sh` for the flat layout and env-var isolation). They form a sequential chain — #224 references the flat layout #223 introduces, and #225 exercises the surface both produce. I picked #223 because it is the next foundational filesystem-layout change after #222 (CLI removal), and #224/#225 build on it.
+
+**What was done:**
+
+1. **Rewrote `src/context.rs`** to a single-field `Context { data_dir: PathBuf }` struct. The constructor signature is now `Context::new(data_dir: Option<PathBuf>) -> Self` (one argument, no `repo`). `dirs::data_local_dir().join("homeos")` is still the default when no override is passed. Added a `data_dir(&self) -> &Path` accessor since `init` and `cd` need to display the data-dir path in user-facing messages and errors. Removed `Context::repos_dir()` and `Context::repo_dir()` outright — every previous caller used them only as a stepping stone to compute `packages_dir() / config_path() / state_path() / plugins_dir() / gitignore_path()`, and those five methods now resolve directly under `data_dir`. Tests were trimmed from 10 to 7 to match the new surface (`test_data_dir_accessor`, `test_packages_dir`, `test_config_path`, `test_state_path`, `test_plugins_dir`, `test_gitignore_path`, `test_default_data_dir`). The old `test_paths_with_custom_repo` and the three `test_repos_dir / test_repo_dir_default / test_repo_dir_custom` tests are gone — they exercised an API that no longer exists.
+
+2. **Updated `src/main.rs`** to drop the second argument from the `Context::new` call (`Context::new(cli.data_dir)`) and renamed the hidden CLI override flag from `--base-dir` to `--data-dir` (along with the corresponding `Cli.data_dir` field). The flag is `hide = true` and was only ever used by tests via `Context::new`, never typed on the command line, so this rename is internal-only despite being a clap-derived long-flag name change. The doc comment now reads "Override the data directory (defaults to OS data directory)".
+
+3. **Rewrote `src/commands/init.rs`** for the flat layout. The new control flow:
+   - If `ctx.config_path()` exists → `Already initialized at {data_dir}` (unchanged wording).
+   - Else if `ctx.data_dir()` exists AND is non-empty → `Data directory at {data_dir} is not empty`. This is a new error path. With `repos/default/` gone, the data directory itself is the clone/scaffold target; if the user has populated it manually with other files, we refuse rather than mix our scaffold with their content. The check uses `read_dir().map(|mut iter| iter.next().is_some()).unwrap_or(false)`, which is correct both when the dir does not exist (no error path) and when it exists but is empty.
+   - Otherwise scaffold creates `packages/`, `plugins/`, `homeos.yml`, and `.gitignore` (with `state.yml`) directly under `data_dir`; clone mode `git::clone(url, data_dir)`, validates `homeos.yml`, and removes the cloned directory on failure with the existing `Not a valid homeos repository. Cloned directory removed.` message. For clone mode, the parent of `data_dir` is `create_dir_all`'d before invoking git so the path resolves correctly even on a fresh machine.
+
+4. **Rewrote `src/commands/cd.rs`** to resolve to `ctx.data_dir().to_path_buf()` and updated the error wording from `Repositories directory not found at {path}. Run \`homeos init\` first.` to `Data directory not found at {path}. Run 'homeos init' first.` (single quotes around the command, matching the COMMAND_OUTPUT.md spec at line 22). Renamed the unit test `test_resolve_target_returns_repos_dir` to `test_resolve_target_returns_data_dir`; updated the error-content assertion to match the new wording.
+
+5. **Updated init tests** to the flat layout and new spec:
+   - `test_init_directory_paths` → `test_init_flat_directory_paths`. Asserts `data_dir.join("packages")`, `.join("plugins")`, `.join("homeos.yml")`, `.join(".gitignore")` all exist AND asserts `!data_dir.join("repos").exists()` so that a regression to the old layout would fail the test.
+   - `test_init_scaffold_errors_if_repo_dir_exists` → `test_init_scaffold_errors_if_data_dir_not_empty`. Pre-creates `data_dir` and writes a stray file in it, expects the new "Data directory at … is not empty" error.
+   - New `test_init_scaffold_succeeds_if_data_dir_exists_but_empty`. Asserts the empty-but-existing case proceeds normally — pins the read_dir-based check.
+   - New `test_init_with_url_errors_if_data_dir_not_empty`. Same logic as the scaffold variant but for clone mode. Confirms the empty check is shared between both modes (it sits before the `if let Some(url)` branch).
+   - Dropped `test_init_with_url_creates_repos_dir` — `repos_dir()` no longer exists, and asserting that `data_dir` is created after clone is redundant with `test_init_with_url_clones_repo`.
+   - Dropped `test_init_with_url_rejects_repo_without_homeos_yml_cleans_up` — its only assertion (`!ctx.repo_dir().exists()` after a bad clone) is now redundant with `test_init_with_url_rejects_repo_without_homeos_yml` which already asserts `!ctx.data_dir().exists()`.
+   - All remaining tests updated `ctx.repo_dir()` / `ctx.repos_dir()` → `ctx.data_dir()`.
+
+6. **Updated test fixtures across the codebase** (`commands/plugin/registry.rs`, `commands/plugin/view.rs`, `commands/package/registry.rs`, `commands/package/action.rs`) to drop the second argument from `Context::new` calls. The plugin fixtures' `std::fs::create_dir_all(ctx.repo_dir())` line was updated to `std::fs::create_dir_all(ctx.data_dir())`. The package fixtures retain their `ctx.config_path().parent().unwrap()` create_dir_all (which now resolves to the data_dir itself, harmless because TempDir already creates that directory). Local test variable name `base_dir` was retained as-is in plugin tests (renaming to `data_dir` everywhere would be churn for zero behavior change); I did rename the `base_dir` local in the two package test fixtures because they touch the same line as the `Context::new` change.
+
+**What was changed:**
+
+- src/context.rs — rewritten: single-field `Context { data_dir }`, dropped `repos_dir()`/`repo_dir()`, added `data_dir()` accessor, tests trimmed to 7.
+- src/main.rs — `Cli.base_dir` → `Cli.data_dir`; `--base-dir` → `--data-dir`; `Context::new(cli.data_dir)`.
+- src/commands/init.rs — rewritten for flat layout; new error path "Data directory at … is not empty"; tests updated/added/dropped per (5) above.
+- src/commands/cd.rs — `ctx.repos_dir()` → `ctx.data_dir().to_path_buf()`; error wording matched to COMMAND_OUTPUT.md spec; tests updated.
+- src/commands/plugin/registry.rs, src/commands/plugin/view.rs — fixtures updated.
+- src/commands/package/registry.rs, src/commands/package/action.rs — fixtures updated.
+- prd.md — task 223 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 544 tests pass** (was 547 before; -3 from context.rs test trimming). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **No README/COMMAND_OUTPUT change.** Both files were already written ahead of the implementation for this task. I verified with `Grep` that neither contains lingering `repos/`, `repo_dir`, `repos_dir`, `repository directory`, or `Repositories directory` references — the spec was clean and waiting. The implementation is what lagged.
+- **Function order audit.** No reorderings needed. The README orders top-level commands as init → cd → apply → package → plugin → completion, which already matches `Commands` and the dispatch in main.rs. Within `commands/package/registry.rs` and `commands/plugin/registry.rs`/`view.rs`, no function bodies moved — only test fixtures changed, and the fixture functions sit above the test fns they support (the conventional position).
+- **Why drop the `--base-dir` CLI flag name.** I considered keeping `--base-dir` as a deprecation alias, but the project is pre-release with no external users (consistent with the prior task's rationale on shedding backward-compat shims), the flag was always `hide = true`, and no test or script in the repo references it by literal name. Renaming the derived clap long flag along with the field is the clean choice.
+- **Why `read_dir`-based empty check, not `path.exists() && path.read_dir().is_ok()`.** `read_dir().map(|mut iter| iter.next().is_some()).unwrap_or(false)` handles both "directory does not exist" (Err → unwrap_or false → "not non-empty") and "directory is empty" (Ok(iter), iter.next() is None → false) without a separate `.exists()` check. It also handles "directory exists but contains files" (Ok(iter), iter.next() is Some → true). The previous `repo_dir.exists()` check was a different question (the repo subdirectory existed at all), so it had a different surface; this is intentional.
+- **Why `data_dir().to_path_buf()` in `cd.rs` instead of returning `&Path`.** `resolve_target` returns `PathBuf` because its callers (and the test assertions in `cd.rs` and `init.rs`) consume the path by value or compare with `ctx.data_dir()` directly. Returning a `&Path` would tie the resolver's lifetime to the `ctx` reference, which is fine in practice but bigger churn for no benefit. The single allocation is irrelevant on a path the user explicitly invoked.
+- **What `--base-dir` rename does to the existing hidden flag.** The flag is `hide = true` and was only ever used by tests, which now use the in-process `Context::new(Some(path))` constructor and never go through clap parsing. So there is no user-observable behavior change; the rename is purely a code-level rename.
+- **Two tasks remain in the PRD** (#224 `HOMEOS_DATA_DIR` env var, #225 update test script). #224 layers an env-var override on top of the now-flat `Context::new`. #225 rewrites the shell integration script for the flat layout and `HOMEOS_DATA_DIR` isolation. Both are downstream of this change. Leaving them for subsequent loop iterations as instructed.

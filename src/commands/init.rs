@@ -8,27 +8,35 @@ pub fn run(
     url: Option<&str>,
     strip_git: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo_dir = ctx.repo_dir();
+    let data_dir = ctx.data_dir();
     let config_path = ctx.config_path();
 
     if config_path.exists() {
-        return Err(format!("Already initialized at {}", repo_dir.display()).into());
+        return Err(format!("Already initialized at {}", data_dir.display()).into());
+    }
+
+    let data_dir_is_non_empty = data_dir
+        .read_dir()
+        .map(|mut iter| iter.next().is_some())
+        .unwrap_or(false);
+    if data_dir_is_non_empty {
+        return Err(format!("Data directory at {} is not empty", data_dir.display()).into());
     }
 
     if let Some(url) = url {
-        // Clone mode: clone remote repository as the default repo
-        let repos_dir = ctx.repos_dir();
-        fs::create_dir_all(&repos_dir)?;
+        if let Some(parent) = data_dir.parent() {
+            fs::create_dir_all(parent)?;
+        }
 
-        git::clone(url, &repo_dir)?;
+        git::clone(url, data_dir)?;
 
         if !config_path.exists() {
-            fs::remove_dir_all(&repo_dir)?;
+            fs::remove_dir_all(data_dir)?;
             return Err("Not a valid homeos repository. Cloned directory removed.".into());
         }
 
         if strip_git {
-            let git_dir = repo_dir.join(".git");
+            let git_dir = data_dir.join(".git");
             if git_dir.exists() {
                 fs::remove_dir_all(&git_dir)?;
             }
@@ -36,19 +44,10 @@ pub fn run(
 
         println!(
             "Initialized homeos at {} (cloned from {})",
-            repo_dir.display(),
+            data_dir.display(),
             url
         );
     } else {
-        // Scaffold mode: create empty structure
-        if repo_dir.exists() {
-            return Err(format!(
-                "Repository directory already exists at {}",
-                repo_dir.display()
-            )
-            .into());
-        }
-
         let packages_dir = ctx.packages_dir();
         fs::create_dir_all(&packages_dir)?;
 
@@ -63,7 +62,7 @@ pub fn run(
             fs::write(&gitignore_path, "state.yml\n")?;
         }
 
-        println!("Initialized homeos at {}", repo_dir.display());
+        println!("Initialized homeos at {}", data_dir.display());
     }
 
     Ok(())
@@ -77,7 +76,7 @@ mod tests {
 
     fn fixture() -> (TempDir, Context) {
         let tmp = TempDir::new().unwrap();
-        let ctx = Context::new(Some(tmp.path().to_path_buf()), "default".to_string());
+        let ctx = Context::new(Some(tmp.path().join("homeos")));
         (tmp, ctx)
     }
 
@@ -100,6 +99,25 @@ mod tests {
             .unwrap();
     }
 
+    fn create_source_repo_with_config(source_dir: &std::path::Path) {
+        create_local_git_repo(source_dir);
+        fs::write(source_dir.join("homeos.yml"), "packages: {}\n").unwrap();
+        Command::new("git")
+            .args(["-C", &source_dir.to_string_lossy(), "add", "homeos.yml"])
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args([
+                "-C",
+                &source_dir.to_string_lossy(),
+                "commit",
+                "-m",
+                "add config",
+            ])
+            .output()
+            .unwrap();
+    }
+
     #[test]
     fn test_init_creates_structure() {
         // Arrange
@@ -109,7 +127,7 @@ mod tests {
         run(&ctx, None, false).unwrap();
 
         // Assert
-        assert!(ctx.repo_dir().exists());
+        assert!(ctx.data_dir().exists());
         assert!(ctx.packages_dir().exists());
         assert!(ctx.plugins_dir().exists());
         assert!(ctx.config_path().exists());
@@ -145,18 +163,21 @@ mod tests {
     }
 
     #[test]
-    fn test_init_directory_paths() {
+    fn test_init_flat_directory_paths() {
         // Arrange
-        let (tmp, ctx) = fixture();
+        let (_tmp, ctx) = fixture();
 
         // Act
         run(&ctx, None, false).unwrap();
 
         // Assert
-        let base = tmp.path();
-        assert!(base.join("repos/default/packages").exists());
-        assert!(base.join("repos/default/plugins").exists());
-        assert!(base.join("repos/default/homeos.yml").exists());
+        let data_dir = ctx.data_dir();
+        assert!(data_dir.join("packages").exists());
+        assert!(data_dir.join("plugins").exists());
+        assert!(data_dir.join("homeos.yml").exists());
+        assert!(data_dir.join(".gitignore").exists());
+        // The old repos/default/ segment must not exist anywhere under data_dir.
+        assert!(!data_dir.join("repos").exists());
     }
 
     #[test]
@@ -204,10 +225,11 @@ mod tests {
     }
 
     #[test]
-    fn test_init_scaffold_errors_if_repo_dir_exists() {
+    fn test_init_scaffold_errors_if_data_dir_not_empty() {
         // Arrange
         let (_tmp, ctx) = fixture();
-        fs::create_dir_all(ctx.repo_dir()).unwrap();
+        fs::create_dir_all(ctx.data_dir()).unwrap();
+        fs::write(ctx.data_dir().join("stray.txt"), "preexisting\n").unwrap();
 
         // Act
         let result = run(&ctx, None, false);
@@ -216,10 +238,24 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.starts_with("Repository directory already exists at "),
+            err.starts_with("Data directory at ") && err.ends_with(" is not empty"),
             "unexpected error: {}",
             err
         );
+    }
+
+    #[test]
+    fn test_init_scaffold_succeeds_if_data_dir_exists_but_empty() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        fs::create_dir_all(ctx.data_dir()).unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        assert!(result.is_ok());
+        assert!(ctx.config_path().exists());
     }
 
     #[test]
@@ -227,36 +263,15 @@ mod tests {
         // Arrange
         let (_tmp, ctx) = fixture();
         let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
-        // Add a homeos.yml to the source repo
-        fs::write(source_dir.path().join("homeos.yml"), "packages: {}\n").unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &source_dir.path().to_string_lossy(),
-                "add",
-                "homeos.yml",
-            ])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &source_dir.path().to_string_lossy(),
-                "commit",
-                "-m",
-                "add config",
-            ])
-            .output()
-            .unwrap();
+        create_source_repo_with_config(source_dir.path());
 
         // Act
         run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
 
         // Assert
-        assert!(ctx.repo_dir().exists());
+        assert!(ctx.data_dir().exists());
         assert!(ctx.config_path().exists());
-        assert!(ctx.repo_dir().join(".git").exists());
+        assert!(ctx.data_dir().join(".git").exists());
     }
 
     #[test]
@@ -282,6 +297,28 @@ mod tests {
     }
 
     #[test]
+    fn test_init_with_url_errors_if_data_dir_not_empty() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        fs::create_dir_all(ctx.data_dir()).unwrap();
+        fs::write(ctx.data_dir().join("stray.txt"), "preexisting\n").unwrap();
+        let source_dir = TempDir::new().unwrap();
+        create_source_repo_with_config(source_dir.path());
+
+        // Act
+        let result = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
+
+        // Assert
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.starts_with("Data directory at ") && err.ends_with(" is not empty"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
     fn test_init_with_url_invalid_url() {
         // Arrange
         let (_tmp, ctx) = fixture();
@@ -296,41 +333,6 @@ mod tests {
     }
 
     #[test]
-    fn test_init_with_url_creates_repos_dir() {
-        // Arrange
-        let (_tmp, ctx) = fixture();
-        let source_dir = TempDir::new().unwrap();
-        create_source_repo_with_config(source_dir.path());
-        assert!(!ctx.repos_dir().exists());
-
-        // Act
-        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
-
-        // Assert
-        assert!(ctx.repos_dir().exists());
-        assert!(ctx.repo_dir().exists());
-    }
-
-    fn create_source_repo_with_config(source_dir: &std::path::Path) {
-        create_local_git_repo(source_dir);
-        fs::write(source_dir.join("homeos.yml"), "packages: {}\n").unwrap();
-        Command::new("git")
-            .args(["-C", &source_dir.to_string_lossy(), "add", "homeos.yml"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args([
-                "-C",
-                &source_dir.to_string_lossy(),
-                "commit",
-                "-m",
-                "add config",
-            ])
-            .output()
-            .unwrap();
-    }
-
-    #[test]
     fn test_init_strip_git_removes_git_directory() {
         // Arrange
         let (_tmp, ctx) = fixture();
@@ -341,9 +343,9 @@ mod tests {
         run(&ctx, Some(&source_dir.path().to_string_lossy()), true).unwrap();
 
         // Assert
-        assert!(ctx.repo_dir().exists());
+        assert!(ctx.data_dir().exists());
         assert!(ctx.config_path().exists());
-        assert!(!ctx.repo_dir().join(".git").exists());
+        assert!(!ctx.data_dir().join(".git").exists());
     }
 
     #[test]
@@ -357,7 +359,7 @@ mod tests {
         run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
 
         // Assert
-        assert!(ctx.repo_dir().join(".git").exists());
+        assert!(ctx.data_dir().join(".git").exists());
     }
 
     #[test]
@@ -369,7 +371,7 @@ mod tests {
         run(&ctx, None, true).unwrap();
 
         // Assert — scaffold mode ignores strip_git
-        assert!(ctx.repo_dir().exists());
+        assert!(ctx.data_dir().exists());
         assert!(ctx.config_path().exists());
     }
 
@@ -389,20 +391,6 @@ mod tests {
             result.unwrap_err().to_string(),
             "Not a valid homeos repository. Cloned directory removed."
         );
-        assert!(!ctx.repo_dir().exists());
-    }
-
-    #[test]
-    fn test_init_with_url_rejects_repo_without_homeos_yml_cleans_up() {
-        // Arrange
-        let (_tmp, ctx) = fixture();
-        let source_dir = TempDir::new().unwrap();
-        create_local_git_repo(source_dir.path());
-
-        // Act
-        let _ = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
-
-        // Assert — repos dir may exist but the repo itself must be removed
-        assert!(!ctx.repo_dir().exists());
+        assert!(!ctx.data_dir().exists());
     }
 }
