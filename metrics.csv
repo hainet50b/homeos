@@ -155,3 +155,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-17T10:33:40Z,23ee808,"Drop nushell from supported completion shells",193,31,11743,1.8942147500000002
 2026-05-17T10:40:00Z,c74fa01,"Switch completion to clap_complete dynamic engine",375,28,25584,2.56350425
 2026-05-17T10:49:20Z,48ec70c,"Attach ArgValueCompleter for package and plugin names",555,2838,39828,4.782159249999999
+2026-05-17T10:54:15Z,ede0c0e,"Verify dynamic completion installation flow end-to-end",291,32,20074,2.465853750000001
