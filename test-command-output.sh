@@ -5,13 +5,11 @@ set -euo pipefail
 # Creates a temporary test environment and exercises all commands.
 # Cleans up on exit (including on failure).
 
+export HOMEOS_DATA_DIR="$(mktemp -d)"
 HOMEOS="cargo run --"
-TEST_REPO="test-output-$$"
-BASE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/homeos"
-REPO_DIR="$BASE_DIR/repos/$TEST_REPO"
-PKG_DIR="$REPO_DIR/packages"
-YML="$REPO_DIR/homeos.yml"
-STATE="$REPO_DIR/state.yml"
+PKG_DIR="$HOMEOS_DATA_DIR/packages"
+YML="$HOMEOS_DATA_DIR/homeos.yml"
+STATE="$HOMEOS_DATA_DIR/state.yml"
 
 verify() {
     echo "--- verify: homeos.yml ---"
@@ -25,167 +23,166 @@ verify() {
 cleanup() {
     echo ""
     echo "=== Cleanup ==="
-    $HOMEOS package uninstall --all --repo "$TEST_REPO" 2>/dev/null || true
-    $HOMEOS repo remove "$TEST_REPO" 2>/dev/null || true
+    rm -rf "$HOMEOS_DATA_DIR"
     echo "Done."
 }
 trap cleanup EXIT
 
-echo "=== Setup ==="
-$HOMEOS repo add "$TEST_REPO"
+echo "=== homeos init ==="
+$HOMEOS init
 
 echo ""
 echo "=== homeos init (already initialized) ==="
-$HOMEOS init --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS init 2>&1 || true
 
 echo ""
 echo "=== homeos package add ==="
-$HOMEOS package add testpkg --repo "$TEST_REPO"
+$HOMEOS package add testpkg
 echo "--- verify: directory ---"
 ls "$PKG_DIR/testpkg/"
 verify
 
 echo ""
 echo "=== homeos package add (already exists) ==="
-$HOMEOS package add testpkg --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package add testpkg 2>&1 || true
 
 echo ""
 echo "=== homeos package list ==="
-$HOMEOS package list --repo "$TEST_REPO"
+$HOMEOS package list
 
 echo ""
 echo "=== homeos package info ==="
-$HOMEOS package info testpkg --repo "$TEST_REPO"
+$HOMEOS package info testpkg
 
 echo ""
 echo "=== homeos package cat ==="
-$HOMEOS package cat testpkg --repo "$TEST_REPO"
+$HOMEOS package cat testpkg
 
 echo ""
 echo "=== homeos package disable ==="
-$HOMEOS package disable testpkg --repo "$TEST_REPO"
+$HOMEOS package disable testpkg
 verify
 
 echo ""
 echo "=== homeos package disable (already disabled) ==="
-$HOMEOS package disable testpkg --repo "$TEST_REPO"
+$HOMEOS package disable testpkg
 
 echo ""
 echo "=== homeos package enable ==="
-$HOMEOS package enable testpkg --repo "$TEST_REPO"
+$HOMEOS package enable testpkg
 verify
 
 echo ""
 echo "=== homeos package enable (already enabled) ==="
-$HOMEOS package enable testpkg --repo "$TEST_REPO"
+$HOMEOS package enable testpkg
 
 echo ""
 echo "=== homeos package add (with dependency) ==="
-$HOMEOS package add deppkg --repo "$TEST_REPO"
-$HOMEOS package add-dep testpkg deppkg --repo "$TEST_REPO"
+$HOMEOS package add deppkg
+$HOMEOS package add-dep testpkg deppkg
 verify
 
 echo ""
 echo "=== homeos package add-dep (already depends) ==="
-$HOMEOS package add-dep testpkg deppkg --repo "$TEST_REPO"
+$HOMEOS package add-dep testpkg deppkg
 
 echo ""
 echo "=== homeos package add-dep (dependency not found in homeos.yml) ==="
-$HOMEOS package add-dep testpkg nonexistent --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package add-dep testpkg nonexistent 2>&1 || true
 
 echo ""
 echo "=== homeos package add-dep (circular dependency) ==="
-$HOMEOS package add-dep deppkg testpkg --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package add-dep deppkg testpkg 2>&1 || true
 
 echo ""
 echo "=== homeos package add-dep (package not found) ==="
-$HOMEOS package add-dep nonexistent deppkg --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package add-dep nonexistent deppkg 2>&1 || true
 
 echo ""
 echo "=== homeos package info (with dependency) ==="
-$HOMEOS package info testpkg --repo "$TEST_REPO"
+$HOMEOS package info testpkg
 
 echo ""
 echo "=== homeos package list (with dependencies) ==="
-$HOMEOS package list --repo "$TEST_REPO"
+$HOMEOS package list
 
 echo ""
 echo "=== homeos package remove-dep ==="
-$HOMEOS package remove-dep testpkg deppkg --repo "$TEST_REPO"
+$HOMEOS package remove-dep testpkg deppkg
 verify
 
 echo ""
 echo "=== homeos package remove-dep (not a dependency) ==="
-$HOMEOS package remove-dep testpkg deppkg --repo "$TEST_REPO"
+$HOMEOS package remove-dep testpkg deppkg
 
 echo ""
 echo "=== homeos package add-alias ==="
-$HOMEOS package add-alias testpkg update=install --repo "$TEST_REPO"
+$HOMEOS package add-alias testpkg update=install
 verify
 
 echo ""
 echo "=== homeos package add-alias (already exists) ==="
-$HOMEOS package add-alias testpkg update=install --repo "$TEST_REPO"
+$HOMEOS package add-alias testpkg update=install
 
 echo ""
 echo "=== homeos package remove-alias ==="
-$HOMEOS package remove-alias testpkg update --repo "$TEST_REPO"
+$HOMEOS package remove-alias testpkg update
 verify
 
 echo ""
 echo "=== homeos package remove-alias (not found) ==="
-$HOMEOS package remove-alias testpkg update --repo "$TEST_REPO"
+$HOMEOS package remove-alias testpkg update
 
 echo ""
 echo "=== homeos package remove (depended on) ==="
-$HOMEOS package add-dep testpkg deppkg --repo "$TEST_REPO"
-$HOMEOS package remove deppkg --repo "$TEST_REPO" 2>&1 || true
-$HOMEOS package remove-dep testpkg deppkg --repo "$TEST_REPO"
+$HOMEOS package add-dep testpkg deppkg
+$HOMEOS package remove deppkg 2>&1 || true
+$HOMEOS package remove-dep testpkg deppkg
 
 echo ""
 echo "=== homeos package remove (not found) ==="
-$HOMEOS package remove nonexistent --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package remove nonexistent 2>&1 || true
 
 echo ""
 echo "=== homeos package remove ==="
-$HOMEOS package remove deppkg --purge --repo "$TEST_REPO" <<< "y"
+$HOMEOS package remove deppkg --purge <<< "y"
 verify
 echo "--- verify: directory removed ---"
 ls "$PKG_DIR/deppkg/" 2>&1 || echo "(directory does not exist)"
 
 echo ""
 echo "=== homeos package remove (abort) ==="
-$HOMEOS package add deppkg --repo "$TEST_REPO"
-$HOMEOS package remove deppkg --repo "$TEST_REPO" <<< "n"
+$HOMEOS package add deppkg
+$HOMEOS package remove deppkg <<< "n"
 echo "--- verify: still in homeos.yml after abort ---"
 verify
-$HOMEOS package remove deppkg --purge --repo "$TEST_REPO" <<< "y"
+$HOMEOS package remove deppkg --purge <<< "y"
 
 echo ""
 echo "=== homeos plugin list ==="
-$HOMEOS plugin list --repo "$TEST_REPO"
+$HOMEOS plugin list
 
 echo ""
 echo "=== homeos plugin add (local) ==="
-$HOMEOS plugin add testplugin --local --repo "$TEST_REPO"
+$HOMEOS plugin add testplugin --local
 echo "--- verify: plugin directory ---"
-ls "$REPO_DIR/plugins/testplugin/"
+ls "$HOMEOS_DATA_DIR/plugins/testplugin/"
 verify
 
 echo ""
 echo "=== homeos plugin list (after add) ==="
-$HOMEOS plugin list --repo "$TEST_REPO"
+$HOMEOS plugin list
 
 echo ""
 echo "=== homeos plugin cat ==="
-$HOMEOS plugin cat testplugin --repo "$TEST_REPO"
+$HOMEOS plugin cat testplugin
 
 echo ""
 echo "=== homeos plugin remove ==="
-$HOMEOS plugin remove testplugin --repo "$TEST_REPO" <<< "y"
+$HOMEOS plugin remove testplugin <<< "y"
 verify
 echo "--- verify: plugin directory still exists (no --purge) ---"
-ls "$REPO_DIR/plugins/testplugin/" 2>&1 || echo "(directory does not exist)"
+ls "$HOMEOS_DATA_DIR/plugins/testplugin/" 2>&1 || echo "(directory does not exist)"
 
 echo ""
 echo "=== Setup: write dummy scripts ==="
@@ -206,37 +203,37 @@ SCRIPT
 
 echo ""
 echo "=== homeos package install ==="
-$HOMEOS package install testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package install testpkg <<< "y"
 verify
 
 echo ""
 echo "=== homeos package install (already installed) ==="
-$HOMEOS package install testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package install testpkg <<< "y"
 
 echo ""
 echo "=== homeos package update ==="
-$HOMEOS package update testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package update testpkg <<< "y"
 
 echo ""
 echo "=== homeos package list (after install) ==="
-$HOMEOS package list --repo "$TEST_REPO"
+$HOMEOS package list
 
 echo ""
 echo "=== homeos package remove (installed, should fail) ==="
-$HOMEOS package remove testpkg --repo "$TEST_REPO" 2>&1 || true
+$HOMEOS package remove testpkg 2>&1 || true
 
 echo ""
 echo "=== homeos package uninstall ==="
-$HOMEOS package uninstall testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package uninstall testpkg <<< "y"
 verify
 
 echo ""
 echo "=== homeos package uninstall (not installed) ==="
-$HOMEOS package uninstall testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package uninstall testpkg <<< "y"
 
 echo ""
 echo "=== Setup: write failing script ==="
-$HOMEOS package enable testpkg --repo "$TEST_REPO"
+$HOMEOS package enable testpkg
 cat > "$PKG_DIR/testpkg/install.sh" << 'SCRIPT'
 #!/usr/bin/env sh
 echo "this script will fail"
@@ -245,21 +242,21 @@ SCRIPT
 
 echo ""
 echo "=== homeos package install (script fails) ==="
-$HOMEOS package install testpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package install testpkg <<< "y"
 echo "--- verify: not recorded in state.yml after failure ---"
 verify
 
 echo ""
 echo "=== homeos package install (abort) ==="
-$HOMEOS package enable testpkg --repo "$TEST_REPO"
-$HOMEOS package install testpkg --repo "$TEST_REPO" <<< "n"
+$HOMEOS package enable testpkg
+$HOMEOS package install testpkg <<< "n"
 
 echo ""
 echo "=== Setup: create circular dependency ==="
-$HOMEOS package enable testpkg --repo "$TEST_REPO"
-$HOMEOS package add circpkg --repo "$TEST_REPO"
-$HOMEOS package add-dep testpkg circpkg --repo "$TEST_REPO"
-$HOMEOS package add-dep circpkg testpkg --repo "$TEST_REPO"
+$HOMEOS package enable testpkg
+$HOMEOS package add circpkg
+$HOMEOS package add-dep testpkg circpkg
+$HOMEOS package add-dep circpkg testpkg
 verify
 
 cat > "$PKG_DIR/circpkg/install.sh" << 'SCRIPT'
@@ -274,26 +271,14 @@ SCRIPT
 
 echo ""
 echo "=== homeos package install (circular dependency) ==="
-$HOMEOS package install testpkg circpkg --repo "$TEST_REPO" <<< "y"
+$HOMEOS package install testpkg circpkg <<< "y"
 verify
 
 echo ""
 echo "=== Setup: cleanup circular dependency ==="
-$HOMEOS package remove-dep testpkg circpkg --repo "$TEST_REPO"
-$HOMEOS package remove-dep circpkg testpkg --repo "$TEST_REPO"
-$HOMEOS package remove circpkg --purge --repo "$TEST_REPO" <<< "y"
-
-echo ""
-echo "=== homeos repo list ==="
-$HOMEOS repo list
-
-echo ""
-echo "=== homeos repo add (already exists) ==="
-$HOMEOS repo add "$TEST_REPO" 2>&1 || true
-
-echo ""
-echo "=== homeos repo remove (default) ==="
-$HOMEOS repo remove default 2>&1 || true
+$HOMEOS package remove-dep testpkg circpkg
+$HOMEOS package remove-dep circpkg testpkg
+$HOMEOS package remove circpkg --purge <<< "y"
 
 echo ""
 echo "=== All tests completed ==="
