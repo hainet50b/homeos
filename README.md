@@ -98,7 +98,7 @@ rustup 1.29.0 (28d1352db 2026-03-05)
 ```sh
 $ homeos plugin list-remote
 Name      Description                                  URL
---------  -------------------------------------------  ---
+--------  -------------------------------------------  ---------------------------------------------------
 apt       APT package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-apt
 dnf       DNF package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-dnf
 homebrew  Homebrew package manager plugin for homeos.  https://github.com/hainet50b/homeos-plugin-homebrew
@@ -364,10 +364,11 @@ Displays a table with package name, enabled status, installed status, and depend
 
 ```
 $ homeos package list
-Package     Enabled   Installed   Dependencies
-neovim      yes       yes         -
-claude      yes       yes         bubblewrap, socat
-docker      no        no          -
+Package  Enabled  Installed  Dependencies
+-------  -------  ---------  -----------------
+neovim   yes      yes        -
+claude   yes      yes        bubblewrap, socat
+docker   no       no         -
 ```
 
 #### `homeos package add`
@@ -639,7 +640,7 @@ Displays a table with plugin name, description, and URL. `Description` is loaded
 ```
 $ homeos plugin list
 Name  Description                              URL
-----  ---------------------------------------  ---
+----  ---------------------------------------  ----------------------------------------------
 dnf   DNF package manager plugin for homeos.   https://github.com/hainet50b/homeos-plugin-dnf
 ```
 
@@ -655,9 +656,12 @@ Displays name, description, and URL for each official plugin.
 
 ```
 $ homeos plugin list-remote
-Name     Description                        URL
-dnf      DNF package manager plugin         https://github.com/hainet50b/homeos-plugin-dnf
-winget   Windows Package Manager plugin     https://github.com/hainet50b/homeos-plugin-winget
+Name      Description                                  URL
+--------  -------------------------------------------  ---------------------------------------------------
+apt       APT package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-apt
+dnf       DNF package manager plugin for homeos.       https://github.com/hainet50b/homeos-plugin-dnf
+homebrew  Homebrew package manager plugin for homeos.  https://github.com/hainet50b/homeos-plugin-homebrew
+winget    WinGet package manager plugin for homeos.    https://github.com/hainet50b/homeos-plugin-winget
 ```
 
 #### `homeos plugin add`
