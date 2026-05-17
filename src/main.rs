@@ -1,4 +1,5 @@
 use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::engine::ArgValueCompleter;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -10,8 +11,11 @@ fn parse_key_value(s: &str) -> Result<(String, String), String> {
 }
 
 mod commands;
+mod completers;
 mod config;
 mod context;
+#[cfg(test)]
+mod env_test;
 mod git;
 mod plan;
 mod state;
@@ -87,6 +91,7 @@ pub enum PluginCommands {
     /// Remove a plugin
     Remove {
         /// Plugin name
+        #[arg(add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: String,
         /// Also delete the plugin directory
         #[arg(long)]
@@ -95,16 +100,19 @@ pub enum PluginCommands {
     /// Display plugin details
     Info {
         /// Plugin name
+        #[arg(add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: String,
     },
     /// Display plugin.yml and all template files for a plugin
     Cat {
         /// Plugin name
+        #[arg(add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: String,
     },
     /// Launch a shell in the plugins root or specific plugin directory
     Cd {
         /// Plugin name (optional — defaults to plugins root)
+        #[arg(add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: Option<String>,
     },
 }
@@ -118,13 +126,17 @@ pub enum PackageCommands {
         /// Package name
         package: String,
         /// Add a dependency (can be repeated)
-        #[arg(long = "depends-on", action = clap::ArgAction::Append)]
+        #[arg(
+            long = "depends-on",
+            action = clap::ArgAction::Append,
+            add = ArgValueCompleter::new(completers::package_completer),
+        )]
         depends_on: Vec<String>,
         /// Add a script alias as target=source (can be repeated)
         #[arg(long = "script-alias", action = clap::ArgAction::Append, value_parser = parse_key_value)]
         script_aliases: Vec<(String, String)>,
         /// Plugin to use for generating scripts
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: Option<String>,
         /// Plugin parameter as key=value (can be repeated)
         #[arg(long = "param", action = clap::ArgAction::Append, value_parser = parse_key_value)]
@@ -133,7 +145,7 @@ pub enum PackageCommands {
     /// Remove package entries from homeos.yml
     Remove {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
         /// Also delete the package directory
         #[arg(long)]
@@ -142,6 +154,7 @@ pub enum PackageCommands {
     /// Rename a package
     Rename {
         /// Current package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         old: String,
         /// New package name
         new: String,
@@ -149,6 +162,7 @@ pub enum PackageCommands {
     /// Add dependencies to an existing package
     AddDep {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
         /// Dependencies to add
         #[arg(required = true)]
@@ -157,6 +171,7 @@ pub enum PackageCommands {
     /// Remove dependencies from an existing package
     RemoveDep {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
         /// Dependencies to remove
         #[arg(required = true)]
@@ -165,6 +180,7 @@ pub enum PackageCommands {
     /// Add script aliases to an existing package
     AddAlias {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
         /// Aliases as target=source pairs (e.g., update=install)
         #[arg(required = true, value_parser = parse_key_value)]
@@ -173,6 +189,7 @@ pub enum PackageCommands {
     /// Remove script aliases from a package
     RemoveAlias {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
         /// Alias targets to remove (e.g., update)
         #[arg(required = true)]
@@ -181,34 +198,37 @@ pub enum PackageCommands {
     /// Enable packages
     Enable {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
     },
     /// Disable packages
     Disable {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
     },
     /// Display package details
     Info {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
     },
     /// Display all scripts for a package
     Cat {
         /// Package name
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: String,
     },
     /// Launch a shell in the package root or specific package directory
     Cd {
         /// Package name (optional — defaults to packages root)
+        #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: Option<String>,
     },
     /// Execute install scripts
     Install {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
         /// Display the plan without executing scripts or prompting
         #[arg(long)]
@@ -217,7 +237,7 @@ pub enum PackageCommands {
     /// Execute update scripts
     Update {
         /// Package names
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
         /// Display the plan without executing scripts or prompting
         #[arg(long)]
@@ -226,7 +246,10 @@ pub enum PackageCommands {
     /// Execute uninstall scripts
     Uninstall {
         /// Package names
-        #[arg(required_unless_present = "all")]
+        #[arg(
+            required_unless_present = "all",
+            add = ArgValueCompleter::new(completers::package_completer),
+        )]
         packages: Vec<String>,
         /// Uninstall all installed packages (from state.yml)
         #[arg(long)]
