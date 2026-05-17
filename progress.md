@@ -4719,3 +4719,57 @@ PRD #221 was the only remaining unchecked task in the PRD's Tasks section (there
 - **Why `rsplit("  ").next()` in tests.** The Package, Enabled, and Installed column widths vary by test fixture (Package widens with the longest package name; Enabled and Installed are stable but their dash counts could change if a future task widens those headers). The Dependencies column is always the rightmost. Splitting from the right on the two-space column separator (`"  "`) and taking the first segment returns the deps separator regardless of upstream column widths. This is the same robustness pattern the #220 tests adopted.
 - **Function order.** No function-ordering inconsistencies needed fixing. The README orders package subcommands as list, add, remove, rename, add-dep, remove-dep, add-alias, remove-alias, enable, disable, info, cat, cd, install, update, uninstall (lines 355-626); `commands/package/registry.rs` already places `list` at the top of the file, followed by `add` and the rest in matching order. The only function touched by this task is `list_to`, which sits at the top of the file alongside its `list` public entry point.
 - **PRD Completion Criteria.** All tasks (both Tasks and the empty Post Tasks set) are now checked. `cargo clippy --all-targets -- -D warnings` produces no warnings. `cargo test` passes with 578 tests, 0 failures. The PRD is complete.
+
+---
+
+# Ralph Loop — 2026-05-17T03:31:40Z
+
+## Task: Drop `homeos repo` subcommands and the `--repo` global flag from the CLI
+
+**Timestamp:**
+
+2026-05-17T03:34:53Z
+
+**Why this task:**
+
+Four tasks remain unchecked in the PRD: #222 (drop `homeos repo` and `--repo`), #223 (flatten directory layout to `<data_dir>/` directly, dropping the `repos/default/` segment), #224 (honor `HOMEOS_DATA_DIR` env var), #225 (update `test-command-output.sh`). They form a sequential chain: #222 retires the entire repo abstraction at the CLI layer while keeping the filesystem layout at `repos/default/` unchanged, then #223 flattens the filesystem layout, then #224 adds the env-var override that the flattened layout enables, then #225 updates the integration test script. I picked #222 first because (a) it is the foundational removal that the next three tasks build on, and (b) its scope is well-contained — pure CLI/dispatch removal with no behavior changes to packages, plugins, or filesystem paths.
+
+**What was done:**
+
+1. **Deleted `src/commands/repo.rs`** (620 lines, including 25 unit tests covering `list_to`, `add`, `resolve_cd_target`, and `remove_to`). The module was the entire backing implementation for `homeos repo list/add/cd/remove`.
+
+2. **Removed `pub mod repo;` from `src/commands.rs`** so the now-deleted module is no longer wired into the `commands` module tree.
+
+3. **Removed three CLI surfaces from `src/main.rs`:**
+   - The `--repo` / `-r` global flag on `Cli` (was `pub repo: String` with `default_value = "default"`).
+   - The `Commands::Repo { command: RepoCommands }` variant on the top-level `Commands` enum.
+   - The `RepoCommands` enum (List, Add, Cd, Remove) with all its argument bindings.
+   - The `Commands::Repo { command } => match command { ... }` dispatch arm in `fn main()`.
+
+4. **Updated `Context::new` call in `fn main()`** from `Context::new(cli.base_dir, cli.repo)` to `Context::new(cli.base_dir, "default".to_string())`. Per the task description, `Context::new` retains the `repo: String` parameter for now — the filesystem layout still keeps `repos/default/` (task #223 will flatten it). The hard-coded `"default"` literal is the only repo name the CLI will ever pass, and a future commit (#223) will drop the parameter entirely.
+
+5. **Removed six CLI tests from `src/main.rs`** that exercised the dropped flag/subcommands:
+   - `test_repo_option_defaults_to_default`, `test_repo_option_long`, `test_repo_option_short` (the `--repo` / `-r` flag itself).
+   - `test_repo_add_help_shows_repo_argument`, `test_repo_cd_help_shows_repo_argument`, `test_repo_remove_help_shows_repo_argument` (positional `repo` arg on the three `homeos repo` subcommands).
+
+6. **Reordered the `match cli.command` dispatch arms in `fn main()`** to match the README's section order: `init → cd → apply → package → plugin → completion`. The previous order placed `Plugin` and `Completion` between `Apply` and `Package`, which contradicted the README. This satisfies the loop instruction "Verify that functions, methods, and CLI subcommands across the affected files are ordered consistently with `README.md`. Fix any ordering inconsistencies, not just in code you added."
+
+**What was changed:**
+
+- src/commands/repo.rs — deleted entirely.
+- src/commands.rs — removed the `pub mod repo;` line.
+- src/main.rs — removed the `--repo` flag from `Cli`; removed `Commands::Repo` variant; removed `RepoCommands` enum; removed dispatch arm; updated `Context::new` call to pass `"default".to_string()`; reordered dispatch arms to match README; removed six obsolete CLI tests.
+- prd.md — task 222 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 547 tests pass** (was 578 before; -31 = 25 removed from repo.rs + 6 removed from main.rs). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **No new tests added.** The task description ends with "Tests for `commands/repo.rs` are removed; other tests are unchanged." This is a pure removal task — there is no new code path to cover. The standard loop instruction to "Write corresponding unit tests" has no concrete target here.
+- **Function order audit.** Beyond the dispatch-arm reorder in main.rs (already done above), I verified the `PackageCommands` and `PluginCommands` enums match the README order. PackageCommands: list, add, remove, rename, add-dep, remove-dep, add-alias, remove-alias, enable, disable, info, cat, cd, install, update, uninstall — matches README §"Manage packages" and §"Operate packages". PluginCommands: list, list-remote, add, remove, info, cat, cd — matches README §"Manage plugins". No reordering needed in either enum.
+- **No README/COMMAND_OUTPUT.md change.** The README already documents only `init`, `cd`, `apply`, `package`, `plugin`, and `completion` at the CLI level (no `homeos repo` section anywhere), and COMMAND_OUTPUT.md has no `## homeos repo …` tables. The user-facing spec was already aligned with this task's outcome; the implementation lagged.
+- **Context::repos_dir() and repo_dir() are still in `src/context.rs`.** They are still consumed by `commands/init.rs`, `commands/cd.rs`, and the package/plugin modules (which call `ctx.repo_dir().join(...)`). #223 will remove them. Leaving them in place here keeps the diff focused: this task drops CLI surfaces, #223 drops the path segment.
+- **No backward compatibility for the `--repo` flag.** Previously running `homeos --repo work ...` would set `cli.repo = "work"`. Now the same invocation fails with clap's standard "unexpected argument" error. The project is pre-release with the maintainer as the only user, and the PRD explicitly notes "no migration code or backward-compat shims" for the broader directory-layout refactor — the same principle applies here.
+- **Three tasks remain in the PRD** (#223 flat layout, #224 `HOMEOS_DATA_DIR` env var, #225 update test script). Leaving them for subsequent loop iterations as instructed.
+
+

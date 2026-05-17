@@ -3,7 +3,6 @@ pub mod completion;
 pub mod init;
 pub mod package;
 pub mod plugin;
-pub mod repo;
 
 /// Detect the user's shell for spawning interactive subshells.
 /// Uses `SHELL` env var if set, otherwise falls back to `pwsh` on Windows

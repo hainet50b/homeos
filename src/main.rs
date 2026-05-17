@@ -30,10 +30,6 @@ pub struct Cli {
     /// Override the base data directory (defaults to OS data directory)
     #[arg(long, global = true, hide = true)]
     pub base_dir: Option<PathBuf>,
-
-    /// Specify repository
-    #[arg(short = 'r', long, global = true, default_value = "default")]
-    pub repo: String,
 }
 
 #[derive(Subcommand)]
@@ -63,11 +59,6 @@ pub enum Commands {
     Plugin {
         #[command(subcommand)]
         command: PluginCommands,
-    },
-    /// Manage repositories
-    Repo {
-        #[command(subcommand)]
-        command: RepoCommands,
     },
     /// Print a shell completion script to stdout
     Completion {
@@ -115,29 +106,6 @@ pub enum PluginCommands {
     Cd {
         /// Plugin name (optional — defaults to plugins root)
         plugin: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum RepoCommands {
-    /// List all repositories
-    List,
-    /// Add a repository
-    Add {
-        /// Repository name
-        repo: String,
-        /// Remote URL to clone
-        url: Option<String>,
-    },
-    /// Launch a shell in the specified repository directory
-    Cd {
-        /// Repository name (default: "default")
-        repo: Option<String>,
-    },
-    /// Delete a local repository
-    Remove {
-        /// Repository name
-        repo: String,
     },
 }
 
@@ -271,7 +239,7 @@ pub enum PackageCommands {
 
 fn main() {
     let cli = Cli::parse();
-    let ctx = context::Context::new(cli.base_dir, cli.repo);
+    let ctx = context::Context::new(cli.base_dir, "default".to_string());
 
     match cli.command {
         Commands::Init { url, strip_git } => {
@@ -288,82 +256,6 @@ fn main() {
         }
         Commands::Apply { dry_run } => {
             if let Err(e) = commands::package::apply(&ctx, dry_run) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-        Commands::Plugin { command } => match command {
-            PluginCommands::List => {
-                if let Err(e) = commands::plugin::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::ListRemote => {
-                if let Err(e) = commands::plugin::list_remote() {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Add { plugin, url, local } => {
-                if let Err(e) = commands::plugin::add(&ctx, &plugin, url.as_deref(), local) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Remove { plugin, purge } => {
-                if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Info { plugin } => {
-                if let Err(e) = commands::plugin::info(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cat { plugin } => {
-                if let Err(e) = commands::plugin::cat(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cd { plugin } => {
-                if let Err(e) = commands::plugin::cd(&ctx, plugin.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        },
-        Commands::Repo { command } => match command {
-            RepoCommands::List => {
-                if let Err(e) = commands::repo::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            RepoCommands::Add { repo, url } => {
-                if let Err(e) = commands::repo::add(&ctx, &repo, url.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            RepoCommands::Cd { repo } => {
-                if let Err(e) = commands::repo::cd(&ctx, repo.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            RepoCommands::Remove { repo } => {
-                if let Err(e) = commands::repo::remove(&ctx, &repo) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-        },
-        Commands::Completion { shell } => {
-            if let Err(e) = commands::completion::run(shell) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -492,6 +384,56 @@ fn main() {
                 }
             }
         },
+        Commands::Plugin { command } => match command {
+            PluginCommands::List => {
+                if let Err(e) = commands::plugin::list(&ctx) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::ListRemote => {
+                if let Err(e) = commands::plugin::list_remote() {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Add { plugin, url, local } => {
+                if let Err(e) = commands::plugin::add(&ctx, &plugin, url.as_deref(), local) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Remove { plugin, purge } => {
+                if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Info { plugin } => {
+                if let Err(e) = commands::plugin::info(&ctx, &plugin) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Cat { plugin } => {
+                if let Err(e) = commands::plugin::cat(&ctx, &plugin) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            PluginCommands::Cd { plugin } => {
+                if let Err(e) = commands::plugin::cd(&ctx, plugin.as_deref()) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        },
+        Commands::Completion { shell } => {
+            if let Err(e) = commands::completion::run(shell) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -554,33 +496,6 @@ mod tests {
             Err(e) => e,
         };
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
-    }
-
-    #[test]
-    fn test_repo_option_defaults_to_default() {
-        // Arrange & Act
-        let cli = Cli::try_parse_from(["homeos", "init"]).unwrap();
-
-        // Assert
-        assert_eq!(cli.repo, "default");
-    }
-
-    #[test]
-    fn test_repo_option_long() {
-        // Arrange & Act
-        let cli = Cli::try_parse_from(["homeos", "--repo", "work", "init"]).unwrap();
-
-        // Assert
-        assert_eq!(cli.repo, "work");
-    }
-
-    #[test]
-    fn test_repo_option_short() {
-        // Arrange & Act
-        let cli = Cli::try_parse_from(["homeos", "-r", "server", "init"]).unwrap();
-
-        // Assert
-        assert_eq!(cli.repo, "server");
     }
 
     #[test]
@@ -868,60 +783,6 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["plugin"]);
-    }
-
-    #[test]
-    fn test_repo_add_help_shows_repo_argument() {
-        // Arrange
-        let cmd = Cli::command();
-        let repo_cmd = cmd.find_subcommand("repo").unwrap();
-        let add_cmd = repo_cmd.find_subcommand("add").unwrap();
-
-        // Act
-        let args: Vec<&str> = add_cmd
-            .get_positionals()
-            .filter(|a| a.get_id() == "repo")
-            .map(|a| a.get_id().as_str())
-            .collect();
-
-        // Assert
-        assert_eq!(args, vec!["repo"]);
-    }
-
-    #[test]
-    fn test_repo_cd_help_shows_repo_argument() {
-        // Arrange
-        let cmd = Cli::command();
-        let repo_cmd = cmd.find_subcommand("repo").unwrap();
-        let cd_cmd = repo_cmd.find_subcommand("cd").unwrap();
-
-        // Act
-        let args: Vec<&str> = cd_cmd
-            .get_positionals()
-            .filter(|a| a.get_id() == "repo")
-            .map(|a| a.get_id().as_str())
-            .collect();
-
-        // Assert
-        assert_eq!(args, vec!["repo"]);
-    }
-
-    #[test]
-    fn test_repo_remove_help_shows_repo_argument() {
-        // Arrange
-        let cmd = Cli::command();
-        let repo_cmd = cmd.find_subcommand("repo").unwrap();
-        let remove_cmd = repo_cmd.find_subcommand("remove").unwrap();
-
-        // Act
-        let args: Vec<&str> = remove_cmd
-            .get_positionals()
-            .filter(|a| a.get_id() == "repo")
-            .map(|a| a.get_id().as_str())
-            .collect();
-
-        // Assert
-        assert_eq!(args, vec!["repo"]);
     }
 
     #[test]
