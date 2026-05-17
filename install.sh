@@ -86,18 +86,6 @@ case "$SHELL_NAME" in
         echo "    use homeos"
         echo ""
         ;;
-    nu)
-        COMP_DIR="$HOME/.config/nushell/completions"
-        COMP_FILE="$COMP_DIR/homeos.nu"
-        mkdir -p "$COMP_DIR"
-        "$INSTALL_DIR/homeos" completion nushell > "$COMP_FILE"
-        echo ""
-        echo "Installed nushell completion to $COMP_FILE"
-        echo "Add the following to your config.nu:"
-        echo ""
-        echo "    source $COMP_FILE"
-        echo ""
-        ;;
 esac
 
 case ":$PATH:" in

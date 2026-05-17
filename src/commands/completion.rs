@@ -1,6 +1,5 @@
 use clap::{CommandFactory, ValueEnum};
 use clap_complete::{Shell, generate};
-use clap_complete_nushell::Nushell;
 use std::io::Write;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -11,7 +10,6 @@ pub enum CompletionShell {
     Fish,
     PowerShell,
     Elvish,
-    Nushell,
 }
 
 pub fn run(shell: CompletionShell) -> Result<(), Box<dyn std::error::Error>> {
@@ -30,7 +28,6 @@ fn run_to<W: Write>(
         CompletionShell::Fish => generate(Shell::Fish, &mut cmd, name, writer),
         CompletionShell::PowerShell => generate(Shell::PowerShell, &mut cmd, name, writer),
         CompletionShell::Elvish => generate(Shell::Elvish, &mut cmd, name, writer),
-        CompletionShell::Nushell => generate(Nushell, &mut cmd, name, writer),
     }
     Ok(())
 }
@@ -117,21 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn test_completion_nushell_generates_script() {
-        // Arrange
-        let mut buf: Vec<u8> = Vec::new();
-
-        // Act
-        run_to(CompletionShell::Nushell, &mut buf).unwrap();
-
-        // Assert
-        let output = String::from_utf8(buf).unwrap();
-        assert!(!output.is_empty());
-        assert!(output.contains("homeos"));
-        assert!(output.contains("export extern"));
-    }
-
-    #[test]
     fn test_completion_parses_lowercase_shell_names() {
         // Arrange & Act
         let cli = Cli::try_parse_from(["homeos", "completion", "bash"]).unwrap();
@@ -188,9 +170,6 @@ mod tests {
             .collect();
 
         // Assert
-        assert_eq!(
-            values,
-            vec!["bash", "zsh", "fish", "powershell", "elvish", "nushell"]
-        );
+        assert_eq!(values, vec!["bash", "zsh", "fish", "powershell", "elvish"]);
     }
 }

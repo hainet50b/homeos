@@ -787,7 +787,7 @@ Print a shell completion script for the given shell to stdout.
 Usage: homeos completion <SHELL>
 
 Arguments:
-  <SHELL>  Target shell [possible values: bash, zsh, fish, powershell, elvish, nushell]
+  <SHELL>  Target shell [possible values: bash, zsh, fish, powershell, elvish]
 ```
 
 Redirect the output to the shell-specific location:
@@ -807,9 +807,6 @@ homeos completion powershell >> $PROFILE
 
 # Elvish
 homeos completion elvish > ~/.config/elvish/lib/homeos.elv
-
-# Nushell
-homeos completion nushell > ~/.config/nushell/completions/homeos.nu
 ```
 
 > [!NOTE]
