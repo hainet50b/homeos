@@ -4828,3 +4828,55 @@ Three tasks remain unchecked in the PRD: #223 (flatten the directory layout to p
 - **Why `data_dir().to_path_buf()` in `cd.rs` instead of returning `&Path`.** `resolve_target` returns `PathBuf` because its callers (and the test assertions in `cd.rs` and `init.rs`) consume the path by value or compare with `ctx.data_dir()` directly. Returning a `&Path` would tie the resolver's lifetime to the `ctx` reference, which is fine in practice but bigger churn for no benefit. The single allocation is irrelevant on a path the user explicitly invoked.
 - **What `--base-dir` rename does to the existing hidden flag.** The flag is `hide = true` and was only ever used by tests, which now use the in-process `Context::new(Some(path))` constructor and never go through clap parsing. So there is no user-observable behavior change; the rename is purely a code-level rename.
 - **Two tasks remain in the PRD** (#224 `HOMEOS_DATA_DIR` env var, #225 update test script). #224 layers an env-var override on top of the now-flat `Context::new`. #225 rewrites the shell integration script for the flat layout and `HOMEOS_DATA_DIR` isolation. Both are downstream of this change. Leaving them for subsequent loop iterations as instructed.
+
+## Task: Honor the `HOMEOS_DATA_DIR` environment variable in `Context::new`
+
+**Timestamp:**
+
+2026-05-17T03:49:47Z
+
+**Why this task:**
+
+Two tasks remain unchecked in the PRD: #224 (honor `HOMEOS_DATA_DIR` env var in `Context::new`) and #225 (update `test-command-output.sh` for the flat layout and `HOMEOS_DATA_DIR`-based isolation). #225 explicitly references the env-var behavior #224 introduces — it sets `HOMEOS_DATA_DIR="$(mktemp -d)"` at the top of the integration script and expects subsequent CLI invocations to honor it. So #224 must land first. I picked it.
+
+**What was done:**
+
+1. **Updated `Context::new` in `src/context.rs`** to consult `HOMEOS_DATA_DIR` between the explicit arg and the `dirs::data_local_dir()` default. The resolution chain is now:
+   ```rust
+   data_dir
+       .or_else(|| std::env::var_os("HOMEOS_DATA_DIR").map(PathBuf::from))
+       .unwrap_or_else(|| dirs::data_local_dir().expect(...).join("homeos"))
+   ```
+   - Explicit `Some(path)` short-circuits before the env var is even consulted (`Option::or_else` is lazy).
+   - `var_os` (not `var`) is used so non-UTF-8 paths on Unix are honored verbatim — `PathBuf::from(OsString)` is infallible. Using `var` would lossily reject such paths.
+   - The env var value is used verbatim — no `homeos/` segment appended, matching the README "Overriding the data directory" spec.
+
+2. **Reordered `Context` methods** to match the README "Directory Structure" file order (`homeos.yml, state.yml, .gitignore, packages/, plugins/`). Previous order was `packages_dir, config_path, state_path, plugins_dir, gitignore_path` — accidental, README-inconsistent. New order: `data_dir` (accessor first), then `config_path`, `state_path`, `gitignore_path`, `packages_dir`, `plugins_dir`. Test methods reordered to match. This satisfies the loop instruction "Fix any ordering inconsistencies, not just in code you added." No callers were affected since the only thing that changed is the textual order of method definitions.
+
+3. **Added env-var-aware tests** in the `tests` module of `src/context.rs`:
+   - Renamed `test_default_data_dir` → `test_default_data_dir_when_env_var_unset`. The old name described what was being tested only when the developer's shell happened to not have `HOMEOS_DATA_DIR` set — true today, but the test now explicitly establishes that precondition before the assertion.
+   - `test_env_var_overrides_default` — env var set, no explicit arg, asserts the env value wins over the OS default.
+   - `test_env_var_value_is_used_verbatim_without_homeos_segment` — distinct test that pins the "no `homeos/` segment appended" guarantee from the README spec. Without this test, a regression that wrote `env_path.join("homeos")` would only be caught by `test_env_var_overrides_default` if the test happened to use a sub-path; this test asserts the exact path equality on a deliberately non-`homeos`-suffixed value (`/tmp/custom-data`).
+   - `test_explicit_arg_overrides_env_var` — env var set AND explicit arg passed, asserts the explicit arg wins.
+
+4. **Built an `EnvVarGuard` test helper** that captures the current value of `HOMEOS_DATA_DIR` on construction, holds a static `Mutex` (via `OnceLock<Mutex<()>>` for one-time initialization), and restores the previous value on `Drop`. The guard owns the mutex via a `MutexGuard<'static, ()>` field, so the lock is automatically released when the guard goes out of scope. This is the "explicit `env::set_var` / `env::remove_var` symmetry" approach the PRD accepts as an alternative to the `serial_test` crate.
+
+**What was changed:**
+
+- src/context.rs — `Context::new` consults `HOMEOS_DATA_DIR`; method order matches README; tests reordered/renamed/expanded; new `EnvVarGuard` test helper.
+- prd.md — task 224 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 547 tests pass** (was 544 before; +3 new tests in context.rs). I ran `cargo test context::` five times in a row to stress-test the env-var serialization — all pass deterministically. `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **Why a `Mutex` instead of `serial_test`.** I initially added `serial_test = "3"` as a dev-dependency (the option the PRD calls out by name), but `cargo` cannot reach `crates.io` from this sandboxed environment (`CONNECT tunnel failed, response 403`). Rather than disable the sandbox just to fetch a new crate, I used the PRD's second-listed option: "explicit `env::set_var` / `env::remove_var` symmetry." Pure symmetry alone is not enough — `cargo test` runs tests in parallel within a single test binary, and `HOMEOS_DATA_DIR` is process-global. Two tests both calling `set_var` concurrently can interleave. To close that hole, the `EnvVarGuard` acquires a static `Mutex` before any env mutation, so only one env-touching test runs at a time. The combination of save/restore (via `Drop`) and serialization (via the static `Mutex`) gives the same isolation guarantee `serial_test` provides, without adding a dependency. Reverted the Cargo.toml change.
+- **Why `var_os` over `var`.** `std::env::var` returns `Err` on non-UTF-8 values. Path environment variables on Unix can be non-UTF-8 (the same constraint that makes `OsString`/`OsStr` exist). `var_os` returns `Option<OsString>`, which `PathBuf::from` accepts directly. The user-facing behavior change is that a path like `/tmp/ねこ` works on filesystems where UTF-8 is preserved, and a path with arbitrary bytes works on systems where it isn't. Realistically the env var will almost always be UTF-8, but `var_os` is the strictly-more-correct API for path values.
+- **Why `Option::or_else` instead of `match` on the explicit arg.** `or_else` is lazy: when `data_dir` is `Some`, the closure is not invoked, so `var_os("HOMEOS_DATA_DIR")` is not called. This matters for tests that pass `Some(arg)` and run in parallel with tests that mutate the env var — those Some-passing tests cannot race on env state because they never touch it. The behavior is equivalent to a match, but the laziness is the point.
+- **`EnvVarGuard` API surface.** The helper exposes three constructors/methods: `capture()` (no env mutation, just save + lock), `set(value)` (mutate to a known value), and `unset()` (mutate to absent). Tests call `capture()` first to take the lock and snapshot prior state, then call `set()` or `unset()` for the precondition they want. Drop restores. Using `set` and `unset` as associated fns rather than `&self` methods avoids re-borrowing the lock — the guard already holds the lock for the duration of the test, so the mutation calls don't need re-locking.
+- **`PoisonError` handling.** The lock's `.lock()` is followed by `.unwrap_or_else(|e| e.into_inner())`. If one of the env tests panics while holding the lock, the lock is poisoned; subsequent tests would otherwise fail with `PoisonError`. We unwrap into the inner guard so a single panic doesn't cascade through the rest of the test run. The poisoned state is fine because there are no invariants on the empty `()` payload.
+- **Renamed `test_default_data_dir`, not just augmented.** The old test was correct *by accident* — it only passed because the developer's shell happened not to set `HOMEOS_DATA_DIR`. Once the env var is honored, that assumption silently fails on machines where it is set. The rename + explicit `unset()` precondition makes the test honest about what it requires.
+- **Why reorder methods now.** The loop instruction explicitly says "Fix any ordering inconsistencies, not just in code you added." The Context methods have always been README-inconsistent (since the original commit), but `data_dir()` was just added in the previous task. With env-var resolution being added now, the constructor is the natural method to put first, and reordering the rest to match README is a cheap one-time fix that prevents future drift. I left the constructor at top, then accessors in README order.
+- **No README/COMMAND_OUTPUT change.** Both files already describe the env-var behavior (README "Overriding the data directory" section, written ahead of time). The implementation lagged; this commit closes that gap. Verified with `Grep` that no stale doc references need updating.
+- **No changes to `init` or `cd` behavior.** Both commands resolve paths through `Context`'s accessors — they consume `data_dir()` / `packages_dir()` / etc. directly. Since `Context::new` already returns the right value for the env-var case, no command code needed touching. The integration test script (#225) will exercise this end-to-end.
+- **One task remains in the PRD** (#225 update `test-command-output.sh` for flat layout and `HOMEOS_DATA_DIR` isolation). Leaving for the next loop iteration as instructed.
