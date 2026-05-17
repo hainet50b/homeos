@@ -147,3 +147,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-16T12:59:49Z,da44eb9,"Implement homeos completion <shell>",320,328,22016,2.9868497500000006
 2026-05-16T13:04:42Z,ee50467,"Auto-install shell completion in install.sh and install.ps1",289,46,17290,2.8376900000000003
 2026-05-17T00:17:26Z,47facd8,"Size URL column separator to widest URL in plugin list and list-remote",158,29,11061,2.0482067499999994
+2026-05-17T00:20:15Z,4337db3,"Size Dependencies column separator to widest deps value in package list",164,6433,11479,1.4454427500000002
