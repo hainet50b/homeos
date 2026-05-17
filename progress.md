@@ -4680,3 +4680,42 @@ Two tasks remained unchecked (PRD #220 — URL separator in plugin list/list-rem
 - **Task 221 (Dependencies column separator in `package list`) is the only remaining unchecked task.** Same shape as this one — a hard-coded `"-".repeat(deps_header.len())` that needs to size to the widest value. Leaving it for the next loop iteration as instructed.
 
 
+
+
+## Task: Fix the Dependencies column separator in `homeos package list` output
+
+**Timestamp:**
+
+2026-05-17T00:19:23Z
+
+**Why this task:**
+
+PRD #221 was the only remaining unchecked task in the PRD's Tasks section (there are no Post Tasks). It is the direct twin of #220 (URL separator in plugin list/list-remote) that was completed in the previous Ralph Loop iteration — both are layout bug-fixes where a column separator was hard-coded to the header width via `"-".repeat(header.len())` instead of sized to the widest row value. Completing it closes out the PRD.
+
+**What was done:**
+
+1. **Refactored `list_to` in `src/commands/package/registry.rs` to pre-compute rows before rendering.** Previously the function streamed `for (name, pkg) in &config.packages` directly into `writeln\!` calls during the render loop, which made it impossible to know the widest Dependencies value at the moment the header/separator was written. Collected `(name, enabled, installed, deps_string)` into a `Vec<(String, bool, bool, String)>` ahead of the header so that `deps_width` could be computed from the rendered deps strings (each is either `"-"` or the comma-joined `pkg.depends_on`). This mirrors the pattern already established in `src/commands/plugin/registry.rs::list_to`, which builds a `Vec<(String, String, String)>` of `(name, description, url)` before computing `name_width`, `desc_width`, and `url_width`.
+
+2. **Computed `deps_width = max(deps_header.len()=12, widest_deps_value_in_rows)`** and applied it to both the header row (`{:<deps_width$}` on the `"Dependencies"` literal) and the separator row (`"-".repeat(deps_width)`). The data rows continue to use `{}` (no padding) for the rightmost column, matching the convention used for the URL column in plugin/registry.rs — there's no need to pad the rightmost column in data rows because nothing follows it. The header literal does need padding because its width drives the column's visual alignment when all data values happen to be narrower than the header (the `deps_width = max(header_len, widest_value)` floor handles that case).
+
+3. **Renamed local variables in the render loop from `enabled`/`installed` to `enabled_str`/`installed_str`** to avoid shadowing the new `bool` fields of `rows`. The `enabled` bool comes from `pkg.enabled`; `installed` is computed once at row-collection time via `installed_packages.contains(name)`, eliminating the per-row `name.to_string()` allocation the previous code did inside `installed_packages.contains(&name.to_string())`.
+
+4. **Added two unit tests, each 3A-structured with `list_to` called explicitly in Act:**
+   - `test_list_dependencies_column_separator_matches_widest_value` — uses three packages (claude with `depends_on: [bubblewrap, socat]`, plus bubblewrap and socat with no deps). The widest deps value is `"bubblewrap, socat"` (17 chars), which exceeds the 12-char header. Asserts the rightmost two-space-separated segment of the separator row is exactly `"-".repeat(17)`. The `rsplit("  ").next()` walks from the right so the test is decoupled from the Package/Enabled/Installed column widths.
+   - `test_list_dependencies_column_separator_matches_header_when_values_shorter` — uses two packages with no deps (so every deps value is `"-"`, 1 char). Asserts the separator falls back to header width: `"-".repeat(12)`. This pins the `max(header_len, ...)` floor and prevents a regression that would shrink the separator to the widest value when that value is narrower than the header.
+
+**What was changed:**
+
+- src/commands/package/registry.rs — `list_to` now pre-builds a `Vec<(String, bool, bool, String)>` of rows, computes `deps_width = max(12, widest_deps_value)`, and renders the header/separator with `{:<deps_width$}`. Two new tests added.
+- prd.md — task 221 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 578 tests pass (was 576 before this task; +2 new tests). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **No README change.** The README at lines 366-372 shows `homeos package list` output with a 17-dash Dependencies separator matching `bubblewrap, socat`. That sample was the spec ahead of the implementation; this fix brings the implementation up to the documented behavior.
+- **No COMMAND_OUTPUT.md change.** The spec at `## homeos package list` (line 41) describes the columns but does not prescribe separator widths — that's a layout detail below the granularity of the output spec, same conclusion as #220.
+- **Why pre-build `rows` instead of iterating `config.packages` twice.** Iterating twice would re-compute `pkg.depends_on.join(", ")` for every package once to measure width and once to render. `join` allocates a new `String` each call, so the cost is non-trivial for large package sets. Collecting into a `Vec` once and iterating it twice (once for `.max()`, once for rendering) shares the allocations. The plugin list code does the same thing for the same reason.
+- **Why `rsplit("  ").next()` in tests.** The Package, Enabled, and Installed column widths vary by test fixture (Package widens with the longest package name; Enabled and Installed are stable but their dash counts could change if a future task widens those headers). The Dependencies column is always the rightmost. Splitting from the right on the two-space column separator (`"  "`) and taking the first segment returns the deps separator regardless of upstream column widths. This is the same robustness pattern the #220 tests adopted.
+- **Function order.** No function-ordering inconsistencies needed fixing. The README orders package subcommands as list, add, remove, rename, add-dep, remove-dep, add-alias, remove-alias, enable, disable, info, cat, cd, install, update, uninstall (lines 355-626); `commands/package/registry.rs` already places `list` at the top of the file, followed by `add` and the rest in matching order. The only function touched by this task is `list_to`, which sits at the top of the file alongside its `list` public entry point.
+- **PRD Completion Criteria.** All tasks (both Tasks and the empty Post Tasks set) are now checked. `cargo clippy --all-targets -- -D warnings` produces no warnings. `cargo test` passes with 578 tests, 0 failures. The PRD is complete.

@@ -32,36 +32,48 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
     let installed_header = "Installed";
     let installed_width = installed_header.len();
 
+    let rows: Vec<(String, bool, bool, String)> = config
+        .packages
+        .iter()
+        .map(|(name, pkg)| {
+            let installed = installed_packages.contains(name);
+            let deps = if pkg.depends_on.is_empty() {
+                "-".to_string()
+            } else {
+                pkg.depends_on.join(", ")
+            };
+            (name.clone(), pkg.enabled, installed, deps)
+        })
+        .collect();
+
+    let deps_width = rows
+        .iter()
+        .map(|(_, _, _, d)| d.len())
+        .max()
+        .unwrap_or(0)
+        .max(deps_header.len());
+
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<deps_width$}",
         "Package", "Enabled", installed_header, deps_header
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<deps_width$}",
         "-".repeat(name_width),
         "-------",
         "-".repeat(installed_width),
-        "-".repeat(deps_header.len())
+        "-".repeat(deps_width)
     )?;
 
-    for (name, pkg) in &config.packages {
-        let enabled = if pkg.enabled { "yes" } else { "no" };
-        let installed = if installed_packages.contains(&name.to_string()) {
-            "yes"
-        } else {
-            "no"
-        };
-        let deps = if pkg.depends_on.is_empty() {
-            "-".to_string()
-        } else {
-            pkg.depends_on.join(", ")
-        };
+    for (name, enabled, installed, deps) in &rows {
+        let enabled_str = if *enabled { "yes" } else { "no" };
+        let installed_str = if *installed { "yes" } else { "no" };
         writeln!(
             writer,
             "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
-            name, enabled, installed, deps
+            name, enabled_str, installed_str, deps
         )?;
     }
 
@@ -952,6 +964,44 @@ mod tests {
         // socat has no dependencies
         assert!(lines[4].contains("socat"));
         assert!(lines[4].ends_with("-"));
+    }
+
+    #[test]
+    fn test_list_dependencies_column_separator_matches_widest_value() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        // The widest deps value is "bubblewrap, socat" (17 chars), wider than the
+        // "Dependencies" header (12 chars), so the separator must be 17 dashes.
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let deps_separator = lines[1].rsplit("  ").next().unwrap();
+        assert_eq!(deps_separator, "-".repeat(17));
+    }
+
+    #[test]
+    fn test_list_dependencies_column_separator_matches_header_when_values_shorter() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        // All values are "-" (1 char), narrower than the "Dependencies" header
+        // (12 chars), so the separator falls back to header width: 12 dashes.
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let deps_separator = lines[1].rsplit("  ").next().unwrap();
+        assert_eq!(deps_separator, "-".repeat(12));
     }
 
     #[test]
