@@ -48,16 +48,24 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         .unwrap_or(0)
         .max(11); // "Description" header length
 
+    let url_width = descriptions
+        .iter()
+        .map(|(_, _, u)| u.len())
+        .max()
+        .unwrap_or(0)
+        .max(3); // "URL" header length
+
     writeln!(
         writer,
-        "{:<name_width$}  {:<desc_width$}  URL",
-        "Name", "Description"
+        "{:<name_width$}  {:<desc_width$}  {:<url_width$}",
+        "Name", "Description", "URL"
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<desc_width$}  ---",
+        "{:<name_width$}  {:<desc_width$}  {:<url_width$}",
         "-".repeat(name_width),
-        "-".repeat(desc_width)
+        "-".repeat(desc_width),
+        "-".repeat(url_width)
     )?;
 
     for (name, desc, url) in &descriptions {
@@ -145,16 +153,24 @@ where
         .unwrap_or(0)
         .max(11); // "Description" header length
 
+    let url_width = plugins
+        .iter()
+        .map(|p| p.url.len())
+        .max()
+        .unwrap_or(0)
+        .max(3); // "URL" header length
+
     writeln!(
         writer,
-        "{:<name_width$}  {:<desc_width$}  URL",
-        "Name", "Description"
+        "{:<name_width$}  {:<desc_width$}  {:<url_width$}",
+        "Name", "Description", "URL"
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<desc_width$}  ---",
+        "{:<name_width$}  {:<desc_width$}  {:<url_width$}",
         "-".repeat(name_width),
-        "-".repeat(desc_width)
+        "-".repeat(desc_width),
+        "-".repeat(url_width)
     )?;
 
     for plugin in &plugins {
@@ -628,6 +644,35 @@ mod tests {
     }
 
     #[test]
+    fn test_list_url_column_separator_matches_widest_url() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir);
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert — URL separator should match the widest URL value, not the header width
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let url_len = "https://github.com/hainet50b/homeos-plugin-dnf".len();
+        let separator_dashes_at_url_position = lines[1]
+            .rsplit("  ")
+            .next()
+            .expect("separator line should have a URL segment");
+        assert_eq!(separator_dashes_at_url_position, "-".repeat(url_len));
+    }
+
+    #[test]
     fn test_list_renders_local_marker_when_url_is_none() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
@@ -811,6 +856,39 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         // Separator dashes should be at least as long as "long-plugin-name" (16 chars)
         assert!(lines[1].starts_with(&"-".repeat(16)));
+    }
+
+    #[test]
+    fn test_list_remote_url_column_separator_matches_widest_url() {
+        // Arrange
+        let mut output = Vec::new();
+        let fetch = || {
+            Ok(vec![
+                RemotePlugin {
+                    name: "homebrew".to_string(),
+                    description: "Homebrew package manager plugin for homeos.".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-homebrew".to_string(),
+                },
+                RemotePlugin {
+                    name: "dnf".to_string(),
+                    description: "DNF package manager plugin for homeos.".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                },
+            ])
+        };
+
+        // Act
+        list_remote_to(&mut output, fetch).unwrap();
+
+        // Assert — URL separator should match the widest URL value, not the header width
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let widest_url_len = "https://github.com/hainet50b/homeos-plugin-homebrew".len();
+        let separator_dashes_at_url_position = lines[1]
+            .rsplit("  ")
+            .next()
+            .expect("separator line should have a URL segment");
+        assert_eq!(separator_dashes_at_url_position, "-".repeat(widest_url_len));
     }
 
     #[test]

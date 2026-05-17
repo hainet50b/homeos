@@ -4636,3 +4636,47 @@ PRD task 219 was the only remaining unchecked task in the Tasks section and the 
 - **Why the PowerShell completion file is `$env:USERPROFILE\.homeos\completion.ps1` and not, say, `$env:USERPROFILE\Documents\PowerShell\completion.ps1`.** PowerShell doesn't have a standard system-wide auto-load location for completions (unlike bash-completion's per-distro dirs or zsh's site-functions). The convention is to add a `. "path\to\completion.ps1"` line to `$PROFILE`, and the install script is forbidden from touching `$PROFILE`. So we pick a path that's (a) under the homeos-owned tree (`$env:USERPROFILE\.homeos\`, same parent as `bin\homeos.exe`), (b) stable across PowerShell versions (PowerShell 5 / 7 / Core all expand `$env:USERPROFILE` the same way), and (c) easy to type back into the user's `$PROFILE` via a copy-paste from the install script's stdout. The PRD task description specifies this exact path, so the choice matches the spec.
 - **PRD Completion Criteria.** All tasks (both Tasks and the empty Post Tasks set) are now checked. `cargo clippy --all-targets -- -D warnings` produces no warnings. `cargo test` passes with 574 tests, 0 failures. The PRD is complete.
 
+
+---
+
+# Ralph Loop — 2026-05-17T00:14:46Z
+
+## Task: Fix the URL column separator in `homeos plugin list` and `homeos plugin list-remote` output
+
+**Timestamp:**
+
+2026-05-17T00:16:10Z
+
+**Why this task:**
+
+Two tasks remained unchecked (PRD #220 — URL separator in plugin list/list-remote; PRD #221 — Dependencies separator in package list). They are independent, and the PRD lists them in this order. I picked #220 first to follow PRD order. Both are bug-fix tasks of the same shape (a hard-coded `"-".repeat(header_len)` separator that does not size to row content), and completing them in order keeps the diffs and commit messages self-contained.
+
+**What was done:**
+
+1. **Fixed `list_to` in `src/commands/plugin/registry.rs`** to compute `url_width = max("URL".len()=3, widest_url_in_rows)`, mirroring the existing `name_width` and `desc_width` calculations directly above it. The header row's `URL` literal is now formatted with `{:<url_width$}` (instead of the bare `URL` literal), and the separator row's URL segment is now `"-".repeat(url_width)` (instead of the hard-coded `"---"`). The data rows still use `{}` for the URL — no need to pad the rightmost column.
+
+2. **Fixed `list_remote_to` in the same file** with the identical change, applied to the in-memory `Vec<RemotePlugin>` instead of the configured plugins map. The `(local)` marker case (`url: None` on the local listing) is handled upstream where `String::from("(local)")` is substituted for `None`, so the `url_width` computation sees the rendered 7-character value, not `None`.
+
+3. **Added two unit tests, each 3A-structured with `list_to` / `list_remote_to` called explicitly in Act:**
+   - `test_list_url_column_separator_matches_widest_url` — registers a single plugin with the canonical `https://github.com/hainet50b/homeos-plugin-dnf` URL (46 chars), calls `list_to`, and asserts the rightmost two-space-separated segment of the separator row is exactly `"-".repeat(46)`. The `rsplit("  ").next()` walks from the right so the test is decoupled from the name/description column widths.
+   - `test_list_remote_url_column_separator_matches_widest_url` — same shape but uses two `RemotePlugin` entries (`dnf` and `homebrew`) where the widest URL is `https://github.com/hainet50b/homeos-plugin-homebrew` (51 chars). Asserts the URL segment of the separator row is exactly 51 dashes. This pins both the "separator matches widest URL" invariant and the "widest, not first" semantics.
+
+4. **No README change.** The README at lines 100-105 (`plugin list-remote` example) and lines 641-645 (`plugin list` example) already show width-matched separators — they were the spec ahead of the implementation. The fix brings the implementation up to the documented behavior.
+
+**What was changed:**
+
+- src/commands/plugin/registry.rs — `list_to` and `list_remote_to` now compute `url_width` and use it for both the URL header column and the URL separator column. Two new tests added (`test_list_url_column_separator_matches_widest_url`, `test_list_remote_url_column_separator_matches_widest_url`).
+- prd.md — task 220 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- All 576 tests pass (was 574 before this task; +2 new tests). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **Function order.** No function-ordering inconsistencies needed fixing. The README orders plugin commands as `list`, `list-remote`, `add`, `remove`, `info`, `cat`, `cd` (lines 630-768); the implementation files are `registry.rs` (list, list-remote, add, remove) and `view.rs` (info, cat, cd), and within `registry.rs` the public function order is `list`, `list_remote`, `add`, `remove`, matching the README. No reordering needed.
+- **Test approach: rsplit, not split.** I used `lines[1].rsplit("  ").next()` rather than positional slicing because the name and description column widths vary across tests, and the URL is always the rightmost column. `rsplit("  ").next()` always returns the URL segment regardless of the upstream column widths. The two-space separator (`  `) is the convention used by the format strings, so splitting on it is robust to width changes in the other columns.
+- **Why max(3) on `url_width`.** "URL" is 3 characters. If all URLs in the rows are shorter than 3 chars (degenerate but possible — e.g., a future `--local` plugin with `(local)` as its rendered URL is 7 chars, so this is never actually tight), the separator should still match the header. The `.max(3)` is consistent with the `.max(4)` for "Name" and `.max(11)` for "Description" — the floor is the header width.
+- **`(local)` interaction with width.** When a plugin has `url: None`, the `list_to` code path substitutes `"(local)".to_string()` before `url_width` is computed, so `(local)` is treated as a 7-character value just like any other URL. This means a mixed-plugin list (some local, some remote) sizes its URL column to the longest remote URL, and `(local)` is rendered left-aligned within that width — which matches the convention for the Name and Description columns.
+- **No COMMAND_OUTPUT.md change.** The spec at `## homeos plugin list` (line 192) and `## homeos plugin list-remote` (line 197) describes columns without prescribing separator widths; the fix is a layout detail below the granularity of the output spec.
+- **Task 221 (Dependencies column separator in `package list`) is the only remaining unchecked task.** Same shape as this one — a hard-coded `"-".repeat(deps_header.len())` that needs to size to the widest value. Leaving it for the next loop iteration as instructed.
+
+
