@@ -9,20 +9,546 @@ regenerate.
 
 ## Overview
 
+`homeos` is a CLI tool that manages application install scripts and
+configurations across machines. The user's *home* is captured as a single Git
+repository: package definitions live in `homeos.yml`, the action scripts
+themselves live in `packages/<name>/install.sh` (and friends), and plugins —
+small template bundles for common package managers — live in `plugins/<name>/`.
+
+When the user invokes you from inside the homeos data directory (the
+recommended entry pattern is `homeos cd` followed by launching your agent in
+the resulting shell), your job is to translate natural-language requests like
+*"Install Neovim for me"* into the right sequence of `homeos` commands. The
+user retains control: every mutating command shows a plan and prompts for
+confirmation by default. Your job is to construct the plan accurately and
+present it; the user approves.
+
+You should never invent state. Read the current configuration with
+`homeos package list --json`, `homeos plugin list --json`, and
+`homeos plugin list-remote --json` before proposing changes. Treat the JSON
+output as the source of truth — not the user's memory, not your priors, not
+file paths cached from earlier turns.
+
 ## Operating principles
+
+### Use `--json` for every read
+
+Always pass `--json` (or `--output json`) when you need to parse output. The
+text mode is for humans; the JSON mode emits a documented schema you can
+consume reliably. Examples:
+
+```sh
+homeos package list --json
+homeos plugin list --json
+homeos plugin list-remote --json
+homeos package info <name> --json
+homeos plugin info <name> --json
+```
+
+The list commands emit a JSON array. The info commands emit a single JSON
+object. The plan-display commands (`apply`, `package install/update/uninstall`)
+emit a single JSON plan object followed (when execution runs) by NDJSON
+execution result objects, one per package.
+
+### Use `--dry-run` to inspect plans before mutation
+
+For any plan-display command, run `--dry-run --json` first. This prints the
+plan and exits without executing or prompting. Show the plan to the user and
+get explicit confirmation in conversation before re-running without
+`--dry-run`.
+
+```sh
+homeos apply --dry-run --json
+homeos package install neovim --dry-run --json
+homeos package uninstall obsidian --dry-run --json
+```
+
+### Use `--yes` to bypass the interactive prompt
+
+The default `homeos apply` and similar commands prompt `Proceed? [y/N]` on
+stdin. You cannot answer an interactive prompt. Once the user has approved the
+plan in conversation, re-run without `--dry-run` and pass `--yes` to skip the
+prompt and proceed straight to execution:
+
+```sh
+homeos --yes --json apply
+homeos --yes --json package install neovim
+```
+
+`--yes` is mutually compatible with `--dry-run`; if both are present,
+`--dry-run` still wins (display only, no execution).
+
+### The dry-run → confirm → `--yes` apply pattern
+
+This is the canonical agent loop for any mutating operation:
+
+1. Read current state with `homeos <command> --json` (no mutation).
+2. Construct the change you intend to apply.
+3. Run `homeos <command> --dry-run --json` and parse the plan.
+4. Present the plan to the user in conversation. Wait for explicit approval.
+5. Run `homeos --yes --json <command>` to execute.
+6. Parse the NDJSON execution results. Report success/failure per package.
+
+Do not collapse steps 3–4 into a single tool call. The user must see the plan
+and approve before any script runs on their machine.
+
+### Commit to git after every mutation
+
+The homeos data directory is a Git repository. After any successful mutation
+that changes `homeos.yml`, `packages/`, or `plugins/` (i.e. anything except
+`state.yml`, which is machine-specific and gitignored), commit with a short
+message describing the change:
+
+```sh
+git add -A
+git commit -m "Add neovim via dnf plugin"
+```
+
+Use the present-imperative voice. Keep the subject line under 72 characters.
+The user can review the commit afterwards and revert with `git revert HEAD` if
+something is wrong.
+
+`state.yml`, `AGENTS.md`, and `CLAUDE.md` are excluded by the generated
+`.gitignore`. You do not need to add them to the commit.
+
+### Mutation safety in general
+
+- Never run `homeos package uninstall --all` unless the user asked for that
+  specific scope. Prefer naming the packages explicitly.
+- Never run `homeos package remove --purge` or `homeos plugin remove --purge`
+  unless the user asked you to delete the on-disk directory in addition to the
+  `homeos.yml` entry. Without `--purge`, the directory is preserved and the
+  operation is reversible by re-adding the entry.
+- Do not run shell commands that touch the data directory directly (e.g.
+  `rm -rf packages/foo`). Use `homeos` commands so `homeos.yml` and `state.yml`
+  stay consistent.
+- If a `homeos` command fails, read the JSON error envelope's `reason` field
+  and surface a meaningful explanation to the user. Do not retry blindly.
 
 ## Error JSON schema
 
+When invoked with `--json`, every command writes errors as a single-object
+JSON envelope on stdout AND a human-readable `Error: ...` line on stderr. The
+two streams carry the same information in different formats; the stderr line
+exists so that humans grepping logs still see the message.
+
+```json
+{"error":{"reason":"package-not-found","message":"Package 'neovim' not found"}}
+```
+
+Process exit code is non-zero on error. Use the `reason` field for control
+flow, the `message` field for user-facing display. The canonical `reason`
+identifiers are:
+
+| Reason | Meaning |
+|--------|---------|
+| `package-not-found` | A named package is missing from `homeos.yml`. |
+| `plugin-not-found` | A named plugin is missing from `homeos.yml`, or referenced by `package add --plugin`. |
+| `already-exists` | A package/plugin entry or directory already exists where one is being created. Also covers `Already initialized`. |
+| `validation-error` | Argument or input validation failed (name pattern, URL scheme, missing plugin parameters, malformed `key=value`, etc.). |
+| `circular-dependency` | A dependency edit would introduce or expose a cycle. |
+| `dependency-not-found` | A `--depends-on` / `add-dep` target is not a package in `homeos.yml`. |
+| `dependent-exists` | A `package remove` target is depended on by other packages. |
+| `script-failed` | An action script exited non-zero. |
+| `script-not-found` | An action script file is missing at execute time. |
+| `script-unmodified` | An action script still contains the `Generated by homeos` marker — i.e. the user (or you) never filled it in. |
+| `git-clone-failed` | `git clone` returned non-zero. |
+| `not-a-valid-homeos-repo` | A cloned repository has no `homeos.yml`. |
+| `not-a-valid-homeos-plugin` | A cloned plugin has no `plugin.yml`. |
+| `not-initialized` | `homeos.yml` is missing — `homeos init` hasn't been run. |
+| `data-dir-not-empty` | `homeos init` target directory contains stray files. |
+| `data-dir-not-found` | `homeos cd` invoked before `homeos init`. |
+| `directory-not-found` | A package/plugin subdirectory does not exist on disk. |
+| `not-found-on-github` | A plugin name does not resolve to a `hainet50b/homeos-plugin-<name>` GitHub repo. |
+| `network-error` | A network request to GitHub failed. |
+| `package-installed` | A `package remove` target is currently recorded in `state.yml`. |
+| `internal-error` | Fallback for unclassified errors (typically I/O failures). |
+
+A handful of these guide specific recovery patterns:
+
+- `not-initialized`: Tell the user to run `homeos init` first, or to set
+  `HOMEOS_DATA_DIR` to a directory that has already been initialized.
+- `package-installed`: Run `homeos package uninstall <name>` before removing.
+- `dependent-exists`: List the dependents from the error message; either
+  remove the dependents first or use `homeos package remove-dep` to detach
+  them.
+- `script-unmodified`: The action's skeleton script still contains the
+  `# Generated by homeos` marker. Edit the script before running the action
+  again, or pick a plugin so the script is auto-generated.
+- `circular-dependency`: Use `homeos package info <name> --json` to inspect
+  the dependency chain and find which `depends_on` edge needs to be removed.
+- `not-found-on-github`: The user gave a plugin name that doesn't have an
+  official repo. Either pass an explicit `<url>` to `homeos plugin add`, or
+  pass `--local` to create a local skeleton.
+
 ## Input safety
+
+`homeos` validates user input strictly. Pass-through arguments must match
+these constraints or the command fails with `validation-error`. Validate your
+own inputs against the same rules before invoking; this saves a round-trip and
+gives you a more specific error to show the user.
+
+### Package and plugin names
+
+Allowed pattern: `^[a-z0-9][a-z0-9._-]*$`
+
+- Lowercase ASCII letters, digits, dot, underscore, hyphen.
+- Must start with a letter or digit (so no leading dash, dot, or underscore).
+- No path separators (`/`, `\`), no whitespace, no NUL or control characters.
+- The substring `..` is rejected anywhere in the name.
+
+Good: `neovim`, `dnf-copr-mise`, `7zip`, `claude-code`, `node20`.
+
+Bad: `Neovim` (uppercase), `.hidden` (leading dot), `-rf` (leading dash),
+`foo/bar` (slash), `foo bar` (whitespace), `foo..bar` (double-dot),
+`foo$bar` (shell metacharacter), `café` (non-ASCII).
+
+### URL schemes for `homeos init <url>` and `homeos plugin add <url>`
+
+Allowed schemes: `http`, `https`, `git`, `ssh`, `git+ssh`.
+
+- The URL must have an explicit `scheme://` prefix. Git's SCP-like
+  `git@host:path` syntax is rejected — use `ssh://git@host/path` instead.
+- Query strings (`?key=value`) are rejected; git clone URLs have no
+  legitimate query string.
+- Percent-encoded NUL (`%00`) and percent-encoded `..` (`%2e%2e`,
+  case-insensitive) are rejected.
+- Control characters anywhere in the URL are rejected.
+
+Good: `https://github.com/user/repo`, `ssh://git@github.com/user/repo.git`.
+
+Bad: `file:///etc/passwd` (file scheme not allowed),
+`git@github.com:user/repo.git` (no explicit scheme),
+`https://example.com/repo.git?evil=1` (query string),
+`https://example.com/%2e%2e/etc` (percent-encoded traversal).
+
+When the user gives you a URL that fails one of these checks, do not try to
+"fix" it silently. Surface the validation error and ask the user to confirm
+the corrected form.
 
 ## Canonical workflows
 
+The five walk-throughs below cover the common cases. Each is a *narrative*:
+the user prompt at the top, the agent's reasoning, the commands run, and the
+expected outputs. Use them as patterns; don't deviate without reason.
+
+### Workflow 1 — "Install Neovim for me"
+
+The user gives a natural-language request and trusts you to make sensible
+choices. Pick the right package manager for the platform, add a package
+backed by that manager's plugin, and apply.
+
+**Step 1.** Read current state.
+
+```sh
+homeos plugin list --json
+homeos package list --json
+```
+
+Parse: does the user already have a package manager plugin (`dnf`, `apt`,
+`homebrew`, `winget`, `scoop`)? If yes, prefer it. If no, detect the OS (see
+the OS-to-plugin mapping reference below) and pick one. Confirm in
+conversation: *"You don't have a package-manager plugin yet. I'd like to add
+`dnf` (you're on Fedora) and use it to install neovim. OK?"*
+
+**Step 2.** Add the plugin if missing.
+
+```sh
+homeos --yes --json plugin add dnf
+```
+
+`plugin add` does not prompt today; `--yes` is harmless. The command resolves
+`dnf` to `https://github.com/hainet50b/homeos-plugin-dnf`, clones it, strips
+`.git`, and registers it in `homeos.yml`.
+
+**Step 3.** Add the neovim package backed by the dnf plugin.
+
+```sh
+homeos --json package add neovim --plugin dnf --param name=neovim
+```
+
+The dnf plugin's `plugin.yml` requires a single parameter, `name`. The
+templates expand into `install.sh`, `update.sh`, and `uninstall.sh` under
+`packages/neovim/`.
+
+**Step 4.** Dry-run the plan.
+
+```sh
+homeos --json apply --dry-run
+```
+
+You will get a plan object showing `install: [{name: "neovim", plugin: "dnf",
+required_by: null}]`. Present it to the user: *"This will install neovim via
+dnf. Confirm?"*
+
+**Step 5.** Apply with `--yes`.
+
+```sh
+homeos --yes --json apply
+```
+
+Parse the NDJSON execution results (one line per package). If any line has
+`status: "failed"`, surface the error and stop. Otherwise, report success.
+
+**Step 6.** Commit.
+
+```sh
+git add -A
+git commit -m "Add neovim via dnf plugin"
+```
+
+### Workflow 2 — "I'm on a new machine; restore my setup"
+
+The user wants to reproduce their existing homeos repository on a fresh
+machine. The repository is on GitHub.
+
+**Step 1.** Initialize from the remote.
+
+```sh
+homeos init https://github.com/<username>/<repo>
+```
+
+`init` clones the remote into the data directory and verifies that
+`homeos.yml` is present. Failure modes: `data-dir-not-empty` (the user has
+existing homeos state already), `git-clone-failed` (network/auth issue),
+`not-a-valid-homeos-repo` (the URL points to a directory without
+`homeos.yml`).
+
+**Step 2.** Inspect the plan.
+
+```sh
+homeos --json apply --dry-run
+```
+
+Show the user what will be installed.
+
+**Step 3.** Apply.
+
+```sh
+homeos --yes --json apply
+```
+
+No git commit at the end — initialization clones the repo with its existing
+history; running `apply` only updates `state.yml`, which is gitignored.
+
+### Workflow 3 — "Uninstall obsidian"
+
+Reverse a previous install. Note that `uninstall` ignores enabled/disabled
+status: its only concern is whether the package is currently in `state.yml`.
+
+**Step 1.** Confirm the package is installed.
+
+```sh
+homeos package info obsidian --json
+```
+
+Check `installed: true`. If false, tell the user and stop.
+
+**Step 2.** Dry-run.
+
+```sh
+homeos --json package uninstall obsidian --dry-run
+```
+
+The plan will list `obsidian` and any reverse dependents (packages whose
+`depends_on` includes obsidian). Show this to the user; if there are
+dependents, name them explicitly.
+
+**Step 3.** Apply.
+
+```sh
+homeos --yes --json package uninstall obsidian
+```
+
+`uninstall` removes obsidian from `state.yml` and disables it in `homeos.yml`.
+The directory under `packages/obsidian/` is preserved by default; the user
+can re-enable and re-install later without re-authoring the scripts.
+
+**Step 4.** Commit (because `homeos.yml` changed — obsidian's `enabled` was
+set to `false`).
+
+```sh
+git add -A
+git commit -m "Disable obsidian after uninstall"
+```
+
+### Workflow 4 — "Compose a package with a dependency"
+
+Several packages share a setup step (a COPR repository, a Homebrew tap, a
+Scoop bucket). Express the setup as its own package and declare `depends_on`.
+This is the same pattern shown in the README's "Composing packages with a
+repo" section.
+
+**Step 1.** Ensure both plugins are present.
+
+```sh
+homeos --yes --json plugin add dnf-copr
+homeos --yes --json plugin add dnf
+```
+
+**Step 2.** Add the setup package.
+
+```sh
+homeos --json package add dnf-copr-mise --plugin dnf-copr --param name=jdxcode/mise
+```
+
+**Step 3.** Add the actual package, depending on the setup package.
+
+```sh
+homeos --json package add mise --plugin dnf --param name=mise --depends-on dnf-copr-mise
+```
+
+`homeos` rejects this command if `dnf-copr-mise` is missing or if adding the
+edge would create a cycle. The `dependency-not-found` and
+`circular-dependency` reasons map to specific error messages.
+
+**Step 4.** Dry-run.
+
+```sh
+homeos --json apply --dry-run
+```
+
+The plan should show `dnf-copr-mise` first (because mise requires it), then
+`mise (required by dnf-copr-mise)` annotated with its requester.
+
+**Step 5.** Apply with `--yes`, then commit.
+
+### Workflow 5 — "Make a one-off package without a plugin"
+
+The user has a single tool (e.g. rustup) with a curl-pipe-sh installer that
+doesn't fit any package manager. Use the default skeleton scripts.
+
+**Step 1.** Add the package without a plugin.
+
+```sh
+homeos --json package add rustup
+```
+
+This creates `packages/rustup/install.sh`, `update.sh`, `uninstall.sh`, and
+their `.ps1` counterparts. Each is a skeleton marked
+`# Generated by homeos — fill this in`.
+
+**Step 2.** Read the existing skeletons so you know what to overwrite.
+
+```sh
+homeos package cat rustup
+```
+
+**Step 3.** Edit the scripts in place. Use your file-edit tool to write the
+real curl/installer commands. On Linux/macOS, fill `install.sh`,
+`update.sh`, and `uninstall.sh`. On Windows fill the `.ps1` variants. Remove
+the `# Generated by homeos` marker so the script is no longer flagged as
+unmodified.
+
+For rustup specifically:
+
+```sh
+# packages/rustup/install.sh
+#!/usr/bin/env sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+# packages/rustup/update.sh
+#!/usr/bin/env sh
+rustup update
+
+# packages/rustup/uninstall.sh
+#!/usr/bin/env sh
+rustup self uninstall -y
+```
+
+If `update` is just `install`, you can either fill both files identically or
+add a script alias:
+
+```sh
+homeos --json package add-alias rustup update=install
+```
+
+**Step 4.** Apply.
+
+```sh
+homeos --json apply --dry-run
+homeos --yes --json apply
+```
+
+If a script you forgot to fill still has the `Generated by homeos` marker,
+the plan reports `rustup (script unmodified: install.sh)` and skips
+execution. Edit the file and try again.
+
+**Step 5.** Commit.
+
+```sh
+git add -A
+git commit -m "Add rustup with curl-installer scripts"
+```
+
 ## OS-to-plugin mapping reference
 
+When the user doesn't specify a package manager, infer one from the host OS.
+Detect the OS by reading `/etc/os-release`, `uname`, or the equivalent
+platform check before deciding.
+
+| Host                        | First-choice plugin | Fallback     |
+|-----------------------------|---------------------|--------------|
+| Fedora / RHEL / CentOS      | `dnf`               | none         |
+| Debian / Ubuntu / Mint      | `apt`               | none         |
+| macOS                       | `homebrew`          | none         |
+| macOS (GUI app casks)       | `homebrew-cask`     | `homebrew`   |
+| Linux (Homebrew installed)  | `homebrew`          | distro pkg mgr |
+| Windows (Microsoft Store)   | `winget`            | `scoop`      |
+| Windows (CLI tools)         | `scoop`             | `winget`     |
+| Node.js packages (cross-OS) | `npm`               | none         |
+| Fedora + community repo     | `dnf-copr` then `dnf` | —          |
+| macOS + custom tap          | `homebrew-tap` then `homebrew` | — |
+| Windows + custom bucket     | `scoop-bucket` then `scoop` | — |
+
+Prefer a single plugin per package. The composite rows (`dnf-copr` + `dnf`,
+etc.) show the dependency-chain pattern documented in Workflow 4 above.
+
+If the user is on a distro you can't map (e.g. Arch's `pacman`, NixOS's
+`nix-env`, Alpine's `apk`), there's no official plugin yet. Either ask the
+user if they want a no-plugin skeleton package (Workflow 5) or whether they'd
+like to use `--local` to create a custom plugin (see Plugin authoring
+below).
+
 ## Per-command reference
+
+The complete list of leaf commands is generated from `Cli::command()` at
+render time. Use it as the authoritative reference for argument names and
+flag semantics; do not rely on memory.
 
 {{ commands_reference }}
 
 ## Plugin authoring
 
+If the user asks for a package manager that no official plugin covers (e.g.
+`pacman`, `apk`, `flatpak`, a custom internal tool), you can scaffold a local
+plugin with `homeos plugin add --local <name>`. That writes a
+`plugins/<name>/plugin.yml` and a full set of template files
+(`install.sh.tmpl`, `install.ps1.tmpl`, etc.) for the user — or you — to
+fill in.
+
+The mechanics are a parameter list in `plugin.yml`, plus templates that use
+`{{ key }}` substitution. The README's "Plugin Development Guide" section
+covers the details and is the authoritative source. When in doubt, read the
+README rather than improvising — plugin schema changes happen between
+versions.
+
+If you find yourself authoring the same plugin two or three times across
+different users, consider opening an issue at
+`https://github.com/hainet50b/homeos/issues/new` and letting the maintainer
+adopt it as an official plugin.
+
 ## Local customizations
+
+The user may keep an `AGENTS.local.md` file next to this file in the homeos
+data directory. If it exists, read it after this file and treat its
+instructions as additional guidance specific to the user's setup — naming
+conventions for their packages, preferred plugins, sensitive operations to
+double-check, machines they're explicitly opted out of, and so on. The
+instructions in `AGENTS.local.md` extend the ones here; they do not contradict
+the safety rules (still always dry-run before mutating, still always commit
+after a change).
+
+`homeos` never reads, modifies, or removes `AGENTS.local.md`. It is the
+user's file, hand-written. Treat its absence as "no extra instructions";
+treat its presence as "read this carefully before acting".

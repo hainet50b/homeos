@@ -166,4 +166,135 @@ mod tests {
         assert!(output.starts_with(&expected_marker));
         assert!(output.contains("`homeos init`"));
     }
+
+    #[test]
+    fn test_render_includes_all_top_level_section_headers() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — each PRD-mandated section header appears exactly as written
+        let sections = [
+            "## Overview",
+            "## Operating principles",
+            "## Error JSON schema",
+            "## Input safety",
+            "## Canonical workflows",
+            "## OS-to-plugin mapping reference",
+            "## Per-command reference",
+            "## Plugin authoring",
+            "## Local customizations",
+        ];
+        for section in sections {
+            assert!(
+                rendered.contains(section),
+                "rendered template missing section header: {section}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_documents_dry_run_yes_json_flags() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — Operating principles must mention all three non-interactive flags
+        assert!(rendered.contains("--dry-run"));
+        assert!(rendered.contains("--yes"));
+        assert!(rendered.contains("--json"));
+    }
+
+    #[test]
+    fn test_render_enumerates_canonical_error_reasons() {
+        // Arrange — spot-check a representative subset of the canonical reasons
+        let reasons = [
+            "package-not-found",
+            "plugin-not-found",
+            "already-exists",
+            "validation-error",
+            "circular-dependency",
+            "dependency-not-found",
+            "dependent-exists",
+            "script-failed",
+            "script-not-found",
+            "script-unmodified",
+            "git-clone-failed",
+            "not-a-valid-homeos-repo",
+            "not-a-valid-homeos-plugin",
+            "not-initialized",
+            "data-dir-not-empty",
+            "data-dir-not-found",
+            "directory-not-found",
+            "not-found-on-github",
+            "network-error",
+            "package-installed",
+            "internal-error",
+        ];
+
+        // Act
+        let rendered = render();
+
+        // Assert
+        for reason in reasons {
+            assert!(
+                rendered.contains(reason),
+                "rendered template missing canonical reason: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_documents_name_and_url_safety_rules() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — the regex pattern and the allowed URL schemes must appear
+        assert!(rendered.contains("^[a-z0-9][a-z0-9._-]*$"));
+        for scheme in ["http", "https", "git", "ssh", "git+ssh"] {
+            assert!(
+                rendered.contains(scheme),
+                "rendered template missing allowed URL scheme: {scheme}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_includes_install_neovim_walkthrough() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — PRD names "Install Neovim for me" as the headline walk-through
+        assert!(rendered.contains("Install Neovim for me"));
+        assert!(rendered.contains("homeos --yes --json apply"));
+    }
+
+    #[test]
+    fn test_render_includes_git_commit_convention() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — PRD requires documenting the git add/commit pattern after mutation
+        assert!(rendered.contains("git add -A"));
+        assert!(rendered.contains("git commit"));
+    }
+
+    #[test]
+    fn test_render_includes_os_to_plugin_mapping_entries() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — the mapping table must cover the four canonical package managers
+        assert!(rendered.contains("dnf"));
+        assert!(rendered.contains("apt"));
+        assert!(rendered.contains("homebrew"));
+        assert!(rendered.contains("winget"));
+    }
+
+    #[test]
+    fn test_render_instructs_agent_to_read_agents_local_md() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — Local customizations section must reference AGENTS.local.md by name
+        assert!(rendered.contains("AGENTS.local.md"));
+    }
 }
