@@ -1,6 +1,7 @@
 use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
 use crate::error::{HomeosError, reasons};
+use crate::output::OutputFormat;
 use crate::plan::prompt_confirm;
 use crate::state::State;
 use crate::topo::topological_sort;
@@ -21,6 +22,39 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         Vec::new()
     };
 
+    match ctx.output_format() {
+        OutputFormat::Json => list_json(writer, &config, &installed_packages),
+        OutputFormat::Text => list_text(writer, &config, &installed_packages),
+    }
+}
+
+fn list_json<W: Write>(
+    writer: &mut W,
+    config: &Config,
+    installed_packages: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rows: Vec<serde_json::Value> = config
+        .packages
+        .iter()
+        .map(|(name, pkg)| {
+            let installed = installed_packages.contains(name);
+            serde_json::json!({
+                "name": name,
+                "enabled": pkg.enabled,
+                "installed": installed,
+                "depends_on": pkg.depends_on,
+            })
+        })
+        .collect();
+    writeln!(writer, "{}", serde_json::Value::Array(rows))?;
+    Ok(())
+}
+
+fn list_text<W: Write>(
+    writer: &mut W,
+    config: &Config,
+    installed_packages: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
     let name_width = config
         .packages
         .keys()
@@ -4020,5 +4054,117 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_json_emits_array_of_objects() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert_eq!(array.len(), 2);
+        // BTreeMap iterates alphabetically: neovim, ripgrep
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[1]["name"], "ripgrep");
+    }
+
+    #[test]
+    fn test_list_json_emits_empty_array_when_no_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert!(array.is_empty());
+    }
+
+    #[test]
+    fn test_list_json_enabled_field_is_boolean() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["enabled"], false);
+        assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["enabled"], true);
+    }
+
+    #[test]
+    fn test_list_json_installed_field_reflects_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["installed"], true);
+        assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["installed"], false);
+    }
+
+    #[test]
+    fn test_list_json_depends_on_field_is_array() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        let claude = array
+            .iter()
+            .find(|v| v["name"] == "claude")
+            .expect("claude entry");
+        assert_eq!(
+            claude["depends_on"],
+            serde_json::json!(["bubblewrap", "socat"])
+        );
+        let bubblewrap = array
+            .iter()
+            .find(|v| v["name"] == "bubblewrap")
+            .expect("bubblewrap entry");
+        assert_eq!(bubblewrap["depends_on"], serde_json::json!([]));
     }
 }

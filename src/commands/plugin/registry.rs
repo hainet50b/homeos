@@ -2,6 +2,7 @@ use crate::config::{Config, PluginConfig, PluginManifest};
 use crate::context::Context;
 use crate::error::{HomeosError, reasons};
 use crate::git;
+use crate::output::OutputFormat;
 use crate::plan::prompt_confirm;
 use serde::Deserialize;
 use std::io::{BufRead, Write};
@@ -25,31 +26,66 @@ fn load_plugin_description(plugin_dir: &Path) -> String {
 fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let descriptions: Vec<(String, String, String)> = config
+    let entries: Vec<(String, String, Option<String>)> = config
         .plugins
         .iter()
         .map(|(name, plugin)| {
             let desc = load_plugin_description(&ctx.plugins_dir().join(name));
-            let url = plugin.url.clone().unwrap_or_else(|| "(local)".to_string());
-            (name.clone(), desc, url)
+            (name.clone(), desc, plugin.url.clone())
         })
         .collect();
 
-    let name_width = descriptions
+    match ctx.output_format() {
+        OutputFormat::Json => list_json(writer, &entries),
+        OutputFormat::Text => list_text(writer, &entries),
+    }
+}
+
+fn list_json<W: Write>(
+    writer: &mut W,
+    entries: &[(String, String, Option<String>)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rows: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|(name, desc, url)| {
+            serde_json::json!({
+                "name": name,
+                "description": desc,
+                "url": url,
+            })
+        })
+        .collect();
+    writeln!(writer, "{}", serde_json::Value::Array(rows))?;
+    Ok(())
+}
+
+fn list_text<W: Write>(
+    writer: &mut W,
+    entries: &[(String, String, Option<String>)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let displayed: Vec<(String, String, String)> = entries
+        .iter()
+        .map(|(name, desc, url)| {
+            let url_str = url.clone().unwrap_or_else(|| "(local)".to_string());
+            (name.clone(), desc.clone(), url_str)
+        })
+        .collect();
+
+    let name_width = displayed
         .iter()
         .map(|(n, _, _)| n.len())
         .max()
         .unwrap_or(0)
         .max(4); // "Name" header length
 
-    let desc_width = descriptions
+    let desc_width = displayed
         .iter()
         .map(|(_, d, _)| d.len())
         .max()
         .unwrap_or(0)
         .max(11); // "Description" header length
 
-    let url_width = descriptions
+    let url_width = displayed
         .iter()
         .map(|(_, _, u)| u.len())
         .max()
@@ -69,7 +105,7 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         "-".repeat(url_width)
     )?;
 
-    for (name, desc, url) in &descriptions {
+    for (name, desc, url) in &displayed {
         writeln!(
             writer,
             "{:<name_width$}  {:<desc_width$}  {}",
@@ -126,17 +162,53 @@ fn fetch_remote_plugins() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error
     Ok(plugins)
 }
 
-pub fn list_remote() -> Result<(), Box<dyn std::error::Error>> {
-    list_remote_to(&mut std::io::stdout(), fetch_remote_plugins)
+pub fn list_remote(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
+    list_remote_to(
+        ctx.output_format(),
+        &mut std::io::stdout(),
+        fetch_remote_plugins,
+    )
 }
 
-fn list_remote_to<W: Write, F>(writer: &mut W, fetch: F) -> Result<(), Box<dyn std::error::Error>>
+fn list_remote_to<W: Write, F>(
+    format: OutputFormat,
+    writer: &mut W,
+    fetch: F,
+) -> Result<(), Box<dyn std::error::Error>>
 where
     F: FnOnce() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error>>,
 {
     let mut plugins = fetch()?;
     plugins.sort_by(|a, b| a.name.cmp(&b.name));
 
+    match format {
+        OutputFormat::Json => list_remote_json(writer, &plugins),
+        OutputFormat::Text => list_remote_text(writer, &plugins),
+    }
+}
+
+fn list_remote_json<W: Write>(
+    writer: &mut W,
+    plugins: &[RemotePlugin],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rows: Vec<serde_json::Value> = plugins
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "name": p.name,
+                "description": p.description,
+                "url": p.url,
+            })
+        })
+        .collect();
+    writeln!(writer, "{}", serde_json::Value::Array(rows))?;
+    Ok(())
+}
+
+fn list_remote_text<W: Write>(
+    writer: &mut W,
+    plugins: &[RemotePlugin],
+) -> Result<(), Box<dyn std::error::Error>> {
     if plugins.is_empty() {
         writeln!(writer, "No remote plugins found.")?;
         return Ok(());
@@ -176,7 +248,7 @@ where
         "-".repeat(url_width)
     )?;
 
-    for plugin in &plugins {
+    for plugin in plugins {
         writeln!(
             writer,
             "{:<name_width$}  {:<desc_width$}  {}",
@@ -744,7 +816,7 @@ mod tests {
         let fetch = || Ok(vec![]);
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -764,7 +836,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -793,7 +865,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -829,7 +901,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -854,7 +926,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -879,7 +951,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -908,7 +980,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert — URL separator should match the widest URL value, not the header width
         let text = String::from_utf8(output).unwrap();
@@ -934,7 +1006,7 @@ mod tests {
         };
 
         // Act
-        list_remote_to(&mut output, fetch).unwrap();
+        list_remote_to(OutputFormat::Text, &mut output, fetch).unwrap();
 
         // Assert
         let text = String::from_utf8(output).unwrap();
@@ -949,7 +1021,7 @@ mod tests {
         let fetch = || Err("Network error".into());
 
         // Act
-        let result = list_remote_to(&mut output, fetch);
+        let result = list_remote_to(OutputFormat::Text, &mut output, fetch);
 
         // Assert
         assert!(result.is_err());
@@ -1819,5 +1891,201 @@ mod tests {
         assert!(plugin_dir.exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_list_json_emits_array_of_objects() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.plugins.insert(
+            "mise".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-mise".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert_eq!(array.len(), 2);
+        assert_eq!(array[0]["name"], "dnf");
+        assert_eq!(
+            array[0]["url"],
+            "https://github.com/hainet50b/homeos-plugin-dnf"
+        );
+        assert_eq!(array[1]["name"], "mise");
+    }
+
+    #[test]
+    fn test_list_json_emits_empty_array_when_no_plugins() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir).with_output_format(OutputFormat::Json);
+        let config = Config::default();
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert!(array.is_empty());
+    }
+
+    #[test]
+    fn test_list_json_url_is_null_for_local_plugin() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("custom".to_string(), PluginConfig { url: None });
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "custom");
+        assert!(array[0]["url"].is_null());
+    }
+
+    #[test]
+    fn test_list_json_description_loaded_from_plugin_yml() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::default();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: DNF package manager plugin for homeos.\nparams:\n  - name\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(
+            array[0]["description"],
+            "DNF package manager plugin for homeos."
+        );
+    }
+
+    #[test]
+    fn test_list_remote_json_emits_array_of_objects() {
+        // Arrange
+        let mut output = Vec::new();
+        let fetch = || {
+            Ok(vec![
+                RemotePlugin {
+                    name: "dnf".to_string(),
+                    description: "DNF plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                },
+                RemotePlugin {
+                    name: "mise".to_string(),
+                    description: "Mise plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-mise".to_string(),
+                },
+            ])
+        };
+
+        // Act
+        list_remote_to(OutputFormat::Json, &mut output, fetch).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert_eq!(array.len(), 2);
+        assert_eq!(array[0]["name"], "dnf");
+        assert_eq!(array[0]["description"], "DNF plugin");
+        assert_eq!(
+            array[0]["url"],
+            "https://github.com/hainet50b/homeos-plugin-dnf"
+        );
+        assert_eq!(array[1]["name"], "mise");
+    }
+
+    #[test]
+    fn test_list_remote_json_emits_empty_array_when_no_plugins() {
+        // Arrange
+        let mut output = Vec::new();
+        let fetch = || Ok(vec![]);
+
+        // Act
+        list_remote_to(OutputFormat::Json, &mut output, fetch).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert!(array.is_empty());
+    }
+
+    #[test]
+    fn test_list_remote_json_sorts_alphabetically() {
+        // Arrange
+        let mut output = Vec::new();
+        let fetch = || {
+            Ok(vec![
+                RemotePlugin {
+                    name: "winget".to_string(),
+                    description: "WinGet plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-winget".to_string(),
+                },
+                RemotePlugin {
+                    name: "dnf".to_string(),
+                    description: "DNF plugin".to_string(),
+                    url: "https://github.com/hainet50b/homeos-plugin-dnf".to_string(),
+                },
+            ])
+        };
+
+        // Act
+        list_remote_to(OutputFormat::Json, &mut output, fetch).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "dnf");
+        assert_eq!(array[1]["name"], "winget");
     }
 }

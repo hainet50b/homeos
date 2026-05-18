@@ -335,7 +335,7 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
         },
         Commands::Plugin { command } => match command {
             PluginCommands::List => commands::plugin::list(ctx),
-            PluginCommands::ListRemote => commands::plugin::list_remote(),
+            PluginCommands::ListRemote => commands::plugin::list_remote(ctx),
             PluginCommands::Add { plugin, url, local } => {
                 commands::plugin::add(ctx, &plugin, url.as_deref(), local)
             }

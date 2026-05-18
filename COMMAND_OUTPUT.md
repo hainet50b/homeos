@@ -73,7 +73,28 @@ Each error condition below is annotated with `(reason: <kebab-id>)`. The full se
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Any | stdout | Table: `Package`, `Enabled`, `Installed`, `Dependencies` columns (empty table if no packages) |
+| Text mode | stdout | Table: `Package`, `Enabled`, `Installed`, `Dependencies` columns (empty table if no packages) |
+| JSON mode | stdout | JSON array of package objects (empty array if no packages) |
+
+JSON schema (one object per package, ordered alphabetically by name):
+
+```json
+[
+  {
+    "name": "claude",
+    "enabled": true,
+    "installed": true,
+    "depends_on": ["bubblewrap", "socat"]
+  }
+]
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Package name (the `homeos.yml` key) |
+| `enabled` | boolean | Whether the package is enabled |
+| `installed` | boolean | Whether the package is in `state.yml` |
+| `depends_on` | array of strings | Forward dependencies; empty array when none |
 
 ## homeos package add
 
@@ -225,15 +246,58 @@ Each error condition below is annotated with `(reason: <kebab-id>)`. The full se
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Any | stdout | Table: `Name`, `Description`, `URL` columns (empty table if no plugins). `Description` is loaded from each plugin's `plugin.yml`. `URL` shows `(local)` when the plugin has no remote URL. |
+| Text mode | stdout | Table: `Name`, `Description`, `URL` columns (empty table if no plugins). `Description` is loaded from each plugin's `plugin.yml`. `URL` shows `(local)` when the plugin has no remote URL. |
+| JSON mode | stdout | JSON array of plugin objects (empty array if no plugins) |
+
+JSON schema (one object per plugin, ordered alphabetically by name):
+
+```json
+[
+  {
+    "name": "dnf",
+    "description": "DNF package manager plugin for homeos.",
+    "url": "https://github.com/hainet50b/homeos-plugin-dnf"
+  },
+  {
+    "name": "custom",
+    "description": "",
+    "url": null
+  }
+]
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Plugin name (the `homeos.yml` key) |
+| `description` | string | Loaded from the plugin's `plugin.yml`; empty string when missing |
+| `url` | string or null | Plugin URL; `null` for plugins created via `--local` |
 
 ## homeos plugin list-remote
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| No remote plugins | stdout | `No remote plugins found.` |
-| Has plugins | stdout | Table: `Name`, `Description`, `URL` columns |
+| Text mode, no remote plugins | stdout | `No remote plugins found.` |
+| Text mode, has plugins | stdout | Table: `Name`, `Description`, `URL` columns |
+| JSON mode | stdout | JSON array of plugin objects (empty array if no remote plugins) |
 | Network error (error) | stderr | `Error: {ureq error text}` (reason: `network-error`) |
+
+JSON schema (one object per plugin, ordered alphabetically by name):
+
+```json
+[
+  {
+    "name": "dnf",
+    "description": "DNF package manager plugin for homeos.",
+    "url": "https://github.com/hainet50b/homeos-plugin-dnf"
+  }
+]
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Plugin name (`hainet50b/homeos-plugin-<name>` with the prefix stripped) |
+| `description` | string | GitHub repository About text; empty string when not set |
+| `url` | string | GitHub repository URL |
 
 ## homeos plugin add
 
