@@ -158,3 +158,5 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-17T10:54:15Z,ede0c0e,"Verify dynamic completion installation flow end-to-end",291,32,20074,2.465853750000001
 2026-05-18T03:47:43Z,435564b,"Add --output/--json flags and HOMEOS_OUTPUT_FORMAT env var infrastructure",364,46,25348,3.9872294999999998
 2026-05-18T04:07:54Z,0ea4e53,"Migrate error output to dual stdout-JSON / stderr-human format",1207,139,79174,16.44931375000001
+2026-05-18T04:16:04Z,e938247,"Implement JSON output for list commands",486,70,32009,6.305967999999999
+2026-05-18T04:23:11Z,97f3294,"Implement JSON output for info commands",423,62,30268,5.3070325

@@ -423,6 +423,8 @@ JSON schema:
 
 Used by `apply`, `install`, `update`, `uninstall`. Always displayed regardless of whether there are packages to execute.
 
+### Text mode
+
 When there are packages to execute:
 
 ```
@@ -454,3 +456,80 @@ The following packages will be skipped:
 
 Nothing to do.
 ```
+
+### JSON mode
+
+In JSON mode, the plan is emitted as a single JSON object to stdout. `--dry-run --json` writes the plan and exits 0 without prompting or executing. `--json` without `--dry-run` writes the plan, prompts as today (the prompt text goes to the same stream as today — currently stdout — so JSON consumers should combine `--json` with non-interactive flags), and then writes execution results as additional JSON objects (one per package, NDJSON style — one JSON object per line — appended after the plan).
+
+Plan envelope:
+
+```json
+{
+  "is_empty": false,
+  "install": [
+    {"name": "claude", "plugin": null, "required_by": null},
+    {"name": "dnf-copr-mise", "plugin": "dnf-copr", "required_by": "mise"}
+  ],
+  "update": [
+    {"name": "neovim", "plugin": "dnf", "required_by": null}
+  ],
+  "uninstall": [
+    {"name": "mise", "plugin": null, "depends_on": "claude"}
+  ],
+  "skipped": [
+    {"name": "docker", "reason": "disabled", "plugin": null, "detail": null},
+    {"name": "neovim", "reason": "already-installed", "plugin": null, "detail": null},
+    {"name": "ripgrep", "reason": "not-installed", "plugin": null, "detail": null},
+    {"name": "a", "reason": "circular-dependency", "plugin": null, "detail": null},
+    {"name": "claude", "reason": "dependency-disabled", "plugin": null, "detail": "bubblewrap"},
+    {"name": "neovim", "reason": "script-unmodified", "plugin": null, "detail": "install.sh"}
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `is_empty` | boolean | `true` when nothing will be executed (every section's enabled list is empty) |
+| `install` | array of objects | Packages that will be installed; empty for `update` / `uninstall` commands |
+| `update` | array of objects | Packages that will be updated; empty for `install` / `uninstall` commands |
+| `uninstall` | array of objects | Packages that will be uninstalled; empty for `install` / `update` / `apply` |
+| `skipped` | array of objects | Packages excluded from execution, with reason annotations |
+
+Per-package entry in `install` / `update`:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Package name |
+| `plugin` | string or null | Plugin name when the package uses one; `null` otherwise |
+| `required_by` | string or null | Direct requester when this package was pulled in as a forward dependency; `null` when explicitly requested |
+
+Per-package entry in `uninstall`:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Package name |
+| `plugin` | string or null | Plugin name when the package uses one; `null` otherwise |
+| `depends_on` | string or null | The dependency that triggered reverse expansion of this package; `null` when explicitly requested |
+
+Per-package entry in `skipped`:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Package name |
+| `reason` | string | One of `disabled`, `already-installed`, `not-installed`, `circular-dependency`, `dependency-disabled`, `script-unmodified` |
+| `plugin` | string or null | Plugin name when the package uses one; `null` otherwise |
+| `detail` | string or null | For `dependency-disabled`, the unavailable dep name. For `script-unmodified`, the script filename (e.g., `install.sh`). `null` for other reasons. |
+
+Execution result objects (one per package, written after the plan when `--dry-run` is not set and the user confirms):
+
+```
+{"package":"claude","action":"install","status":"success","error":null}
+{"package":"neovim","action":"update","status":"failed","error":"Script failed with exit code 1"}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `package` | string | Package name |
+| `action` | string | One of `install`, `update`, `uninstall` |
+| `status` | string | `success` or `failed` |
+| `error` | string or null | Error message on failure; `null` on success |

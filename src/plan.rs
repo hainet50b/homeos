@@ -316,6 +316,179 @@ impl Plan {
     pub fn is_empty(&self) -> bool {
         self.enabled.is_empty()
     }
+
+    /// Serialize the plan as a JSON object describing what will be executed and skipped.
+    /// The `install`, `update`, and `uninstall` arrays are mutually exclusive — only the
+    /// array matching `self.action` is populated; the others are empty arrays. The
+    /// `skipped` array contains every skipped entry regardless of reason. The shape is
+    /// stable across actions so consumers can iterate uniformly.
+    pub fn to_json_value(&self) -> serde_json::Value {
+        let enabled_entries: Vec<serde_json::Value> = self
+            .enabled
+            .iter()
+            .map(|name| self.enabled_entry_json(name))
+            .collect();
+        let skipped_entries: Vec<serde_json::Value> = self.skipped_entries_json();
+
+        let install = if matches!(self.action, Action::Install) {
+            enabled_entries.clone()
+        } else {
+            Vec::new()
+        };
+        let update = if matches!(self.action, Action::Update) {
+            enabled_entries.clone()
+        } else {
+            Vec::new()
+        };
+        let uninstall = if matches!(self.action, Action::Uninstall) {
+            enabled_entries
+        } else {
+            Vec::new()
+        };
+
+        serde_json::json!({
+            "is_empty": self.is_empty(),
+            "install": install,
+            "update": update,
+            "uninstall": uninstall,
+            "skipped": skipped_entries,
+        })
+    }
+
+    fn enabled_entry_json(&self, name: &str) -> serde_json::Value {
+        let plugin = self
+            .plugins
+            .get(name)
+            .map(|p| serde_json::Value::String(p.clone()))
+            .unwrap_or(serde_json::Value::Null);
+        let note = self.notes.get(name).map(|s| s.as_str());
+        let required_by = note
+            .and_then(|n| n.strip_prefix("required by "))
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null);
+        let depends_on = note
+            .and_then(|n| n.strip_prefix("depends on "))
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null);
+
+        match self.action {
+            Action::Install | Action::Update => serde_json::json!({
+                "name": name,
+                "plugin": plugin,
+                "required_by": required_by,
+            }),
+            Action::Uninstall => serde_json::json!({
+                "name": name,
+                "plugin": plugin,
+                "depends_on": depends_on,
+            }),
+        }
+    }
+
+    fn skipped_entry_json(
+        &self,
+        name: &str,
+        reason: &str,
+        detail: Option<&str>,
+    ) -> serde_json::Value {
+        let plugin = self
+            .plugins
+            .get(name)
+            .map(|p| serde_json::Value::String(p.clone()))
+            .unwrap_or(serde_json::Value::Null);
+        let detail_value = detail
+            .map(|s| serde_json::Value::String(s.to_string()))
+            .unwrap_or(serde_json::Value::Null);
+        serde_json::json!({
+            "name": name,
+            "reason": reason,
+            "plugin": plugin,
+            "detail": detail_value,
+        })
+    }
+
+    fn skipped_entries_json(&self) -> Vec<serde_json::Value> {
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        for name in &self.disabled {
+            entries.push(self.skipped_entry_json(name, "disabled", None));
+        }
+        for name in &self.already_installed {
+            entries.push(self.skipped_entry_json(name, "already-installed", None));
+        }
+        for name in &self.not_installed {
+            entries.push(self.skipped_entry_json(name, "not-installed", None));
+        }
+        for name in &self.circular_dependency {
+            entries.push(self.skipped_entry_json(name, "circular-dependency", None));
+        }
+        for (name, dep) in &self.dependency_disabled {
+            entries.push(self.skipped_entry_json(name, "dependency-disabled", Some(dep)));
+        }
+        for (name, script) in &self.script_unmodified {
+            entries.push(self.skipped_entry_json(name, "script-unmodified", Some(script)));
+        }
+        entries
+    }
+}
+
+/// Build a merged JSON plan envelope from one or more plans. Used by `apply` where
+/// the install plan and update plan are rendered together. Each plan contributes its
+/// enabled entries to the matching action array; the skipped section is taken from
+/// the first plan only (callers must consolidate skipped entries into a single plan
+/// before calling, matching the text rendering convention in `apply_to`).
+pub fn plans_to_json(plans: &[&Plan]) -> serde_json::Value {
+    let mut install: Vec<serde_json::Value> = Vec::new();
+    let mut update: Vec<serde_json::Value> = Vec::new();
+    let mut uninstall: Vec<serde_json::Value> = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let mut is_empty = true;
+
+    for (i, plan) in plans.iter().enumerate() {
+        if !plan.is_empty() {
+            is_empty = false;
+        }
+        let entries: Vec<serde_json::Value> = plan
+            .enabled
+            .iter()
+            .map(|name| plan.enabled_entry_json(name))
+            .collect();
+        match plan.action {
+            Action::Install => install.extend(entries),
+            Action::Update => update.extend(entries),
+            Action::Uninstall => uninstall.extend(entries),
+        }
+        if i == 0 {
+            skipped = plan.skipped_entries_json();
+        }
+    }
+
+    serde_json::json!({
+        "is_empty": is_empty,
+        "install": install,
+        "update": update,
+        "uninstall": uninstall,
+        "skipped": skipped,
+    })
+}
+
+/// Emit a single NDJSON execution result line.
+pub fn write_execution_result<W: Write>(
+    writer: &mut W,
+    package: &str,
+    action: Action,
+    success: bool,
+    error: Option<&str>,
+) -> std::io::Result<()> {
+    let error_value = error
+        .map(|s| serde_json::Value::String(s.to_string()))
+        .unwrap_or(serde_json::Value::Null);
+    let value = serde_json::json!({
+        "package": package,
+        "action": action.as_str(),
+        "status": if success { "success" } else { "failed" },
+        "error": error_value,
+    });
+    writeln!(writer, "{value}")
 }
 
 /// Compute the set of packages that are unavailable for install, i.e. disabled
@@ -2053,5 +2226,358 @@ The following packages will be skipped:
 
         // Assert
         assert!(sut.is_empty());
+    }
+
+    // --- JSON output tests ---
+
+    #[test]
+    fn test_to_json_value_install_emits_install_array() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["is_empty"], false);
+        assert_eq!(sut["install"][0]["name"], "neovim");
+        assert_eq!(sut["install"][0]["plugin"], serde_json::Value::Null);
+        assert_eq!(sut["install"][0]["required_by"], serde_json::Value::Null);
+        assert_eq!(sut["update"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["uninstall"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["skipped"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_to_json_value_update_action_uses_update_array() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Update,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["install"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["update"][0]["name"], "neovim");
+        assert_eq!(sut["uninstall"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_to_json_value_uninstall_action_uses_uninstall_array() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Uninstall,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["install"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["update"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["uninstall"][0]["name"], "neovim");
+        assert_eq!(sut["uninstall"][0]["depends_on"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_to_json_value_plugin_field_set_for_enabled_entry() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::from([("neovim".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["install"][0]["plugin"], "dnf");
+    }
+
+    #[test]
+    fn test_to_json_value_required_by_extracted_from_notes() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::from([("neovim".to_string(), "required by claude".to_string())]),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["install"][0]["required_by"], "claude");
+    }
+
+    #[test]
+    fn test_to_json_value_depends_on_extracted_from_notes() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Uninstall,
+            enabled: vec!["mise".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::from([("mise".to_string(), "depends on claude".to_string())]),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["uninstall"][0]["depends_on"], "claude");
+    }
+
+    #[test]
+    fn test_to_json_value_skipped_disabled_reason() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["docker".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["is_empty"], true);
+        assert_eq!(sut["skipped"][0]["name"], "docker");
+        assert_eq!(sut["skipped"][0]["reason"], "disabled");
+        assert_eq!(sut["skipped"][0]["plugin"], serde_json::Value::Null);
+        assert_eq!(sut["skipped"][0]["detail"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_to_json_value_skipped_all_reasons() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["a".to_string()],
+            already_installed: vec!["b".to_string()],
+            not_installed: vec!["c".to_string()],
+            circular_dependency: vec!["d".to_string()],
+            dependency_disabled: BTreeMap::from([("e".to_string(), "x".to_string())]),
+            script_unmodified: BTreeMap::from([("f".to_string(), "install.sh".to_string())]),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        let skipped = sut["skipped"].as_array().unwrap();
+        let by_name: std::collections::BTreeMap<String, &serde_json::Value> = skipped
+            .iter()
+            .map(|v| (v["name"].as_str().unwrap().to_string(), v))
+            .collect();
+        assert_eq!(by_name["a"]["reason"], "disabled");
+        assert_eq!(by_name["b"]["reason"], "already-installed");
+        assert_eq!(by_name["c"]["reason"], "not-installed");
+        assert_eq!(by_name["d"]["reason"], "circular-dependency");
+        assert_eq!(by_name["e"]["reason"], "dependency-disabled");
+        assert_eq!(by_name["e"]["detail"], "x");
+        assert_eq!(by_name["f"]["reason"], "script-unmodified");
+        assert_eq!(by_name["f"]["detail"], "install.sh");
+    }
+
+    #[test]
+    fn test_to_json_value_empty_plan_is_empty_true() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        assert_eq!(sut["is_empty"], true);
+        assert_eq!(sut["install"].as_array().unwrap().len(), 0);
+        assert_eq!(sut["skipped"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_plans_to_json_merges_install_and_update_arrays() {
+        // Arrange
+        let install_plan = Plan {
+            action: Action::Install,
+            enabled: vec!["claude".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+        let update_plan = Plan {
+            action: Action::Update,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plans_to_json(&[&install_plan, &update_plan]);
+
+        // Assert
+        assert_eq!(sut["is_empty"], false);
+        assert_eq!(sut["install"][0]["name"], "claude");
+        assert_eq!(sut["update"][0]["name"], "neovim");
+        assert_eq!(sut["uninstall"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_plans_to_json_skipped_comes_from_first_plan_only() {
+        // Arrange — first plan (install) has the consolidated skipped section.
+        let install_plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["docker".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+        let update_plan = Plan {
+            action: Action::Update,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec!["other".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plans_to_json(&[&install_plan, &update_plan]);
+
+        // Assert — only install_plan's skipped entries appear.
+        let skipped = sut["skipped"].as_array().unwrap();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0]["name"], "docker");
+    }
+
+    #[test]
+    fn test_write_execution_result_success_writes_ndjson_line() {
+        // Arrange
+        let mut output = Vec::new();
+
+        // Act
+        write_execution_result(&mut output, "neovim", Action::Install, true, None).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["package"], "neovim");
+        assert_eq!(parsed["action"], "install");
+        assert_eq!(parsed["status"], "success");
+        assert_eq!(parsed["error"], serde_json::Value::Null);
+        assert!(written.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_write_execution_result_failure_includes_error_message() {
+        // Arrange
+        let mut output = Vec::new();
+
+        // Act
+        write_execution_result(
+            &mut output,
+            "neovim",
+            Action::Install,
+            false,
+            Some("Script failed with exit code 1"),
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["status"], "failed");
+        assert_eq!(parsed["error"], "Script failed with exit code 1");
     }
 }
