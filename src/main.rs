@@ -274,12 +274,14 @@ pub enum PackageCommands {
 }
 
 fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
-    use validation::validate_name;
+    use validation::{validate_name, validate_url};
     match command {
-        Commands::Init { .. }
-        | Commands::Cd
-        | Commands::Apply { .. }
-        | Commands::Completion { .. } => {}
+        Commands::Init { url, .. } => {
+            if let Some(u) = url {
+                validate_url(u)?;
+            }
+        }
+        Commands::Cd | Commands::Apply { .. } | Commands::Completion { .. } => {}
         Commands::Package { command } => match command {
             PackageCommands::List => {}
             PackageCommands::Add {
@@ -341,8 +343,13 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
         },
         Commands::Plugin { command } => match command {
             PluginCommands::List | PluginCommands::ListRemote => {}
-            PluginCommands::Add { plugin, .. }
-            | PluginCommands::Remove { plugin, .. }
+            PluginCommands::Add { plugin, url, .. } => {
+                validate_name(plugin)?;
+                if let Some(u) = url {
+                    validate_url(u)?;
+                }
+            }
+            PluginCommands::Remove { plugin, .. }
             | PluginCommands::Info { plugin }
             | PluginCommands::Cat { plugin } => {
                 validate_name(plugin)?;
@@ -1235,5 +1242,169 @@ mod tests {
         // looks like an unknown flag. Validation is a defense-in-depth
         // layer on top of clap, not a replacement.
         assert!(cli.is_err());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_init_without_url() {
+        // Arrange — scaffold mode has no URL to validate
+        let cli = Cli::try_parse_from(["homeos", "init"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_init_with_https_url() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "init", "https://github.com/hainet50b/dotfiles"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_unsupported_scheme() {
+        // Arrange — `file://` is not in the allowed scheme list
+        let cli = Cli::try_parse_from(["homeos", "init", "file:///etc/passwd"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_no_scheme() {
+        // Arrange — bare host without explicit scheme
+        let cli = Cli::try_parse_from(["homeos", "init", "github.com/user/repo"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_percent_encoded_dotdot() {
+        // Arrange — common URL-encoded path traversal payload
+        let cli =
+            Cli::try_parse_from(["homeos", "init", "https://example.com/%2e%2e/etc"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_query_string() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "init", "https://example.com/repo.git?inject=1"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_accepts_plugin_add_without_url() {
+        // Arrange — URL is optional; auto-resolves to the official repo
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "dnf"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_plugin_add_with_https_url() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "plugin",
+            "add",
+            "dnf",
+            "https://github.com/hainet50b/homeos-plugin-dnf",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_plugin_add_url_with_unsupported_scheme() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "evil", "javascript:alert(1)"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_plugin_add_url_with_query_string() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "plugin",
+            "add",
+            "dnf",
+            "https://example.com/repo.git?evil=1",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_validates_plugin_name_before_url() {
+        // Arrange — both name and URL are invalid; name check should fire first
+        let cli =
+            Cli::try_parse_from(["homeos", "plugin", "add", "Bad/Name", "javascript:alert(1)"])
+                .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert — error message should reference the name, not the URL
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+        assert!(
+            err.message.contains("Name 'Bad/Name'"),
+            "expected name-validation message, got: {}",
+            err.message
+        );
     }
 }

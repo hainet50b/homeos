@@ -43,6 +43,85 @@ pub fn validate_name(name: &str) -> Result<(), HomeosError> {
     Ok(())
 }
 
+/// Allowed URL schemes for `homeos init <url>` and `homeos plugin add <url>`.
+const ALLOWED_URL_SCHEMES: &[&str] = &["http", "https", "git", "ssh", "git+ssh"];
+
+/// Validate a URL passed to `homeos init <url>` or `homeos plugin add <url>`.
+///
+/// Rejects:
+/// - empty input
+/// - ASCII control characters (including NUL, CR, LF, tab)
+/// - percent-encoded NUL bytes (`%00`, case-insensitive)
+/// - percent-encoded `..` (`%2e%2e`, case-insensitive)
+/// - any `?` (query string) — git clone URLs have no legitimate query string,
+///   so the presence of one indicates injection or misuse
+/// - any scheme other than `http`, `https`, `git`, `ssh`, or `git+ssh`
+///   (also rejects URLs with no explicit `scheme://` prefix, e.g. SCP-like
+///   syntax `git@host:path` or bare filesystem paths)
+pub fn validate_url(url: &str) -> Result<(), HomeosError> {
+    if url.is_empty() {
+        return Err(HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            "URL must not be empty",
+        ));
+    }
+
+    for c in url.chars() {
+        if c.is_control() {
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!("URL '{url}' contains control characters"),
+            ));
+        }
+    }
+
+    let lower = url.to_ascii_lowercase();
+    if lower.contains("%00") {
+        return Err(HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!("URL '{url}' contains percent-encoded NUL byte ('%00')"),
+        ));
+    }
+    if lower.contains("%2e%2e") {
+        return Err(HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!("URL '{url}' contains percent-encoded '..' ('%2e%2e')"),
+        ));
+    }
+
+    if url.contains('?') {
+        return Err(HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!("URL '{url}' must not contain a query string ('?')"),
+        ));
+    }
+
+    let scheme = match url.split_once("://") {
+        Some((s, _)) => s,
+        None => {
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!(
+                    "URL '{url}' must have an explicit scheme. Allowed: {}",
+                    ALLOWED_URL_SCHEMES.join(", ")
+                ),
+            ));
+        }
+    };
+
+    if !ALLOWED_URL_SCHEMES.contains(&scheme) {
+        return Err(HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!(
+                "URL '{url}' has unsupported scheme '{scheme}'. Allowed: {}",
+                ALLOWED_URL_SCHEMES.join(", ")
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,5 +398,303 @@ mod tests {
 
         // Assert
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_https() {
+        // Arrange
+        let url = "https://github.com/hainet50b/homeos-plugin-dnf";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_http() {
+        // Arrange
+        let url = "http://example.com/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_git_scheme() {
+        // Arrange
+        let url = "git://github.com/user/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_ssh_scheme() {
+        // Arrange
+        let url = "ssh://git@github.com/user/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_git_plus_ssh_scheme() {
+        // Arrange
+        let url = "git+ssh://git@github.com/user/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_rejects_empty() {
+        // Arrange
+        let url = "";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_file_scheme() {
+        // Arrange — file:// URLs are not in the allowed scheme set
+        let url = "file:///etc/passwd";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("scheme 'file'"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_javascript_scheme() {
+        // Arrange — javascript: would be dangerous in some contexts
+        let url = "javascript:alert(1)";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_rejects_no_scheme() {
+        // Arrange — bare path with no scheme prefix
+        let url = "github.com/user/repo";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("must have an explicit scheme"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_scp_like_syntax() {
+        // Arrange — git's SCP-like syntax has no explicit scheme
+        let url = "git@github.com:user/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("must have an explicit scheme"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_bare_local_path() {
+        // Arrange — bare filesystem path
+        let url = "/tmp/some-repo";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_rejects_control_characters() {
+        // Arrange
+        let cases = [
+            "https://example.com/\x01evil",
+            "https://example.com/\nlf",
+            "https://example.com/\rcr",
+            "https://example.com/\ttab",
+        ];
+
+        // Act & Assert
+        for url in cases {
+            let err = validate_url(url).unwrap_err();
+            assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+            assert!(
+                err.message.contains("control characters"),
+                "expected control-chars error for '{url}', got: {}",
+                err.message
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_url_rejects_nul_byte() {
+        // Arrange — embedded raw NUL terminator
+        let url = "https://example.com/\0null";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert — caught by the control-character rule (NUL is control)
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_rejects_percent_encoded_nul() {
+        // Arrange — %00 in various cases
+        let cases = [
+            "https://example.com/%00",
+            "https://example.com/foo%00bar",
+            "https://example.com/PATH%00",
+        ];
+
+        // Act & Assert
+        for url in cases {
+            let err = validate_url(url).unwrap_err();
+            assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+            assert!(err.message.contains("%00"));
+        }
+    }
+
+    #[test]
+    fn test_validate_url_rejects_percent_encoded_dotdot_lowercase() {
+        // Arrange — common URL-encoded path traversal payload
+        let url = "https://example.com/%2e%2e/etc/passwd";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("%2e%2e"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_percent_encoded_dotdot_uppercase() {
+        // Arrange — case-insensitive match
+        let url = "https://example.com/%2E%2E/etc";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_rejects_percent_encoded_dotdot_mixed_case() {
+        // Arrange — mixed case
+        let url = "https://example.com/%2e%2E/path";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_rejects_query_string() {
+        // Arrange — query string carries no meaning for git clone
+        let url = "https://example.com/repo.git?evil=1";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("query string"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_query_string_in_path_segment() {
+        // Arrange — `?` embedded inside what looks like a path segment
+        let url = "https://example.com/foo?bar/baz";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_url_accepts_url_with_dot_git_suffix() {
+        // Arrange
+        let url = "https://github.com/user/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_url_with_credentials_and_port() {
+        // Arrange — well-formed authority components
+        let url = "https://user:pass@host.example.com:8443/path";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_rejects_unknown_scheme_other() {
+        // Arrange — a scheme we deliberately don't allow
+        let url = "data:text/plain,Hello";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
     }
 }
