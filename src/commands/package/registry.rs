@@ -379,7 +379,7 @@ fn remove_to<R: BufRead, W: Write>(
         }
     }
 
-    if !prompt_confirm(reader, writer) {
+    if !ctx.yes() && !prompt_confirm(reader, writer) {
         writeln!(writer, "Aborted.")?;
         return Ok(());
     }
@@ -2402,6 +2402,62 @@ mod tests {
         assert!(pkg_dir.exists());
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages.contains_key("neovim"));
+    }
+
+    #[test]
+    fn test_remove_yes_skips_prompt_and_removes() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ctx = ctx.with_yes(true);
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be removed from homeos.yml:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Aborted."));
+        assert!(written.contains("Removed package 'neovim'"));
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_yes_with_purge_skips_prompt_and_deletes_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ctx = ctx.with_yes(true);
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Removed package 'neovim' and removed directory"));
+        assert!(!pkg_dir.exists());
     }
 
     #[test]

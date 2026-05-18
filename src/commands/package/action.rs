@@ -279,16 +279,18 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    writeln!(writer)?;
-    let confirmed = crate::plan::prompt_confirm(reader, writer);
-    if is_json {
+    if !ctx.yes() {
         writeln!(writer)?;
-    }
-    if !confirmed {
-        if !is_json {
-            writeln!(writer, "Aborted.")?;
+        let confirmed = crate::plan::prompt_confirm(reader, writer);
+        if is_json {
+            writeln!(writer)?;
         }
-        return Ok(());
+        if !confirmed {
+            if !is_json {
+                writeln!(writer, "Aborted.")?;
+            }
+            return Ok(());
+        }
     }
 
     // Collect enabled packages from both plans
@@ -523,7 +525,16 @@ pub fn run_action<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    if is_json {
+    if ctx.yes() {
+        if is_json {
+            let value = plan.to_json_value();
+            writeln!(writer, "{value}")?;
+        } else {
+            let display = plan.display();
+            writeln!(writer, "{display}")?;
+            writeln!(writer)?;
+        }
+    } else if is_json {
         let value = plan.to_json_value();
         writeln!(writer, "{value}")?;
         writeln!(writer)?;
@@ -4970,5 +4981,171 @@ mod tests {
         assert_eq!(parsed["is_empty"], true);
         assert_eq!(parsed["skipped"][0]["name"], "neovim");
         assert_eq!(parsed["skipped"][0]["reason"], "disabled");
+    }
+
+    // --- --yes flag tests ---
+
+    #[test]
+    fn test_run_action_yes_skips_prompt_and_executes() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Installing neovim..."));
+        assert!(written.contains("done"));
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_yes_with_dry_run_does_not_execute() {
+        // Arrange — dry-run takes precedence over --yes; only the plan is shown.
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Installing"));
+        assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_yes_with_json_skips_prompt_and_emits_results() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json).with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("Proceed"));
+        let json_lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        assert_eq!(json_lines.len(), 2); // plan + execution result
+        let plan: serde_json::Value = serde_json::from_str(json_lines[0]).unwrap();
+        assert_eq!(plan["install"][0]["name"], "neovim");
+        let result_value: serde_json::Value = serde_json::from_str(json_lines[1]).unwrap();
+        assert_eq!(result_value["status"], "success");
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_apply_yes_skips_prompt_and_executes() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = apply_to(&ctx, false, &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Installing neovim..."));
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_apply_yes_with_dry_run_does_not_execute() {
+        // Arrange — dry-run still wins over --yes.
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = apply_to(&ctx, true, &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Installing"));
+        assert!(!marker_path.exists());
     }
 }

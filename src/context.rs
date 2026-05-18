@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 pub struct Context {
     data_dir: PathBuf,
     output_format: OutputFormat,
+    yes: bool,
 }
 
 impl Context {
@@ -18,6 +19,7 @@ impl Context {
         Self {
             data_dir,
             output_format: OutputFormat::default(),
+            yes: false,
         }
     }
 
@@ -28,11 +30,17 @@ impl Context {
         Some(Self {
             data_dir,
             output_format: OutputFormat::default(),
+            yes: false,
         })
     }
 
     pub fn with_output_format(mut self, output_format: OutputFormat) -> Self {
         self.output_format = output_format;
+        self
+    }
+
+    pub fn with_yes(mut self, yes: bool) -> Self {
+        self.yes = yes;
         self
     }
 
@@ -43,6 +51,10 @@ impl Context {
     #[allow(dead_code)]
     pub fn output_format(&self) -> OutputFormat {
         self.output_format
+    }
+
+    pub fn yes(&self) -> bool {
+        self.yes
     }
 
     pub fn config_path(&self) -> PathBuf {

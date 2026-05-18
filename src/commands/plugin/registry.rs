@@ -473,7 +473,7 @@ fn remove_to<R: BufRead, W: Write>(
         }
     }
 
-    if !prompt_confirm(reader, writer) {
+    if !ctx.yes() && !prompt_confirm(reader, writer) {
         writeln!(writer, "Aborted.")?;
         return Ok(());
     }
@@ -1864,6 +1864,65 @@ mod tests {
         assert!(result.is_ok());
         let output = String::from_utf8(output).unwrap();
         assert!(!output.contains("The following directories will be deleted:"));
+    }
+
+    #[test]
+    fn test_remove_yes_skips_prompt_and_removes() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_yes(true);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", false, &mut reader, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following plugins will be removed from homeos.yml:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Aborted."));
+        assert!(written.contains("Removed plugin 'dnf'"));
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.plugins.contains_key("dnf"));
+    }
+
+    #[test]
+    fn test_remove_yes_with_purge_skips_prompt_and_deletes_directory() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_yes(true);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, "dnf", true, &mut reader, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Removed plugin 'dnf' and removed directory"));
+        assert!(!plugin_dir.exists());
     }
 
     #[test]

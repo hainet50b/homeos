@@ -47,6 +47,10 @@ pub struct Cli {
     /// Shorthand for --output json
     #[arg(long, global = true)]
     pub json: bool,
+
+    /// Skip the confirmation prompt and proceed immediately
+    #[arg(long, global = true)]
+    pub yes: bool,
 }
 
 #[derive(Subcommand)]
@@ -448,7 +452,9 @@ fn main() {
 
     let cli = Cli::parse();
     let output_format = OutputFormat::resolve(cli.output, cli.json);
-    let ctx = context::Context::new(cli.data_dir).with_output_format(output_format);
+    let ctx = context::Context::new(cli.data_dir)
+        .with_output_format(output_format)
+        .with_yes(cli.yes);
 
     if let Err(e) = dispatch(&ctx, cli.command) {
         error::report(e.as_ref(), output_format);
@@ -1386,6 +1392,48 @@ mod tests {
         // Assert
         let err = result.unwrap_err();
         assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_yes_flag_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply"]).unwrap();
+
+        // Assert
+        assert!(!cli.yes);
+    }
+
+    #[test]
+    fn test_yes_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "install", "neovim", "--yes"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+    }
+
+    #[test]
+    fn test_yes_flag_compatible_with_json() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--json", "--yes", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn test_yes_flag_compatible_with_dry_run() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply", "--dry-run", "--yes"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+        if let Commands::Apply { dry_run } = cli.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Commands::Apply");
+        }
     }
 
     #[test]
