@@ -243,7 +243,7 @@ mod tests {
             "## Error JSON schema",
             "## Input safety",
             "## Canonical workflows",
-            "## OS-to-plugin mapping reference",
+            "## Choosing a package manager plugin",
             "## Per-command reference",
             "## Plugin authoring",
             "## Local customizations",
