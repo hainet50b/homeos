@@ -266,9 +266,23 @@ export HOMEOS_DATA_DIR="$HOME/.config/homeos-work"
 homeos apply
 ```
 
-Use this to maintain multiple configurations (e.g., work / personal / per-server) by exporting different values in different shell sessions or profiles.
-
 Priority: `HOMEOS_DATA_DIR` overrides the OS default. If unset, the default from the table above applies.
+
+#### Maintaining multiple configurations
+
+You can keep more than one homeos repository on the same machine and switch between them with `HOMEOS_DATA_DIR`. A common case: your personal homeos repo lives at the OS default location, and a separate repository holds **your team's shared setup** (onboarding scripts, standardized developer tools, internal package definitions). Maintain and apply each independently:
+
+```sh
+# Your personal repo — the OS default, no override needed:
+homeos apply
+
+# Switch to your team's shared repo:
+export HOMEOS_DATA_DIR="$HOME/.config/homeos-team"
+homeos init https://github.com/<team>/<homeos-repo>
+homeos apply
+```
+
+Each repository is fully isolated — its own `homeos.yml`, packages, plugins, and installation state.
 
 ### Configuration (homeos.yml)
 
