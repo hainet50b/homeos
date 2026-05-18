@@ -9,7 +9,7 @@
 *homeos* (ho-mee-os) — named after *homeostasis*, a layer above your install scripts, managed from a single Git repository.
 
 > [!IMPORTANT]
-> **Built for AI agents** *(since v0.3.0)*. A generated `AGENTS.md` (mirrored as `CLAUDE.md` for Claude Code) teaches your AI agent how to drive homeos. JSON output and `--yes` let agents plan, get your approval, and execute on your behalf.
+> **Built for AI agents** *(since v0.3.0)*. A generated `AGENTS.md` (mirrored as `CLAUDE.md` for Claude Code) teaches your AI agent how to drive homeos and keep your repository self-documenting through an agent-maintained `README.md` at the root.
 
 ## Features
 
@@ -850,7 +850,7 @@ For example, asking *"Install Neovim for me"* on a Fedora machine:
 1. The agent runs `homeos package list --json` to see what is currently declared, then `homeos plugin list-remote --json` to find the right package manager plugin (e.g. `dnf` on Fedora, `homebrew` on macOS, `winget` on Windows).
 2. It proposes a plan in chat: add the `dnf` plugin, add a `neovim` package using that plugin, then apply.
 3. After your approval, it runs the corresponding `homeos plugin add` / `homeos package add` commands, then `homeos apply --dry-run --json` to confirm the plan, and finally `homeos apply --yes` to execute.
-4. It commits the change to your homeos repository with `git add -A && git commit -m "Add Neovim"`.
+4. It updates the repository `README.md` to reflect what's now installed, then commits everything together with `git add -A && git commit -m "Add Neovim"`.
 
 The plan and confirmation steps mean the agent cannot run anything you haven't seen. The `--json` output mode and the `--yes` flag let agents read structured state and execute approved plans on your behalf.
 

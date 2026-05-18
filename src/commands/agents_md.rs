@@ -239,13 +239,16 @@ mod tests {
         // Assert — each PRD-mandated section header appears exactly as written
         let sections = [
             "## Overview",
+            "## Speaking to the user",
             "## Operating principles",
+            "## First-time setup of a new repository",
             "## Error JSON schema",
             "## Input safety",
             "## Canonical workflows",
             "## Choosing a package manager plugin",
             "## Per-command reference",
             "## Plugin authoring",
+            "## Maintaining the repository README",
             "## Local customizations",
         ];
         for section in sections {
