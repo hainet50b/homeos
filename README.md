@@ -8,6 +8,9 @@
 
 *homeos* (ho-mee-os) — named after *homeostasis*, a layer above your install scripts, managed from a single Git repository.
 
+> [!IMPORTANT]
+> **Built for AI agents** *(since v0.3.0)*. A generated `AGENTS.md` (mirrored as `CLAUDE.md` for Claude Code) teaches your AI agent how to drive homeos. JSON output and `--yes` let agents plan, get your approval, and execute on your behalf.
+
 ## Features
 
 - **Source of truth in a single Git repo** — Everything in your *home* is visible and under your control. Nothing happens beyond what you write.
@@ -840,16 +843,21 @@ The canonical workflow:
 
 1. Run `homeos cd` to launch a shell in the data directory.
 2. Start your AI agent from that shell.
-3. Ask the agent for what you want. The agent reads `AGENTS.md` at the working directory (or `CLAUDE.md`, which is a symlink to the same file on Linux/macOS) and proceeds.
+3. Ask the agent for what you want. The agent reads `AGENTS.md` at the working directory (or `CLAUDE.md`, which is a symlink to the same file on Linux/macOS, or a content copy refreshed alongside `AGENTS.md` on Windows) and proceeds.
 
-For example, asking *"Install Obsidian for me"* on a Fedora machine:
+For example, asking *"Install Neovim for me"* on a Fedora machine:
 
-1. The agent runs `homeos package list --json` to see what is currently declared, then `homeos plugin list-remote --json` to find the right package manager plugin (e.g. `dnf` on Fedora, `homebrew-cask` on macOS, `winget` on Windows).
-2. It proposes a plan in chat: add the `dnf` plugin, add an `obsidian` package using that plugin, then apply.
+1. The agent runs `homeos package list --json` to see what is currently declared, then `homeos plugin list-remote --json` to find the right package manager plugin (e.g. `dnf` on Fedora, `homebrew` on macOS, `winget` on Windows).
+2. It proposes a plan in chat: add the `dnf` plugin, add a `neovim` package using that plugin, then apply.
 3. After your approval, it runs the corresponding `homeos plugin add` / `homeos package add` commands, then `homeos apply --dry-run --json` to confirm the plan, and finally `homeos apply --yes` to execute.
-4. It commits the change to your homeos repository with `git add -A && git commit -m "Add Obsidian"`.
+4. It commits the change to your homeos repository with `git add -A && git commit -m "Add Neovim"`.
 
-The plan and confirmation steps mean the agent cannot run anything you haven't seen. The `--json` output mode and the `--yes` flag exist specifically so agents can read structured state and execute approved plans without falling back to interactive prompts.
+The plan and confirmation steps mean the agent cannot run anything you haven't seen. The `--json` output mode and the `--yes` flag let agents read structured state and execute approved plans on your behalf.
+
+> [!NOTE]
+> Action scripts under `packages/` work best when **non-interactive**: pass `-y` / `--noconfirm` / `--accept-*` flags so the underlying tool doesn't prompt. The agent's subprocess has no controlling terminal, and a script that tries to read from stdin will fail immediately.
+>
+> `sudo` is the one operation that can't be made non-interactive — it always needs your password (unless you configure `NOPASSWD` in sudoers). When a script in the plan invokes `sudo`, the agent hands off: it asks you to run the equivalent `homeos package install <name>` (or `homeos apply`) in your own terminal, where you have a real tty and can type the password.
 
 ### Local customizations
 
