@@ -17,9 +17,12 @@ mod context;
 #[cfg(test)]
 mod env_test;
 mod git;
+mod output;
 mod plan;
 mod state;
 mod topo;
+
+use output::OutputFormat;
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +37,14 @@ pub struct Cli {
     /// Override the data directory (defaults to OS data directory)
     #[arg(long, global = true, hide = true)]
     pub data_dir: Option<PathBuf>,
+
+    /// Output format
+    #[arg(long, global = true, value_enum, conflicts_with = "json")]
+    pub output: Option<OutputFormat>,
+
+    /// Shorthand for --output json
+    #[arg(long, global = true)]
+    pub json: bool,
 }
 
 #[derive(Subcommand)]
@@ -264,7 +275,8 @@ fn main() {
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
     let cli = Cli::parse();
-    let ctx = context::Context::new(cli.data_dir);
+    let output_format = OutputFormat::resolve(cli.output, cli.json);
+    let ctx = context::Context::new(cli.data_dir).with_output_format(output_format);
 
     match cli.command {
         Commands::Init { url, strip_git } => {
@@ -1043,5 +1055,74 @@ mod tests {
         } else {
             panic!("Expected PackageCommands::Uninstall");
         }
+    }
+
+    #[test]
+    fn test_output_flag_defaults_to_none() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.output.is_none());
+        assert!(!cli.json);
+    }
+
+    #[test]
+    fn test_output_flag_parses_json() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--output", "json", "apply"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_output_flag_parses_text() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--output", "text", "apply"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_json_shorthand_flag() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--json", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.json);
+        assert!(cli.output.is_none());
+    }
+
+    #[test]
+    fn test_output_and_json_flags_conflict() {
+        // Arrange & Act
+        let result = Cli::try_parse_from(["homeos", "--output", "json", "--json", "apply"]);
+
+        // Assert
+        let err = match result {
+            Ok(_) => panic!("expected --output and --json to conflict"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn test_output_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "list", "--output", "json"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_json_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "list", "--json"]).unwrap();
+
+        // Assert
+        assert!(cli.json);
     }
 }
