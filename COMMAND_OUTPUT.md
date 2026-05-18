@@ -185,8 +185,44 @@ JSON schema (one object per package, ordered alphabetically by name):
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Success | stdout | Package details: enabled, installed, plugin, params, dependencies, dependents, script aliases |
+| Text mode | stdout | Package details: enabled, installed, plugin, dependencies, dependents, script aliases, scripts |
+| JSON mode | stdout | JSON object describing the package |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
+
+JSON schema:
+
+```json
+{
+  "name": "claude",
+  "enabled": true,
+  "installed": true,
+  "plugin": null,
+  "params": {},
+  "depends_on": ["bubblewrap", "socat"],
+  "dependents": [],
+  "script_aliases": {"update": "install"},
+  "scripts": [
+    {"filename": "install.sh", "path": "/home/<username>/.local/share/homeos/packages/claude/install.sh"},
+    {"filename": "install.ps1", "path": null},
+    {"filename": "update.sh", "path": null},
+    {"filename": "update.ps1", "path": null},
+    {"filename": "uninstall.sh", "path": null},
+    {"filename": "uninstall.ps1", "path": null}
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Package name (the `homeos.yml` key) |
+| `enabled` | boolean | Whether the package is enabled |
+| `installed` | boolean | Whether the package is in `state.yml` |
+| `plugin` | string or null | Plugin name; `null` when the package has no plugin |
+| `params` | object | Plugin parameters as a `key → value` map; empty object when no params |
+| `depends_on` | array of strings | Forward dependencies; empty array when none |
+| `dependents` | array of strings | Packages that depend on this one; empty array when none |
+| `script_aliases` | object | Aliases as a `target → source` map; empty object when none |
+| `scripts` | array of objects | One entry per `{install,update,uninstall}.{sh,ps1}` script. `path` is the full filesystem path when the script exists, otherwise `null`. |
 
 ## homeos package cat
 
@@ -328,8 +364,36 @@ JSON schema (one object per plugin, ordered alphabetically by name):
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Success | stdout | Plugin details: description, URL (or `(local)`), parameters, action templates |
+| Text mode | stdout | Plugin details: description, URL (or `(local)`), parameters, action templates |
+| JSON mode | stdout | JSON object describing the plugin |
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` (reason: `plugin-not-found`) |
+
+JSON schema:
+
+```json
+{
+  "name": "dnf",
+  "description": "DNF package manager plugin for homeos.",
+  "url": "https://github.com/hainet50b/homeos-plugin-dnf",
+  "parameters": ["name"],
+  "templates": [
+    {"filename": "install.sh.tmpl", "path": "/home/<username>/.local/share/homeos/plugins/dnf/install.sh.tmpl"},
+    {"filename": "install.ps1.tmpl", "path": null},
+    {"filename": "update.sh.tmpl", "path": null},
+    {"filename": "update.ps1.tmpl", "path": null},
+    {"filename": "uninstall.sh.tmpl", "path": null},
+    {"filename": "uninstall.ps1.tmpl", "path": null}
+  ]
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Plugin name (the `homeos.yml` key) |
+| `description` | string | Loaded from the plugin's `plugin.yml`; empty string when missing |
+| `url` | string or null | Plugin URL; `null` for plugins created via `--local` |
+| `parameters` | array of strings | Parameter names declared in `plugin.yml`; empty array when none |
+| `templates` | array of objects | One entry per `{install,update,uninstall}.{sh,ps1}.tmpl` template. `path` is the full filesystem path when the template exists, otherwise `null`. |
 
 ## homeos plugin cat
 

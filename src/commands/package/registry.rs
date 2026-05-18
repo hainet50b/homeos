@@ -720,6 +720,74 @@ fn info_to<W: Write>(
         false
     };
 
+    let dependents: Vec<String> = config
+        .packages
+        .iter()
+        .filter(|(_, p)| p.depends_on.contains(&package.to_string()))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let pkg_dir = ctx.packages_dir().join(package);
+
+    match ctx.output_format() {
+        OutputFormat::Json => info_json(writer, package, pkg, installed, &dependents, &pkg_dir),
+        OutputFormat::Text => info_text(writer, package, pkg, installed, &dependents, &pkg_dir),
+    }
+}
+
+fn info_json<W: Write>(
+    writer: &mut W,
+    package: &str,
+    pkg: &PackageConfig,
+    installed: bool,
+    dependents: &[String],
+    pkg_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let actions = ["install", "update", "uninstall"];
+    let extensions = super::all_script_extensions();
+
+    let scripts: Vec<serde_json::Value> = actions
+        .iter()
+        .flat_map(|action| {
+            extensions.iter().map(move |ext| {
+                let filename = format!("{action}.{ext}");
+                let script_path = pkg_dir.join(&filename);
+                let path = if script_path.is_file() {
+                    serde_json::Value::String(script_path.display().to_string())
+                } else {
+                    serde_json::Value::Null
+                };
+                serde_json::json!({
+                    "filename": filename,
+                    "path": path,
+                })
+            })
+        })
+        .collect();
+
+    let value = serde_json::json!({
+        "name": package,
+        "enabled": pkg.enabled,
+        "installed": installed,
+        "plugin": pkg.plugin,
+        "params": pkg.params,
+        "depends_on": pkg.depends_on,
+        "dependents": dependents,
+        "script_aliases": pkg.script_aliases,
+        "scripts": scripts,
+    });
+    writeln!(writer, "{value}")?;
+    Ok(())
+}
+
+fn info_text<W: Write>(
+    writer: &mut W,
+    package: &str,
+    pkg: &PackageConfig,
+    installed: bool,
+    dependents: &[String],
+    pkg_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(writer, "Package: {package}")?;
     writeln!(
         writer,
@@ -742,18 +810,11 @@ fn info_to<W: Write>(
         }
     }
 
-    let dependents: Vec<&String> = config
-        .packages
-        .iter()
-        .filter(|(_, p)| p.depends_on.contains(&package.to_string()))
-        .map(|(name, _)| name)
-        .collect();
-
     writeln!(writer, "Dependents:")?;
     if dependents.is_empty() {
         writeln!(writer, "  (none)")?;
     } else {
-        for dep in &dependents {
+        for dep in dependents {
             writeln!(writer, "  {dep}")?;
         }
     }
@@ -769,7 +830,6 @@ fn info_to<W: Write>(
 
     let actions = ["install", "update", "uninstall"];
     let extensions = super::all_script_extensions();
-    let pkg_dir = ctx.packages_dir().join(package);
 
     writeln!(writer, "Scripts:")?;
     for action in &actions {
@@ -3683,6 +3743,150 @@ mod tests {
         assert!(text.contains("  update.ps1 (not found)"));
         assert!(text.contains("  uninstall.sh (not found)"));
         assert!(text.contains("  uninstall.ps1 (not found)"));
+    }
+
+    #[test]
+    fn test_info_json_emits_object_with_all_fields() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n    script_aliases:\n      update: install\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let state = State {
+            installed: vec!["claude".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "claude", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["name"], "claude");
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["installed"], true);
+        assert_eq!(value["plugin"], serde_json::Value::Null);
+        assert_eq!(value["params"], serde_json::json!({}));
+        assert_eq!(
+            value["depends_on"],
+            serde_json::json!(["bubblewrap", "socat"])
+        );
+        assert_eq!(value["dependents"], serde_json::json!([]));
+        assert_eq!(
+            value["script_aliases"],
+            serde_json::json!({"update": "install"})
+        );
+        assert!(value["scripts"].is_array());
+    }
+
+    #[test]
+    fn test_info_json_emits_null_plugin_when_absent() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["plugin"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_plugin_and_params_when_present() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    plugin: dnf\n    params:\n      name: neovim.x86_64\n",
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["plugin"], "dnf");
+        assert_eq!(
+            value["params"],
+            serde_json::json!({"name": "neovim.x86_64"})
+        );
+    }
+
+    #[test]
+    fn test_info_json_emits_dependents() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  app:\n    depends_on: [lib]\n  lib: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "lib", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["dependents"], serde_json::json!(["app"]));
+    }
+
+    #[test]
+    fn test_info_json_scripts_have_path_or_null() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "#!/usr/bin/env sh\n").unwrap();
+        let install_sh_path = pkg_dir.join("install.sh");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let scripts = value["scripts"].as_array().unwrap();
+        assert_eq!(scripts.len(), 6);
+        let install_sh = scripts
+            .iter()
+            .find(|s| s["filename"] == "install.sh")
+            .unwrap();
+        assert_eq!(install_sh["path"], install_sh_path.display().to_string());
+        let install_ps1 = scripts
+            .iter()
+            .find(|s| s["filename"] == "install.ps1")
+            .unwrap();
+        assert_eq!(install_ps1["path"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_single_line() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let non_trailing = text.trim_end_matches('\n');
+        assert!(!non_trailing.contains('\n'));
+        assert!(text.ends_with('\n'));
     }
 
     #[test]
