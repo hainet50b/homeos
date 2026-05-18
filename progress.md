@@ -5815,3 +5815,60 @@ The only remaining unchecked task in the PRD (#242). All preceding tasks — mos
 - **Function ordering audit.** No source files touched; README ordering follows the document's existing pattern (top-of-file nav matches `##` section order; subsections use `###` after section header text). The new section's position between Official Plugins (which discusses external plugins) and Plugin Development Guide (which discusses authoring plugins) is the natural narrative bridge: "here's what exists → here's how to delegate to an AI → here's how to extend it yourself."
 - **3A pattern.** Not applicable — no tests authored for this README-only task. Existing tests already cover the runtime behaviors the README references.
 - **Completion.** With this task checked, every task in the PRD's `## Tasks` section (and the empty `## Post Tasks` section) is complete. The Completion Criteria in the PRD are all met: all tasks checked off, `cargo clippy` clean, `cargo test` passing.
+
+---
+
+# Ralph Loop — 2026-05-18T11:21:47Z
+
+## Task: Run `git init` inside `<data_dir>` as part of `homeos init`'s scaffold mode
+
+**Timestamp:**
+
+2026-05-18T11:24:31Z
+
+**Why this task:**
+
+The only unchecked task in the PRD (#243), and a closure-of-loop for the AI-agent workflow chain built in #239–#242. The generated AGENTS.md already documents the post-init flow as a sequence of `git add` / `git commit` invocations against the data directory — the "First-time setup of a new repository" section at line 393 literally says "`homeos init` runs `git init` automatically." Without this task, that sentence is a lie and the agent's first git command (`git add -A` after the user confirms an initial plan) would fail with `fatal: not a git repository`. Closing this gap is the natural completion of the v0.3.0 agent track and lets the AGENTS.md prose pass a self-consistency check.
+
+**What was done:**
+
+1. **Added `git::init(target: &Path)` to `src/git.rs`.** Mirrors the existing `git::clone` shape: shells out to `Command::new("git").args(["init", target])`, captures `output()`, and on non-zero exit returns a `HomeosError` with the message `git init failed: {stderr}`. Reason code is `INTERNAL_ERROR` rather than a new `GIT_INIT_FAILED` variant — `git init` against a freshly-created and confirmed-empty directory is genuinely an unrecoverable system-level failure (no `git` binary, write permission denied), not a user-input error worth a dedicated kebab-id. The fallback `internal-error` reason is exactly what the dual-output contract documents for unclassified I/O failures, and skipping the new variant keeps `error.rs` and the COMMAND_OUTPUT.md error table free of a row that has no realistic agent-handling story.
+
+2. **Wired `git::init(data_dir)` into `src/commands/init.rs::run` at the end of the scaffold branch.** Placed after `agents_md::write_files` and before the `println!("Initialized homeos at ...")` confirmation. The placement matters: putting it last means every scaffolded file (homeos.yml, .gitignore, AGENTS.md, CLAUDE.md, packages/, plugins/) is on disk and visible to git's untracked-file scan at the moment `.git` is created. If a user runs `git status` immediately after `homeos init`, they see the four expected entries in the working tree (homeos.yml + .gitignore as untracked; AGENTS.md / state.yml as ignored), which matches the AGENTS.md "Step 5: Initial commit and push" instructions. The clone branch (`url.is_some()`) is left untouched because `git clone` already establishes the `.git` directory.
+
+3. **Added 3 unit tests for `git::init` in `src/git.rs`:**
+   - `test_init_creates_git_directory_in_empty_target` — happy path against an empty dir.
+   - `test_init_succeeds_in_directory_with_files` — git init is run after homeos has written homeos.yml / .gitignore, so the regression test seeds those files first and confirms init still succeeds without touching them. This is the case the production code exercises.
+   - `test_init_is_idempotent_on_existing_repo` — running init twice against the same directory still returns Ok. Locks in `git init`'s native idempotency so a future "guard against existing `.git`" change can't silently break the homeos flow.
+
+4. **Added 3 unit tests for the integration in `src/commands/init.rs`:**
+   - `test_init_scaffold_initializes_git_repo` — minimum assertion: `<data_dir>/.git` exists and is a directory after scaffold mode.
+   - `test_init_scaffold_git_repo_tracks_scaffolded_files` — runs `git status --porcelain` against the data dir and asserts `homeos.yml` and `.gitignore` appear (as untracked) while `state.yml` and `AGENTS.md` do NOT appear (as `.gitignore`'d). This is the property the agent actually depends on — that the first `git add -A` will pick up the right working-tree state.
+   - `test_init_scaffold_does_not_create_commits` — runs `git rev-list --count HEAD` and asserts it fails (no commits exist). The PRD explicitly forbids creating commits — the agent walks the user through the initial commit per the "First-time setup of a new repository" section in AGENTS.md. A regression here would silently dilute the agent's role; this test locks it in.
+
+5. **Empirically verified end-to-end.** Built and ran `HOMEOS_DATA_DIR=$TMPDIR/.../homeos cargo run -- init` in a fresh tempdir, then `cd $HOMEOS_DATA_DIR && git status --porcelain` to confirm the working tree state matches the test assertions: `?? homeos.yml` and `?? .gitignore` are shown; AGENTS.md / CLAUDE.md / state.yml are absent (the first two via `.gitignore`, state.yml because it isn't written by init).
+
+**What was changed:**
+
+- src/git.rs — added `init` function and 3 unit tests.
+- src/commands/init.rs — call `git::init(data_dir)` in the scaffold branch; added 3 unit tests.
+- prd.md — task 243 checked off; this is the final task in the PRD.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 755 tests pass** (was 749, +6 new tests: 3 in `git.rs` and 3 in `init.rs`). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are clean.
+- **Why `git::init` is placed after `clone` in `src/git.rs`.** No strict README ordering exists for internal helpers (the README documents user-facing commands, not module-private functions). I followed two readable conventions: (a) within the module, alphabetical by function name — `clone` < `init`; (b) within the calling sites, `clone` is used by three commands (`init` with URL, `repo add` historically, `plugin add`) while `init` is used by one (`init` scaffold), so listing the more-used helper first is consistent with "top-down call frequency" ordering. Either way, there's no public API order to violate.
+- **Why I chose `INTERNAL_ERROR` over adding a new `GIT_INIT_FAILED` reason.** Two factors: (1) The COMMAND_OUTPUT.md error reason table is curated — adding a new kebab-id requires a corresponding command-table row documenting when the user would see it, and `homeos init`'s scaffold mode has no realistic failure path for `git init` on a directory the same function just created and proved writable. (2) The reasons table at COMMAND_OUTPUT.md:40 explicitly lists `internal-error` as "Fallback for unclassified errors (typically I/O failures bubbled via `?`)" — a git-init failure on an already-writable directory is exactly that, an I/O-class system failure rather than a user input error. The text message (`git init failed: <stderr>`) is descriptive enough for a human reader; agents would treat any unclassified `internal-error` as "stop and ask the user", which is the right behavior for an environment with broken git.
+- **Why I did NOT add a `init --no-git` flag.** Tempting to add as a future-proofing knob (a user who wants to put `<data_dir>` inside an existing parent git repo and avoid a nested checkout might want to opt out), but the PRD doesn't ask for it, and adding it now would (a) ship dead optionality, (b) require a row in the `homeos init` options table in README, (c) require a row in COMMAND_OUTPUT.md, and (d) require the agent's AGENTS.md to handle the "what if git init was skipped?" branch. The user can always `rm -rf <data_dir>/.git` after init if they need to nest. YAGNI prevailed; if a real use case surfaces, the flag is a one-line addition.
+- **Why the README and COMMAND_OUTPUT.md don't need updates.** Searched README.md for `git init` — the only existing mention is in AGENTS.md (the generated template), which already says `homeos init` runs `git init` automatically. The README's `homeos init` section describes the data-directory side-effect ("Create the initial homeos structure at the data directory") without enumerating every internal step; the `.git` directory is one such internal step, on par with creating `packages/` and `plugins/` (neither of which is enumerated either). COMMAND_OUTPUT.md's `## homeos init` table covers the user-facing stdout/stderr lines; since `git init` is silent (output() is captured and discarded on success), there's no new visible message to document. The pre-existing "Scaffold success" / "Clone success" rows still cover every successful-path stdout line, and the new `internal-error` failure path is covered by the existing fallback contract in the error format section.
+- **Why I did NOT mutate the AGENTS.md template prose.** Task #239 already filled the template with "homeos init runs git init automatically" at line 401 — predicting today's task. The prose is accurate as-shipped; no edit needed. Worth flagging as a small Chesterton's-fence-style observation: the task chain was designed with the integration in mind, so each piece slots into the prior pieces' assumptions. That's a good sign for the v0.3.0 track's cohesion.
+- **Why `test_init_scaffold_does_not_create_commits` uses the negative assertion `assert!(!output.status.success())`.** `git rev-list --count HEAD` exits with code 128 when no commits exist (`fatal: bad revision 'HEAD'`). That's the only deterministic signal for "this is a git repo with zero commits" that doesn't require parsing `git log` output (which produces empty stdout in both error and success cases on an empty repo). The negation is annotated in-test so a future reader doesn't mistake it for a confused success/failure swap.
+- **3A pattern.** All 6 new tests use explicit `// Arrange` / `// Act` / `// Assert` comments and call the unit under test directly in the Act step (`init(&target)` for the git module tests; `run(&ctx, None, false)` followed by an inspection of the side-effected git state for the init command tests). The integration tests are slightly arrange-heavier (they set up a tempdir + a `Context`), but the Act step is a single function call as the workflow rule requires; the post-call inspections are all Assert work.
+- **Function ordering audit.** Walked the touched files.
+  - `git.rs` function order: `clone` → `init`. Alphabetical, and both are public helpers with no internal call relationship. README does not enumerate git module helpers.
+  - `init.rs` function order is unchanged: only one public function (`run`). The new `git::init` call is inside `run`'s scaffold branch, in execution order (mkdir → save config → write gitignore → write AGENTS.md → init git → print success). The order matters operationally: every file the user expects to see in `git status` is on disk before `.git` is created.
+  - Tests within `init::tests`: the three new tests sit before the final test (`test_init_with_url_rejects_repo_without_homeos_yml`), grouped as a "scaffold git behavior" cluster after the existing AGENTS.md tests. Within the cluster, ordered by assertion granularity: existence of `.git` → working-tree visibility of scaffolded files → absence of commits. This mirrors how a reader debugging the integration would naturally bisect: "is git there at all?" → "does git see the right files?" → "did we accidentally make a commit?"
+- **Completion.** With this task checked, every task in the PRD's `## Tasks` section (and the empty `## Post Tasks` section) is complete. The Completion Criteria in the PRD are all met: all tasks checked off, `cargo clippy` clean, `cargo test` passing.
+
+

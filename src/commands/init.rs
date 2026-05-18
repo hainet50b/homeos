@@ -79,6 +79,8 @@ pub fn run(
 
         crate::commands::agents_md::write_files(data_dir)?;
 
+        git::init(data_dir)?;
+
         println!("Initialized homeos at {}", data_dir.display());
     }
 
@@ -535,6 +537,90 @@ mod tests {
         assert!(content.contains("CLAUDE.md"));
         assert!(content.contains("AGENTS.md"));
         assert!(!content.contains("AGENTS.local.md"));
+    }
+
+    #[test]
+    fn test_init_scaffold_initializes_git_repo() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — scaffold mode creates a .git directory so the data dir is
+        // a git repository from the moment it exists.
+        let git_dir = ctx.data_dir().join(".git");
+        assert!(git_dir.exists());
+        assert!(git_dir.is_dir());
+    }
+
+    #[test]
+    fn test_init_scaffold_git_repo_tracks_scaffolded_files() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — `git status` succeeds against the data dir, confirming
+        // the directory is a valid working tree and the scaffolded files
+        // are visible to git (homeos.yml is tracked; state.yml/AGENTS.md
+        // are excluded via .gitignore).
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &ctx.data_dir().to_string_lossy(),
+                "status",
+                "--porcelain",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git status failed in data dir");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("homeos.yml"),
+            "expected homeos.yml in `git status`, got: {stdout}"
+        );
+        assert!(
+            stdout.contains(".gitignore"),
+            "expected .gitignore in `git status`, got: {stdout}"
+        );
+        assert!(
+            !stdout.contains("state.yml"),
+            "state.yml should be ignored, got: {stdout}"
+        );
+        assert!(
+            !stdout.contains("AGENTS.md"),
+            "AGENTS.md should be ignored, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn test_init_scaffold_does_not_create_commits() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — homeos init must NOT create commits; the agent walks the
+        // user through the initial commit per the AGENTS.md "First-time
+        // setup" guide. `git rev-list HEAD` errors when no commits exist.
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &ctx.data_dir().to_string_lossy(),
+                "rev-list",
+                "--count",
+                "HEAD",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "expected no commits, but rev-list succeeded with stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
     }
 
     #[test]
