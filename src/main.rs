@@ -22,6 +22,7 @@ mod output;
 mod plan;
 mod state;
 mod topo;
+mod validation;
 
 use output::OutputFormat;
 
@@ -272,7 +273,92 @@ pub enum PackageCommands {
     },
 }
 
+fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
+    use validation::validate_name;
+    match command {
+        Commands::Init { .. }
+        | Commands::Cd
+        | Commands::Apply { .. }
+        | Commands::Completion { .. } => {}
+        Commands::Package { command } => match command {
+            PackageCommands::List => {}
+            PackageCommands::Add {
+                package,
+                depends_on,
+                plugin,
+                ..
+            } => {
+                validate_name(package)?;
+                for d in depends_on {
+                    validate_name(d)?;
+                }
+                if let Some(p) = plugin {
+                    validate_name(p)?;
+                }
+            }
+            PackageCommands::Remove { packages, .. } => {
+                for p in packages {
+                    validate_name(p)?;
+                }
+            }
+            PackageCommands::Rename { old, new } => {
+                validate_name(old)?;
+                validate_name(new)?;
+            }
+            PackageCommands::AddDep {
+                package,
+                dependency,
+            }
+            | PackageCommands::RemoveDep {
+                package,
+                dependency,
+            } => {
+                validate_name(package)?;
+                for d in dependency {
+                    validate_name(d)?;
+                }
+            }
+            PackageCommands::AddAlias { package, .. }
+            | PackageCommands::RemoveAlias { package, .. }
+            | PackageCommands::Info { package }
+            | PackageCommands::Cat { package } => {
+                validate_name(package)?;
+            }
+            PackageCommands::Cd { package } => {
+                if let Some(p) = package {
+                    validate_name(p)?;
+                }
+            }
+            PackageCommands::Enable { packages }
+            | PackageCommands::Disable { packages }
+            | PackageCommands::Install { packages, .. }
+            | PackageCommands::Update { packages, .. }
+            | PackageCommands::Uninstall { packages, .. } => {
+                for p in packages {
+                    validate_name(p)?;
+                }
+            }
+        },
+        Commands::Plugin { command } => match command {
+            PluginCommands::List | PluginCommands::ListRemote => {}
+            PluginCommands::Add { plugin, .. }
+            | PluginCommands::Remove { plugin, .. }
+            | PluginCommands::Info { plugin }
+            | PluginCommands::Cat { plugin } => {
+                validate_name(plugin)?;
+            }
+            PluginCommands::Cd { plugin } => {
+                if let Some(p) = plugin {
+                    validate_name(p)?;
+                }
+            }
+        },
+    }
+    Ok(())
+}
+
 fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std::error::Error>> {
+    validate_args(&command)?;
     match command {
         Commands::Init { url, strip_git } => commands::init::run(ctx, url.as_deref(), strip_git),
         Commands::Cd => commands::cd::run(ctx),
@@ -1013,5 +1099,141 @@ mod tests {
 
         // Assert
         assert!(cli.json);
+    }
+
+    #[test]
+    fn test_validate_args_accepts_well_formed_package_add() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "add", "neovim"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_path_traversal_in_package_name() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "info", "../etc"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_plugin_name() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "plugin", "info", "BadName"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_dependency_in_package_add() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "claude",
+            "--depends-on",
+            "foo/bar",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_plugin_value_in_package_add() {
+        // Arrange
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "add", "claude", "--plugin", "Foo Bar"])
+                .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_validates_every_element_in_packages_list() {
+        // Arrange — first element valid, second element rejected
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "install", "neovim", "bad/name"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_rename_new() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "rename", "old", ".hidden"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_skips_validation_when_no_names_present() {
+        // Arrange — `package list` carries no name args
+        let cli = Cli::try_parse_from(["homeos", "package", "list"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_skips_optional_package_when_none() {
+        // Arrange — `package cd` without an argument
+        let cli = Cli::try_parse_from(["homeos", "package", "cd"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_validates_optional_package_when_some() {
+        // Arrange — `package cd <name>` with a bad name
+        let cli = Cli::try_parse_from(["homeos", "package", "cd", "-rf"]);
+
+        // Assert clap rejects the leading-dash form at parse time — it
+        // looks like an unknown flag. Validation is a defense-in-depth
+        // layer on top of clap, not a replacement.
+        assert!(cli.is_err());
     }
 }
