@@ -87,6 +87,8 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: commands::completion::CompletionShell,
     },
+    /// Render the AGENTS.md guide for AI agents to stdout
+    AgentsMd,
 }
 
 #[derive(Subcommand)]
@@ -285,7 +287,10 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
                 validate_url(u)?;
             }
         }
-        Commands::Cd | Commands::Apply { .. } | Commands::Completion { .. } => {}
+        Commands::Cd
+        | Commands::Apply { .. }
+        | Commands::Completion { .. }
+        | Commands::AgentsMd => {}
         Commands::Package { command } => match command {
             PackageCommands::List => {}
             PackageCommands::Add {
@@ -444,6 +449,7 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
             PluginCommands::Cd { plugin } => commands::plugin::cd(ctx, plugin.as_deref()),
         },
         Commands::Completion { shell } => commands::completion::run(shell),
+        Commands::AgentsMd => commands::agents_md::run(),
     }
 }
 
