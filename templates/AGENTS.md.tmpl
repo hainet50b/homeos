@@ -275,6 +275,35 @@ initiative — if the user explicitly asks about fully unattended
 operation you may describe it, but flag the security implications and
 let them decide.
 
+### Clean up unused-OS scripts
+
+`homeos package add` creates skeleton scripts for both Linux/macOS
+(`.sh`) and Windows (`.ps1`) so the same repository can be applied on
+any OS. In practice most users run on one OS only, and the counterpart
+skeletons sit unused as noise in `packages/`.
+
+After `homeos package add` (especially the no-plugin Workflow 5), ask
+the user whether they want to keep the counterpart-OS scripts. If they
+confirm single-OS, remove them in the same commit as the addition:
+
+```sh
+# On Linux/macOS:
+rm packages/<name>/{install,update,uninstall}.ps1
+# On Windows:
+rm packages/<name>/{install,update,uninstall}.sh
+```
+
+Ask once per session; subsequent packages in the same session can
+follow the same convention without re-asking. If the user explicitly
+maintains a cross-OS repository (sharing with a team on different OSes,
+or running multiple OSes themselves), keep both sets.
+
+This applies primarily to **hand-authored packages** where homeos
+generates both skeletons. Plugin-based packages render only the OS
+files the plugin's templates provide — the `dnf` plugin is Linux-only
+and never creates `.ps1` files in the first place — so there is
+nothing to clean up.
+
 ### Mutation safety in general
 
 - Never run `homeos package uninstall --all` unless the user asked for that
