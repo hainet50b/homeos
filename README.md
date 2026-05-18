@@ -873,6 +873,9 @@ The plan and confirmation steps mean the agent cannot run anything you haven't s
 >
 > `sudo` is the one operation that can't be made non-interactive — it always needs your password (unless you configure `NOPASSWD` in sudoers). When a script in the plan invokes `sudo`, the agent hands off: it asks you to run the equivalent `homeos package install <name>` (or `homeos apply`) in your own terminal, where you have a real tty and can type the password.
 
+> [!TIP]
+> Once you push the homeos repository to GitHub, `gh browse` from inside the data directory opens the agent-maintained `README.md` in your browser — a convenient way to review your installation state, or share your setup with teammates.
+
 ### Local customizations
 
 For extra guidance specific to your setup — naming conventions, machines you've opted out, sensitive operations to double-check — drop a file at `<data_dir>/AGENTS.local.md`. The generated `AGENTS.md` instructs the agent to read it alongside the main guide. `homeos` itself never touches `AGENTS.local.md`; it is hand-written and yours to maintain.
