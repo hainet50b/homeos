@@ -1,3 +1,4 @@
+use crate::error::{HomeosError, reasons};
 use std::path::Path;
 use std::process::Command;
 
@@ -8,7 +9,11 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone failed: {}", stderr.trim()).into());
+        return Err(HomeosError::new(
+            reasons::GIT_CLONE_FAILED,
+            format!("git clone failed: {}", stderr.trim()),
+        )
+        .into());
     }
 
     Ok(())

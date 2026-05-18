@@ -1,5 +1,6 @@
 use crate::config::{Config, PluginManifest};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use std::io::Write;
 use std::process::Command;
 
@@ -14,10 +15,12 @@ fn info_to<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let plugin_config = config
-        .plugins
-        .get(plugin)
-        .ok_or_else(|| format!("Plugin '{plugin}' not found"))?;
+    let plugin_config = config.plugins.get(plugin).ok_or_else(|| {
+        HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin}' not found"),
+        )
+    })?;
 
     let plugin_dir = ctx.plugins_dir().join(plugin);
 
@@ -84,7 +87,11 @@ fn cat_to<W: Write>(
     let config = Config::load(&ctx.config_path())?;
 
     if !config.plugins.contains_key(plugin) {
-        return Err(format!("Plugin '{plugin}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin}' not found"),
+        )
+        .into());
     }
 
     let plugin_dir = ctx.plugins_dir().join(plugin);
@@ -140,7 +147,11 @@ fn resolve_cd_target(
     let dir = match plugin {
         Some(plugin_name) => {
             if !config.plugins.contains_key(plugin_name) {
-                return Err(format!("Plugin '{plugin_name}' not found").into());
+                return Err(HomeosError::new(
+                    reasons::PLUGIN_NOT_FOUND,
+                    format!("Plugin '{plugin_name}' not found"),
+                )
+                .into());
             }
             ctx.plugins_dir().join(plugin_name)
         }
@@ -148,7 +159,11 @@ fn resolve_cd_target(
     };
 
     if !dir.exists() {
-        return Err(format!("Directory not found at {}", dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DIRECTORY_NOT_FOUND,
+            format!("Directory not found at {}", dir.display()),
+        )
+        .into());
     }
 
     Ok(dir)
@@ -158,6 +173,7 @@ fn resolve_cd_target(
 mod tests {
     use super::*;
     use crate::config::{Config, PluginConfig};
+    use crate::error::reasons;
     use tempfile::TempDir;
 
     fn fixture(base_dir: &TempDir) -> Context {
@@ -430,6 +446,24 @@ mod tests {
             result.unwrap_err().to_string(),
             "Plugin 'nonexistent' not found"
         );
+    }
+
+    #[test]
+    fn test_info_plugin_not_found_reason() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PLUGIN_NOT_FOUND);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use crate::git;
 use std::fs;
 
@@ -12,7 +13,11 @@ pub fn run(
     let config_path = ctx.config_path();
 
     if config_path.exists() {
-        return Err(format!("Already initialized at {}", data_dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Already initialized at {}", data_dir.display()),
+        )
+        .into());
     }
 
     let data_dir_is_non_empty = data_dir
@@ -20,7 +25,11 @@ pub fn run(
         .map(|mut iter| iter.next().is_some())
         .unwrap_or(false);
     if data_dir_is_non_empty {
-        return Err(format!("Data directory at {} is not empty", data_dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DATA_DIR_NOT_EMPTY,
+            format!("Data directory at {} is not empty", data_dir.display()),
+        )
+        .into());
     }
 
     if let Some(url) = url {
@@ -32,7 +41,11 @@ pub fn run(
 
         if !config_path.exists() {
             fs::remove_dir_all(data_dir)?;
-            return Err("Not a valid homeos repository. Cloned directory removed.".into());
+            return Err(HomeosError::new(
+                reasons::NOT_A_VALID_HOMEOS_REPO,
+                "Not a valid homeos repository. Cloned directory removed.",
+            )
+            .into());
         }
 
         if strip_git {
@@ -71,6 +84,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{HomeosError, reasons};
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -373,6 +387,75 @@ mod tests {
         // Assert — scaffold mode ignores strip_git
         assert!(ctx.data_dir().exists());
         assert!(ctx.config_path().exists());
+    }
+
+    #[test]
+    fn test_init_already_initialized_reason_is_already_exists() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        run(&ctx, None, false).unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_init_data_dir_not_empty_reason_is_data_dir_not_empty() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        fs::create_dir_all(ctx.data_dir()).unwrap();
+        fs::write(ctx.data_dir().join("stray.txt"), "preexisting\n").unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DATA_DIR_NOT_EMPTY);
+    }
+
+    #[test]
+    fn test_init_with_url_invalid_url_reason_is_git_clone_failed() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        let result = run(&ctx, Some("not-a-valid-url"), false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::GIT_CLONE_FAILED);
+    }
+
+    #[test]
+    fn test_init_with_url_rejects_repo_without_homeos_yml_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::NOT_A_VALID_HOMEOS_REPO);
     }
 
     #[test]

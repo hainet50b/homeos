@@ -1,3 +1,4 @@
+use crate::error::{HomeosError, reasons};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -68,9 +69,12 @@ fn is_true(v: &bool) -> bool {
 impl Config {
     pub fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         if !path.exists() {
-            return Err(format!(
-                "homeos.yml not found at {}. Run 'homeos init' first.",
-                path.display()
+            return Err(HomeosError::new(
+                reasons::NOT_INITIALIZED,
+                format!(
+                    "homeos.yml not found at {}. Run 'homeos init' first.",
+                    path.display()
+                ),
             )
             .into());
         }

@@ -1,5 +1,6 @@
 use crate::config::{Config, PackageConfig};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use crate::plan::{Action, Plan, confirm_plan};
 use crate::state::State;
 use crate::topo::topological_sort;
@@ -560,7 +561,11 @@ fn execute_script(script_path: &Path) -> Result<(), Box<dyn std::error::Error>> 
             .code()
             .map(|c| c.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        return Err(format!("Script failed with exit code {code}").into());
+        return Err(HomeosError::new(
+            reasons::SCRIPT_FAILED,
+            format!("Script failed with exit code {code}"),
+        )
+        .into());
     }
     Ok(())
 }

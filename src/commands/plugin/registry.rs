@@ -1,5 +1,6 @@
 use crate::config::{Config, PluginConfig, PluginManifest};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use crate::git;
 use crate::plan::prompt_confirm;
 use serde::Deserialize;
@@ -102,9 +103,11 @@ fn fetch_remote_plugins() -> Result<Vec<RemotePlugin>, Box<dyn std::error::Error
         "https://api.github.com/search/repositories?q=homeos-plugin-+in:name+user:hainet50b",
     )
     .header("User-Agent", "homeos")
-    .call()?
+    .call()
+    .map_err(|e| HomeosError::new(reasons::NETWORK_ERROR, e.to_string()))?
     .body_mut()
-    .read_json()?;
+    .read_json()
+    .map_err(|e| HomeosError::new(reasons::NETWORK_ERROR, e.to_string()))?;
 
     let plugins = response
         .items
@@ -191,12 +194,15 @@ fn check_repo_exists(plugin: &str) -> Result<(), Box<dyn std::error::Error>> {
     );
     match ureq::get(&api_url).header("User-Agent", "homeos").call() {
         Ok(_) => Ok(()),
-        Err(ureq::Error::StatusCode(404)) => Err(format!(
-            "Plugin '{}' not found on GitHub (homeos-plugin-{})",
-            plugin, plugin
+        Err(ureq::Error::StatusCode(404)) => Err(HomeosError::new(
+            reasons::NOT_FOUND_ON_GITHUB,
+            format!(
+                "Plugin '{}' not found on GitHub (homeos-plugin-{})",
+                plugin, plugin
+            ),
         )
         .into()),
-        Err(e) => Err(e.into()),
+        Err(e) => Err(HomeosError::new(reasons::NETWORK_ERROR, e.to_string()).into()),
     }
 }
 
@@ -213,14 +219,22 @@ fn add_local(ctx: &Context, plugin: &str) -> Result<(), Box<dyn std::error::Erro
     let config = Config::load(&ctx.config_path())?;
 
     if config.plugins.contains_key(plugin) {
-        return Err(format!("Plugin '{}' already exists", plugin).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Plugin '{}' already exists", plugin),
+        )
+        .into());
     }
 
     let plugins_dir = ctx.plugins_dir();
     let target = plugins_dir.join(plugin);
 
     if target.exists() {
-        return Err(format!("Plugin directory '{}' already exists", plugin).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Plugin directory '{}' already exists", plugin),
+        )
+        .into());
     }
 
     std::fs::create_dir_all(&target)?;
@@ -270,7 +284,11 @@ where
     let config = Config::load(&ctx.config_path())?;
 
     if config.plugins.contains_key(plugin) {
-        return Err(format!("Plugin '{}' already exists", plugin).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Plugin '{}' already exists", plugin),
+        )
+        .into());
     }
 
     let auto_resolved = url.is_none();
@@ -282,7 +300,11 @@ where
     let target = plugins_dir.join(plugin);
 
     if target.exists() {
-        return Err(format!("Plugin directory '{}' already exists", plugin).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Plugin directory '{}' already exists", plugin),
+        )
+        .into());
     }
 
     if auto_resolved {
@@ -295,7 +317,11 @@ where
 
     if !target.join("plugin.yml").exists() {
         std::fs::remove_dir_all(&target)?;
-        return Err("Not a valid homeos plugin. Cloned directory removed.".into());
+        return Err(HomeosError::new(
+            reasons::NOT_A_VALID_HOMEOS_PLUGIN,
+            "Not a valid homeos plugin. Cloned directory removed.",
+        )
+        .into());
     }
 
     let git_dir = target.join(".git");
@@ -333,7 +359,11 @@ fn remove_to<R: BufRead, W: Write>(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.plugins.contains_key(plugin) {
-        return Err(format!("Plugin '{}' not found", plugin).into());
+        return Err(HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!("Plugin '{}' not found", plugin),
+        )
+        .into());
     }
 
     // Warn if packages reference this plugin

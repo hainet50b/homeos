@@ -1,5 +1,6 @@
 use crate::commands::detect_shell;
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -8,9 +9,12 @@ use std::process::Command;
 pub fn resolve_target(ctx: &Context) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let dir = ctx.data_dir().to_path_buf();
     if !dir.exists() {
-        return Err(format!(
-            "Data directory not found at {}. Run 'homeos init' first.",
-            dir.display()
+        return Err(HomeosError::new(
+            reasons::DATA_DIR_NOT_FOUND,
+            format!(
+                "Data directory not found at {}. Run 'homeos init' first.",
+                dir.display()
+            ),
         )
         .into());
     }

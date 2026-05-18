@@ -1,4 +1,5 @@
 use crate::config::{Config, PackageConfig};
+use crate::error::{HomeosError, reasons};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::io::{BufRead, Write};
@@ -90,10 +91,12 @@ impl Plan {
         let mut not_installed = Vec::new();
 
         for name in packages {
-            let pkg = config
-                .packages
-                .get(name)
-                .ok_or_else(|| format!("Package '{name}' not found"))?;
+            let pkg = config.packages.get(name).ok_or_else(|| {
+                HomeosError::new(
+                    reasons::PACKAGE_NOT_FOUND,
+                    format!("Package '{name}' not found"),
+                )
+            })?;
 
             let in_state = installed.contains(name);
 

@@ -16,6 +16,7 @@ mod config;
 mod context;
 #[cfg(test)]
 mod env_test;
+mod error;
 mod git;
 mod output;
 mod plan;
@@ -271,39 +272,13 @@ pub enum PackageCommands {
     },
 }
 
-fn main() {
-    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
-
-    let cli = Cli::parse();
-    let output_format = OutputFormat::resolve(cli.output, cli.json);
-    let ctx = context::Context::new(cli.data_dir).with_output_format(output_format);
-
-    match cli.command {
-        Commands::Init { url, strip_git } => {
-            if let Err(e) = commands::init::run(&ctx, url.as_deref(), strip_git) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-        Commands::Cd => {
-            if let Err(e) = commands::cd::run(&ctx) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-        Commands::Apply { dry_run } => {
-            if let Err(e) = commands::package::apply(&ctx, dry_run) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
+fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::Init { url, strip_git } => commands::init::run(ctx, url.as_deref(), strip_git),
+        Commands::Cd => commands::cd::run(ctx),
+        Commands::Apply { dry_run } => commands::package::apply(ctx, dry_run),
         Commands::Package { command } => match command {
-            PackageCommands::List => {
-                if let Err(e) = commands::package::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PackageCommands::List => commands::package::list(ctx),
             PackageCommands::Add {
                 package,
                 depends_on,
@@ -314,163 +289,77 @@ fn main() {
                 let script_aliases_map: BTreeMap<String, String> =
                     script_aliases.into_iter().collect();
                 let params_map: BTreeMap<String, String> = params.into_iter().collect();
-                if let Err(e) = commands::package::add(
-                    &ctx,
+                commands::package::add(
+                    ctx,
                     &package,
                     &depends_on,
                     &script_aliases_map,
                     plugin.as_deref(),
                     &params_map,
-                ) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                )
             }
             PackageCommands::Remove { packages, purge } => {
-                if let Err(e) = commands::package::remove(&ctx, &packages, purge) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::remove(ctx, &packages, purge)
             }
-            PackageCommands::Rename { old, new } => {
-                if let Err(e) = commands::package::rename(&ctx, &old, &new) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PackageCommands::Rename { old, new } => commands::package::rename(ctx, &old, &new),
             PackageCommands::AddDep {
                 package,
                 dependency,
-            } => {
-                if let Err(e) = commands::package::add_dep(&ctx, &package, &dependency) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::add_dep(ctx, &package, &dependency),
             PackageCommands::RemoveDep {
                 package,
                 dependency,
-            } => {
-                if let Err(e) = commands::package::remove_dep(&ctx, &package, &dependency) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::remove_dep(ctx, &package, &dependency),
             PackageCommands::AddAlias { package, alias } => {
-                if let Err(e) = commands::package::add_alias(&ctx, &package, &alias) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::add_alias(ctx, &package, &alias)
             }
             PackageCommands::RemoveAlias { package, alias } => {
-                if let Err(e) = commands::package::remove_alias(&ctx, &package, &alias) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::remove_alias(ctx, &package, &alias)
             }
-            PackageCommands::Enable { packages } => {
-                if let Err(e) = commands::package::enable(&ctx, &packages) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Disable { packages } => {
-                if let Err(e) = commands::package::disable(&ctx, &packages) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Info { package } => {
-                if let Err(e) = commands::package::info(&ctx, &package) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Cat { package } => {
-                if let Err(e) = commands::package::cat(&ctx, &package) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Cd { package } => {
-                if let Err(e) = commands::package::cd(&ctx, package.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PackageCommands::Enable { packages } => commands::package::enable(ctx, &packages),
+            PackageCommands::Disable { packages } => commands::package::disable(ctx, &packages),
+            PackageCommands::Info { package } => commands::package::info(ctx, &package),
+            PackageCommands::Cat { package } => commands::package::cat(ctx, &package),
+            PackageCommands::Cd { package } => commands::package::cd(ctx, package.as_deref()),
             PackageCommands::Install { packages, dry_run } => {
-                if let Err(e) = commands::package::install(&ctx, &packages, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::install(ctx, &packages, dry_run)
             }
             PackageCommands::Update { packages, dry_run } => {
-                if let Err(e) = commands::package::update(&ctx, &packages, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::update(ctx, &packages, dry_run)
             }
             PackageCommands::Uninstall {
                 packages,
                 all,
                 dry_run,
-            } => {
-                if let Err(e) = commands::package::uninstall(&ctx, &packages, all, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::uninstall(ctx, &packages, all, dry_run),
         },
         Commands::Plugin { command } => match command {
-            PluginCommands::List => {
-                if let Err(e) = commands::plugin::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::ListRemote => {
-                if let Err(e) = commands::plugin::list_remote() {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PluginCommands::List => commands::plugin::list(ctx),
+            PluginCommands::ListRemote => commands::plugin::list_remote(),
             PluginCommands::Add { plugin, url, local } => {
-                if let Err(e) = commands::plugin::add(&ctx, &plugin, url.as_deref(), local) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::plugin::add(ctx, &plugin, url.as_deref(), local)
             }
             PluginCommands::Remove { plugin, purge } => {
-                if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::plugin::remove(ctx, &plugin, purge)
             }
-            PluginCommands::Info { plugin } => {
-                if let Err(e) = commands::plugin::info(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cat { plugin } => {
-                if let Err(e) = commands::plugin::cat(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cd { plugin } => {
-                if let Err(e) = commands::plugin::cd(&ctx, plugin.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PluginCommands::Info { plugin } => commands::plugin::info(ctx, &plugin),
+            PluginCommands::Cat { plugin } => commands::plugin::cat(ctx, &plugin),
+            PluginCommands::Cd { plugin } => commands::plugin::cd(ctx, plugin.as_deref()),
         },
-        Commands::Completion { shell } => {
-            if let Err(e) = commands::completion::run(shell) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
+        Commands::Completion { shell } => commands::completion::run(shell),
+    }
+}
+
+fn main() {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+
+    let cli = Cli::parse();
+    let output_format = OutputFormat::resolve(cli.output, cli.json);
+    let ctx = context::Context::new(cli.data_dir).with_output_format(output_format);
+
+    if let Err(e) = dispatch(&ctx, cli.command) {
+        error::report(e.as_ref(), output_format);
+        std::process::exit(1);
     }
 }
 

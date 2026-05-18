@@ -1,5 +1,6 @@
 use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use crate::plan::prompt_confirm;
 use crate::state::State;
 use crate::topo::topological_sort;
@@ -91,12 +92,20 @@ pub fn add(
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' already exists").into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package '{package}' already exists"),
+        )
+        .into());
     }
 
     for dep in depends_on {
         if !config.packages.contains_key(dep.as_str()) {
-            return Err(format!("Dependency '{dep}' not found").into());
+            return Err(HomeosError::new(
+                reasons::DEPENDENCY_NOT_FOUND,
+                format!("Dependency '{dep}' not found"),
+            )
+            .into());
         }
     }
 
@@ -113,9 +122,12 @@ pub fn add(
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
         let topo_result = topological_sort(&test_config, &all_packages)?;
         if !topo_result.cycle.is_empty() {
-            return Err(format!(
-                "Circular dependency detected among packages: {}",
-                topo_result.cycle.join(", ")
+            return Err(HomeosError::new(
+                reasons::CIRCULAR_DEPENDENCY,
+                format!(
+                    "Circular dependency detected among packages: {}",
+                    topo_result.cycle.join(", ")
+                ),
             )
             .into());
         }
@@ -133,8 +145,9 @@ pub fn add(
 
     let pkg_dir = ctx.packages_dir().join(package);
     if pkg_dir.exists() {
-        return Err(format!(
-            "Package directory '{package}' already exists. Remove it first to re-create."
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package directory '{package}' already exists. Remove it first to re-create."),
         )
         .into());
     }
@@ -173,8 +186,11 @@ fn generate_plugin_scripts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_dir = ctx.plugins_dir().join(plugin_name);
     if !plugin_dir.exists() {
-        return Err(format!(
-            "Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}"
+        return Err(HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!(
+                "Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}"
+            ),
         )
         .into());
     }
@@ -193,7 +209,11 @@ fn generate_plugin_scripts(
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err(format!("Missing required plugin parameters: {list}").into());
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!("Missing required plugin parameters: {list}"),
+            )
+            .into());
         }
     }
 
@@ -253,7 +273,11 @@ fn remove_to<R: BufRead, W: Write>(
 
     for package in packages {
         if !config.packages.contains_key(package.as_str()) {
-            return Err(format!("Package '{package}' not found").into());
+            return Err(HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+            .into());
         }
     }
 
@@ -262,8 +286,11 @@ fn remove_to<R: BufRead, W: Write>(
         let state = State::load(&state_path)?;
         for package in packages {
             if state.installed.contains(package) {
-                return Err(format!(
-                    "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+                return Err(HomeosError::new(
+                    reasons::PACKAGE_INSTALLED,
+                    format!(
+                        "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+                    ),
                 )
                 .into());
             }
@@ -285,8 +312,9 @@ fn remove_to<R: BufRead, W: Write>(
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err(format!(
-                "Cannot remove package '{package}' because it is depended on by: {list}"
+            return Err(HomeosError::new(
+                reasons::DEPENDENT_EXISTS,
+                format!("Cannot remove package '{package}' because it is depended on by: {list}"),
             )
             .into());
         }
@@ -354,10 +382,18 @@ fn rename_to<W: Write>(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(old) {
-        return Err(format!("Package '{old}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{old}' not found"),
+        )
+        .into());
     }
     if config.packages.contains_key(new) {
-        return Err(format!("Package '{new}' already exists").into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package '{new}' already exists"),
+        )
+        .into());
     }
 
     let pkg_config = config.packages.remove(old).unwrap();
@@ -413,12 +449,20 @@ fn add_dep_to(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     for dependency in dependencies {
         if !config.packages.contains_key(dependency.as_str()) {
-            return Err(format!("Dependency '{dependency}' not found").into());
+            return Err(HomeosError::new(
+                reasons::DEPENDENCY_NOT_FOUND,
+                format!("Dependency '{dependency}' not found"),
+            )
+            .into());
         }
     }
 
@@ -434,9 +478,12 @@ fn add_dep_to(
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
         let topo_result = topological_sort(&test_config, &all_packages)?;
         if !topo_result.cycle.is_empty() {
-            return Err(format!(
-                "Circular dependency detected among packages: {}",
-                topo_result.cycle.join(", ")
+            return Err(HomeosError::new(
+                reasons::CIRCULAR_DEPENDENCY,
+                format!(
+                    "Circular dependency detected among packages: {}",
+                    topo_result.cycle.join(", ")
+                ),
             )
             .into());
         }
@@ -477,7 +524,11 @@ fn remove_dep_to(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -509,7 +560,11 @@ pub fn add_alias(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -535,7 +590,11 @@ pub fn remove_alias(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -556,10 +615,12 @@ pub fn enable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
-        let pkg = config
-            .packages
-            .get_mut(package.as_str())
-            .ok_or_else(|| format!("Package '{package}' not found"))?;
+        let pkg = config.packages.get_mut(package.as_str()).ok_or_else(|| {
+            HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+        })?;
 
         if pkg.enabled {
             println!("Package '{package}' is already enabled");
@@ -578,10 +639,12 @@ pub fn disable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::er
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
-        let pkg = config
-            .packages
-            .get_mut(package.as_str())
-            .ok_or_else(|| format!("Package '{package}' not found"))?;
+        let pkg = config.packages.get_mut(package.as_str()).ok_or_else(|| {
+            HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+        })?;
 
         if !pkg.enabled {
             println!("Package '{package}' is already disabled");
@@ -607,10 +670,12 @@ fn info_to<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let pkg = config
-        .packages
-        .get(package)
-        .ok_or_else(|| format!("Package '{package}' not found"))?;
+    let pkg = config.packages.get(package).ok_or_else(|| {
+        HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+    })?;
 
     let state_path = ctx.state_path();
     let installed = if state_path.exists() {
@@ -700,7 +765,11 @@ fn cat_to<W: Write>(
     let config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let actions = ["install", "update", "uninstall"];
@@ -752,7 +821,11 @@ fn resolve_cd_target(
     let dir = match package {
         Some(pkg) => {
             if !config.packages.contains_key(pkg) {
-                return Err(format!("Package '{pkg}' not found").into());
+                return Err(HomeosError::new(
+                    reasons::PACKAGE_NOT_FOUND,
+                    format!("Package '{pkg}' not found"),
+                )
+                .into());
             }
             ctx.packages_dir().join(pkg)
         }
@@ -760,7 +833,11 @@ fn resolve_cd_target(
     };
 
     if !dir.exists() {
-        return Err(format!("Directory not found at {}", dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DIRECTORY_NOT_FOUND,
+            format!("Directory not found at {}", dir.display()),
+        )
+        .into());
     }
 
     Ok(dir)
@@ -790,6 +867,7 @@ fn skeleton_script_content(action: &str, ext: &str, package: &str) -> String {
 mod tests {
     use super::*;
     use crate::commands::package::{all_script_extensions, script_extension};
+    use crate::error::reasons;
     use crate::state::State;
     use std::collections::BTreeMap;
     use std::io::Cursor;
@@ -3707,6 +3785,154 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_cat_package_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_add_already_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_add_dependency_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "ripgrep",
+            &["missing".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DEPENDENCY_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_remove_dependent_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  base: {}\n  child:\n    depends_on:\n      - base\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut reader = Cursor::new("y\n");
+        let mut writer = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, &["base".to_string()], false, &mut reader, &mut writer);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DEPENDENT_EXISTS);
+    }
+
+    #[test]
+    fn test_remove_package_installed_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut reader = Cursor::new("y\n");
+        let mut writer = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut writer,
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_INSTALLED);
+    }
+
+    #[test]
+    fn test_rename_target_already_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  old: {}\n  new: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut writer = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "old", "new", &mut writer);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_enable_package_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+
+        // Act
+        let result = enable(&ctx, &["nonexistent".to_string()]);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
     }
 
     #[test]
