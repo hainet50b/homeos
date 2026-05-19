@@ -4,7 +4,13 @@ use std::process::Command;
 
 pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("git")
-        .args(["clone", url, &target.to_string_lossy()])
+        .args([
+            "-c",
+            "core.autocrlf=false",
+            "clone",
+            url,
+            &target.to_string_lossy(),
+        ])
         .output()?;
 
     if !output.status.success() {
@@ -21,7 +27,13 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
 
 pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("git")
-        .args(["init", "--initial-branch=main", &target.to_string_lossy()])
+        .args([
+            "-c",
+            "core.autocrlf=false",
+            "init",
+            "--initial-branch=main",
+            &target.to_string_lossy(),
+        ])
         .output()?;
 
     if !output.status.success() {
@@ -39,6 +51,7 @@ pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::env_test::EnvVarGuard;
     use tempfile::TempDir;
 
     fn create_local_git_repo(dir: &Path) {
@@ -75,6 +88,60 @@ mod tests {
         assert!(result.is_ok());
         assert!(target.exists());
         assert!(target.join(".git").exists());
+    }
+
+    #[test]
+    fn test_clone_preserves_lf_when_global_config_requests_autocrlf() {
+        // Arrange — create a source repo with an LF-only text file committed,
+        // and force `* text` classification so git is unambiguous about
+        // treating it as text. Then point GIT_CONFIG_GLOBAL at a config file
+        // that sets `core.autocrlf=true`, simulating a Git for Windows-style
+        // default that would rewrite LF to CRLF on checkout if our
+        // `-c core.autocrlf=false` override were missing.
+        let source = TempDir::new().unwrap();
+        std::fs::create_dir_all(source.path()).unwrap();
+        let source_path = source.path().to_string_lossy().to_string();
+        let run_git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(["-C", &source_path])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                status.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&status.stderr)
+            );
+        };
+        run_git(&["init", "--initial-branch=main"]);
+        run_git(&["config", "user.name", "test"]);
+        run_git(&["config", "user.email", "test@test"]);
+        std::fs::write(source.path().join(".gitattributes"), "* text\n").unwrap();
+        std::fs::write(source.path().join("script.sh"), "echo hi\n").unwrap();
+        run_git(&["add", "-A"]);
+        run_git(&["commit", "-m", "seed"]);
+
+        let global_config_home = TempDir::new().unwrap();
+        let global_config = global_config_home.path().join("gitconfig");
+        std::fs::write(&global_config, "[core]\n\tautocrlf = true\n").unwrap();
+        let guard = EnvVarGuard::capture("GIT_CONFIG_GLOBAL");
+        guard.set(&global_config.to_string_lossy());
+
+        let target_parent = TempDir::new().unwrap();
+        let target = target_parent.path().join("cloned");
+
+        // Act
+        let result = clone(&source_path, &target);
+
+        // Assert
+        assert!(result.is_ok(), "clone returned error: {:?}", result.err());
+        let cloned = std::fs::read(target.join("script.sh")).unwrap();
+        assert_eq!(
+            cloned, b"echo hi\n",
+            "LF was rewritten despite the -c core.autocrlf=false override; got bytes {:?}",
+            cloned
+        );
     }
 
     #[test]
