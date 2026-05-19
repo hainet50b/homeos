@@ -887,8 +887,11 @@ to remember to update it — that is part of your job.
 # homeos-repo
 
 This repository is the source of truth for the user's software setup,
-managed by [homeos](https://github.com/hainet50b/homeos). To restore on
-any machine:
+managed by [homeos](https://github.com/hainet50b/homeos). The full
+machine-readable definition lives in [`homeos.yml`](homeos.yml); the
+sections below are a human-friendly view kept in sync with it.
+
+To restore on any machine:
 
 ​```sh
 homeos init <this repo's URL>
@@ -897,28 +900,48 @@ homeos apply
 
 ## Packages
 
-(agent-maintained: one bullet per package in `homeos.yml`, with a short
-purpose line)
-
-- **neovim** — primary text editor.
-- **rustup** — Rust toolchain manager.
+| Package | Plugin | Dependencies | Purpose |
+|---|---|---|---|
+| [neovim](packages/neovim/) | [dnf](plugins/dnf/) | — | Primary text editor. |
+| [claude](packages/claude/) | — | bubblewrap, socat | Claude Code CLI. |
+| [docker](packages/docker/) (disabled) | — | — | Container runtime. |
 
 ## Plugins
 
-(agent-maintained: one bullet per registered plugin, briefly describing
-what it provides)
-
-- **dnf** — Fedora's system package manager.
+| Plugin | Source | Description |
+|---|---|---|
+| [dnf](plugins/dnf/) | [hainet50b/homeos-plugin-dnf](https://github.com/hainet50b/homeos-plugin-dnf) | DNF package manager plugin for homeos. |
+| [my-custom](plugins/my-custom/) | (local) | Hand-written plugin for X. |
 
 ## Notes
 
-(user-owned. The agent reads this section for context but never
-modifies it.)
+(free-form section for your own notes — homeos and the agent never modify it.)
 
 ---
 
 *Managed by [homeos](https://github.com/hainet50b/homeos).*
 ```
+
+### Filling in the tables
+
+**Packages table** — one row per entry in `homeos.yml`'s `packages`:
+
+- *Package*: link the name to `packages/<name>/` (relative path). Suffix
+  with ` (disabled)` when the package's `enabled` is `false`.
+- *Plugin*: if set, link to `plugins/<plugin>/`. Otherwise use `—`.
+- *Dependencies*: comma-separated list from `depends_on`, or `—`.
+- *Purpose*: one short sentence — what the package does or why the user
+  wants it.
+
+**Plugins table** — one row per entry in `homeos.yml`'s `plugins`:
+
+- *Plugin*: link the name to `plugins/<name>/`.
+- *Source*: the `url` from `homeos.yml`'s `plugins.<name>.url`, rendered
+  as a Markdown link with the text `<owner>/<repo>`. For a local plugin
+  (no URL), use `(local)`.
+- *Description*: the `description` from `plugins/<name>/plugin.yml`.
+
+**Notes** — leave it alone. This section belongs to the user.
 
 ### Ownership boundary
 
