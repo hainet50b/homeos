@@ -82,6 +82,7 @@ fn render() -> String {
     let version = env!("CARGO_PKG_VERSION");
     let commands_reference = build_commands_reference();
     TEMPLATE
+        .replace("\r\n", "\n")
         .replace("{{ version }}", version)
         .replace("{{ commands_reference }}", &commands_reference)
 }
