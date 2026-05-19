@@ -23,6 +23,30 @@
 
 ## Quick Tour
 
+### With an AI agent — the new standard
+
+The fastest way to use homeos is to let your AI coding agent drive it.
+
+```sh
+$ homeos init
+Initialized homeos at /home/<username>/.local/share/homeos
+
+$ homeos cd
+# A new shell drops you inside the homeos data directory.
+
+$ claude   # or codex, aider, cursor, ...
+```
+
+Then, in the agent's chat, describe what you want:
+
+> Install Neovim for me
+
+The agent reads the `AGENTS.md` that `homeos init` generated in the data directory, picks the right plugin for your OS, shows you a plan, applies it after your approval, updates the repository README, and commits the change. See [Using with AI agents](#using-with-ai-agents) for what happens under the hood.
+
+### Manual walk-through
+
+If you prefer to drive homeos directly, here is the same flow without an agent.
+
 1. Initialize a new repository
 
 ```sh
