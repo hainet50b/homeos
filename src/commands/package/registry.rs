@@ -1,5 +1,7 @@
 use crate::config::{Config, PackageConfig, PluginManifest};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
+use crate::output::OutputFormat;
 use crate::plan::prompt_confirm;
 use crate::state::State;
 use crate::topo::topological_sort;
@@ -20,6 +22,39 @@ fn list_to<W: Write>(ctx: &Context, writer: &mut W) -> Result<(), Box<dyn std::e
         Vec::new()
     };
 
+    match ctx.output_format() {
+        OutputFormat::Json => list_json(writer, &config, &installed_packages),
+        OutputFormat::Text => list_text(writer, &config, &installed_packages),
+    }
+}
+
+fn list_json<W: Write>(
+    writer: &mut W,
+    config: &Config,
+    installed_packages: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let rows: Vec<serde_json::Value> = config
+        .packages
+        .iter()
+        .map(|(name, pkg)| {
+            let installed = installed_packages.contains(name);
+            serde_json::json!({
+                "name": name,
+                "enabled": pkg.enabled,
+                "installed": installed,
+                "depends_on": pkg.depends_on,
+            })
+        })
+        .collect();
+    writeln!(writer, "{}", serde_json::Value::Array(rows))?;
+    Ok(())
+}
+
+fn list_text<W: Write>(
+    writer: &mut W,
+    config: &Config,
+    installed_packages: &[String],
+) -> Result<(), Box<dyn std::error::Error>> {
     let name_width = config
         .packages
         .keys()
@@ -91,12 +126,20 @@ pub fn add(
     let mut config = Config::load(&ctx.config_path())?;
 
     if config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' already exists").into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package '{package}' already exists"),
+        )
+        .into());
     }
 
     for dep in depends_on {
         if !config.packages.contains_key(dep.as_str()) {
-            return Err(format!("Dependency '{dep}' not found").into());
+            return Err(HomeosError::new(
+                reasons::DEPENDENCY_NOT_FOUND,
+                format!("Dependency '{dep}' not found"),
+            )
+            .into());
         }
     }
 
@@ -113,9 +156,12 @@ pub fn add(
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
         let topo_result = topological_sort(&test_config, &all_packages)?;
         if !topo_result.cycle.is_empty() {
-            return Err(format!(
-                "Circular dependency detected among packages: {}",
-                topo_result.cycle.join(", ")
+            return Err(HomeosError::new(
+                reasons::CIRCULAR_DEPENDENCY,
+                format!(
+                    "Circular dependency detected among packages: {}",
+                    topo_result.cycle.join(", ")
+                ),
             )
             .into());
         }
@@ -133,8 +179,9 @@ pub fn add(
 
     let pkg_dir = ctx.packages_dir().join(package);
     if pkg_dir.exists() {
-        return Err(format!(
-            "Package directory '{package}' already exists. Remove it first to re-create."
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package directory '{package}' already exists. Remove it first to re-create."),
         )
         .into());
     }
@@ -173,8 +220,11 @@ fn generate_plugin_scripts(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plugin_dir = ctx.plugins_dir().join(plugin_name);
     if !plugin_dir.exists() {
-        return Err(format!(
-            "Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}"
+        return Err(HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!(
+                "Plugin '{plugin_name}' not found. Add it first with: homeos plugin add {plugin_name}"
+            ),
         )
         .into());
     }
@@ -193,7 +243,11 @@ fn generate_plugin_scripts(
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err(format!("Missing required plugin parameters: {list}").into());
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!("Missing required plugin parameters: {list}"),
+            )
+            .into());
         }
     }
 
@@ -253,7 +307,11 @@ fn remove_to<R: BufRead, W: Write>(
 
     for package in packages {
         if !config.packages.contains_key(package.as_str()) {
-            return Err(format!("Package '{package}' not found").into());
+            return Err(HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+            .into());
         }
     }
 
@@ -262,8 +320,11 @@ fn remove_to<R: BufRead, W: Write>(
         let state = State::load(&state_path)?;
         for package in packages {
             if state.installed.contains(package) {
-                return Err(format!(
-                    "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+                return Err(HomeosError::new(
+                    reasons::PACKAGE_INSTALLED,
+                    format!(
+                        "Package '{package}' is currently installed. Uninstall it first with: homeos package uninstall {package}"
+                    ),
                 )
                 .into());
             }
@@ -285,8 +346,9 @@ fn remove_to<R: BufRead, W: Write>(
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err(format!(
-                "Cannot remove package '{package}' because it is depended on by: {list}"
+            return Err(HomeosError::new(
+                reasons::DEPENDENT_EXISTS,
+                format!("Cannot remove package '{package}' because it is depended on by: {list}"),
             )
             .into());
         }
@@ -317,7 +379,7 @@ fn remove_to<R: BufRead, W: Write>(
         }
     }
 
-    if !prompt_confirm(reader, writer) {
+    if !ctx.yes() && !prompt_confirm(reader, writer) {
         writeln!(writer, "Aborted.")?;
         return Ok(());
     }
@@ -354,10 +416,18 @@ fn rename_to<W: Write>(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(old) {
-        return Err(format!("Package '{old}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{old}' not found"),
+        )
+        .into());
     }
     if config.packages.contains_key(new) {
-        return Err(format!("Package '{new}' already exists").into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Package '{new}' already exists"),
+        )
+        .into());
     }
 
     let pkg_config = config.packages.remove(old).unwrap();
@@ -413,12 +483,20 @@ fn add_dep_to(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     for dependency in dependencies {
         if !config.packages.contains_key(dependency.as_str()) {
-            return Err(format!("Dependency '{dependency}' not found").into());
+            return Err(HomeosError::new(
+                reasons::DEPENDENCY_NOT_FOUND,
+                format!("Dependency '{dependency}' not found"),
+            )
+            .into());
         }
     }
 
@@ -434,9 +512,12 @@ fn add_dep_to(
         let all_packages: Vec<String> = test_config.packages.keys().cloned().collect();
         let topo_result = topological_sort(&test_config, &all_packages)?;
         if !topo_result.cycle.is_empty() {
-            return Err(format!(
-                "Circular dependency detected among packages: {}",
-                topo_result.cycle.join(", ")
+            return Err(HomeosError::new(
+                reasons::CIRCULAR_DEPENDENCY,
+                format!(
+                    "Circular dependency detected among packages: {}",
+                    topo_result.cycle.join(", ")
+                ),
             )
             .into());
         }
@@ -477,7 +558,11 @@ fn remove_dep_to(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -509,7 +594,11 @@ pub fn add_alias(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -535,7 +624,11 @@ pub fn remove_alias(
     let mut config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let pkg = config.packages.get_mut(package).unwrap();
@@ -556,10 +649,12 @@ pub fn enable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::err
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
-        let pkg = config
-            .packages
-            .get_mut(package.as_str())
-            .ok_or_else(|| format!("Package '{package}' not found"))?;
+        let pkg = config.packages.get_mut(package.as_str()).ok_or_else(|| {
+            HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+        })?;
 
         if pkg.enabled {
             println!("Package '{package}' is already enabled");
@@ -578,10 +673,12 @@ pub fn disable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::er
     let mut config = Config::load(&ctx.config_path())?;
 
     for package in packages {
-        let pkg = config
-            .packages
-            .get_mut(package.as_str())
-            .ok_or_else(|| format!("Package '{package}' not found"))?;
+        let pkg = config.packages.get_mut(package.as_str()).ok_or_else(|| {
+            HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+        })?;
 
         if !pkg.enabled {
             println!("Package '{package}' is already disabled");
@@ -607,10 +704,12 @@ fn info_to<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let pkg = config
-        .packages
-        .get(package)
-        .ok_or_else(|| format!("Package '{package}' not found"))?;
+    let pkg = config.packages.get(package).ok_or_else(|| {
+        HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+    })?;
 
     let state_path = ctx.state_path();
     let installed = if state_path.exists() {
@@ -621,6 +720,74 @@ fn info_to<W: Write>(
         false
     };
 
+    let dependents: Vec<String> = config
+        .packages
+        .iter()
+        .filter(|(_, p)| p.depends_on.contains(&package.to_string()))
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    let pkg_dir = ctx.packages_dir().join(package);
+
+    match ctx.output_format() {
+        OutputFormat::Json => info_json(writer, package, pkg, installed, &dependents, &pkg_dir),
+        OutputFormat::Text => info_text(writer, package, pkg, installed, &dependents, &pkg_dir),
+    }
+}
+
+fn info_json<W: Write>(
+    writer: &mut W,
+    package: &str,
+    pkg: &PackageConfig,
+    installed: bool,
+    dependents: &[String],
+    pkg_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let actions = ["install", "update", "uninstall"];
+    let extensions = super::all_script_extensions();
+
+    let scripts: Vec<serde_json::Value> = actions
+        .iter()
+        .flat_map(|action| {
+            extensions.iter().map(move |ext| {
+                let filename = format!("{action}.{ext}");
+                let script_path = pkg_dir.join(&filename);
+                let path = if script_path.is_file() {
+                    serde_json::Value::String(script_path.display().to_string())
+                } else {
+                    serde_json::Value::Null
+                };
+                serde_json::json!({
+                    "filename": filename,
+                    "path": path,
+                })
+            })
+        })
+        .collect();
+
+    let value = serde_json::json!({
+        "name": package,
+        "enabled": pkg.enabled,
+        "installed": installed,
+        "plugin": pkg.plugin,
+        "params": pkg.params,
+        "depends_on": pkg.depends_on,
+        "dependents": dependents,
+        "script_aliases": pkg.script_aliases,
+        "scripts": scripts,
+    });
+    writeln!(writer, "{value}")?;
+    Ok(())
+}
+
+fn info_text<W: Write>(
+    writer: &mut W,
+    package: &str,
+    pkg: &PackageConfig,
+    installed: bool,
+    dependents: &[String],
+    pkg_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(writer, "Package: {package}")?;
     writeln!(
         writer,
@@ -643,18 +810,11 @@ fn info_to<W: Write>(
         }
     }
 
-    let dependents: Vec<&String> = config
-        .packages
-        .iter()
-        .filter(|(_, p)| p.depends_on.contains(&package.to_string()))
-        .map(|(name, _)| name)
-        .collect();
-
     writeln!(writer, "Dependents:")?;
     if dependents.is_empty() {
         writeln!(writer, "  (none)")?;
     } else {
-        for dep in &dependents {
+        for dep in dependents {
             writeln!(writer, "  {dep}")?;
         }
     }
@@ -670,7 +830,6 @@ fn info_to<W: Write>(
 
     let actions = ["install", "update", "uninstall"];
     let extensions = super::all_script_extensions();
-    let pkg_dir = ctx.packages_dir().join(package);
 
     writeln!(writer, "Scripts:")?;
     for action in &actions {
@@ -700,7 +859,11 @@ fn cat_to<W: Write>(
     let config = Config::load(&ctx.config_path())?;
 
     if !config.packages.contains_key(package) {
-        return Err(format!("Package '{package}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PACKAGE_NOT_FOUND,
+            format!("Package '{package}' not found"),
+        )
+        .into());
     }
 
     let actions = ["install", "update", "uninstall"];
@@ -752,7 +915,11 @@ fn resolve_cd_target(
     let dir = match package {
         Some(pkg) => {
             if !config.packages.contains_key(pkg) {
-                return Err(format!("Package '{pkg}' not found").into());
+                return Err(HomeosError::new(
+                    reasons::PACKAGE_NOT_FOUND,
+                    format!("Package '{pkg}' not found"),
+                )
+                .into());
             }
             ctx.packages_dir().join(pkg)
         }
@@ -760,7 +927,11 @@ fn resolve_cd_target(
     };
 
     if !dir.exists() {
-        return Err(format!("Directory not found at {}", dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DIRECTORY_NOT_FOUND,
+            format!("Directory not found at {}", dir.display()),
+        )
+        .into());
     }
 
     Ok(dir)
@@ -790,6 +961,7 @@ fn skeleton_script_content(action: &str, ext: &str, package: &str) -> String {
 mod tests {
     use super::*;
     use crate::commands::package::{all_script_extensions, script_extension};
+    use crate::error::reasons;
     use crate::state::State;
     use std::collections::BTreeMap;
     use std::io::Cursor;
@@ -2233,6 +2405,62 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_yes_skips_prompt_and_removes() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ctx = ctx.with_yes(true);
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be removed from homeos.yml:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Aborted."));
+        assert!(written.contains("Removed package 'neovim'"));
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
+        assert!(config.packages.contains_key("ripgrep"));
+    }
+
+    #[test]
+    fn test_remove_yes_with_purge_skips_prompt_and_deletes_directory() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ctx = ctx.with_yes(true);
+        let mut reader = Cursor::new(b"");
+        let mut output = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            true,
+            &mut reader,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Removed package 'neovim' and removed directory"));
+        assert!(!pkg_dir.exists());
+    }
+
+    #[test]
     fn test_rename_updates_config_entry_key() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
@@ -3574,6 +3802,150 @@ mod tests {
     }
 
     #[test]
+    fn test_info_json_emits_object_with_all_fields() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n    script_aliases:\n      update: install\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let state = State {
+            installed: vec!["claude".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "claude", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["name"], "claude");
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["installed"], true);
+        assert_eq!(value["plugin"], serde_json::Value::Null);
+        assert_eq!(value["params"], serde_json::json!({}));
+        assert_eq!(
+            value["depends_on"],
+            serde_json::json!(["bubblewrap", "socat"])
+        );
+        assert_eq!(value["dependents"], serde_json::json!([]));
+        assert_eq!(
+            value["script_aliases"],
+            serde_json::json!({"update": "install"})
+        );
+        assert!(value["scripts"].is_array());
+    }
+
+    #[test]
+    fn test_info_json_emits_null_plugin_when_absent() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["plugin"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_plugin_and_params_when_present() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim:\n    plugin: dnf\n    params:\n      name: neovim.x86_64\n",
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["plugin"], "dnf");
+        assert_eq!(
+            value["params"],
+            serde_json::json!({"name": "neovim.x86_64"})
+        );
+    }
+
+    #[test]
+    fn test_info_json_emits_dependents() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  app:\n    depends_on: [lib]\n  lib: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "lib", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["dependents"], serde_json::json!(["app"]));
+    }
+
+    #[test]
+    fn test_info_json_scripts_have_path_or_null() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("install.sh"), "#!/usr/bin/env sh\n").unwrap();
+        let install_sh_path = pkg_dir.join("install.sh");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let scripts = value["scripts"].as_array().unwrap();
+        assert_eq!(scripts.len(), 6);
+        let install_sh = scripts
+            .iter()
+            .find(|s| s["filename"] == "install.sh")
+            .unwrap();
+        assert_eq!(install_sh["path"], install_sh_path.display().to_string());
+        let install_ps1 = scripts
+            .iter()
+            .find(|s| s["filename"] == "install.ps1")
+            .unwrap();
+        assert_eq!(install_ps1["path"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_single_line() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "neovim", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let non_trailing = text.trim_end_matches('\n');
+        assert!(!non_trailing.contains('\n'));
+        assert!(text.ends_with('\n'));
+    }
+
+    #[test]
     fn test_cat_displays_all_scripts() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
@@ -3710,6 +4082,154 @@ mod tests {
     }
 
     #[test]
+    fn test_cat_package_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = cat_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_add_already_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "neovim",
+            &[],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_add_dependency_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "ripgrep",
+            &["missing".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DEPENDENCY_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_remove_dependent_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  base: {}\n  child:\n    depends_on:\n      - base\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut reader = Cursor::new("y\n");
+        let mut writer = Vec::new();
+
+        // Act
+        let result = remove_to(&ctx, &["base".to_string()], false, &mut reader, &mut writer);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DEPENDENT_EXISTS);
+    }
+
+    #[test]
+    fn test_remove_package_installed_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut reader = Cursor::new("y\n");
+        let mut writer = Vec::new();
+
+        // Act
+        let result = remove_to(
+            &ctx,
+            &["neovim".to_string()],
+            false,
+            &mut reader,
+            &mut writer,
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_INSTALLED);
+    }
+
+    #[test]
+    fn test_rename_target_already_exists_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  old: {}\n  new: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+        let mut writer = Vec::new();
+
+        // Act
+        let result = rename_to(&ctx, "old", "new", &mut writer);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_enable_package_not_found_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+
+        // Act
+        let result = enable(&ctx, &["nonexistent".to_string()]);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
+    }
+
+    #[test]
     fn test_cat_errors_when_not_initialized() {
         // Arrange
         let tmp = TempDir::new().unwrap();
@@ -3794,5 +4314,117 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_json_emits_array_of_objects() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert_eq!(array.len(), 2);
+        // BTreeMap iterates alphabetically: neovim, ripgrep
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[1]["name"], "ripgrep");
+    }
+
+    #[test]
+    fn test_list_json_emits_empty_array_when_no_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().expect("expected JSON array");
+        assert!(array.is_empty());
+    }
+
+    #[test]
+    fn test_list_json_enabled_field_is_boolean() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    enabled: false\n  ripgrep: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["enabled"], false);
+        assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["enabled"], true);
+    }
+
+    #[test]
+    fn test_list_json_installed_field_reflects_state() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["installed"], true);
+        assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["installed"], false);
+    }
+
+    #[test]
+    fn test_list_json_depends_on_field_is_array() {
+        // Arrange
+        let (_tmp, ctx) = fixture(
+            "packages:\n  claude:\n    depends_on: [bubblewrap, socat]\n  bubblewrap: {}\n  socat: {}\n",
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        let claude = array
+            .iter()
+            .find(|v| v["name"] == "claude")
+            .expect("claude entry");
+        assert_eq!(
+            claude["depends_on"],
+            serde_json::json!(["bubblewrap", "socat"])
+        );
+        let bubblewrap = array
+            .iter()
+            .find(|v| v["name"] == "bubblewrap")
+            .expect("bubblewrap entry");
+        assert_eq!(bubblewrap["depends_on"], serde_json::json!([]));
     }
 }

@@ -1,7 +1,10 @@
+use crate::output::OutputFormat;
 use std::path::{Path, PathBuf};
 
 pub struct Context {
     data_dir: PathBuf,
+    output_format: OutputFormat,
+    yes: bool,
 }
 
 impl Context {
@@ -13,18 +16,45 @@ impl Context {
                     .expect("could not determine data directory")
                     .join("homeos")
             });
-        Self { data_dir }
+        Self {
+            data_dir,
+            output_format: OutputFormat::default(),
+            yes: false,
+        }
     }
 
     pub fn try_new() -> Option<Self> {
         let data_dir = std::env::var_os("HOMEOS_DATA_DIR")
             .map(PathBuf::from)
             .or_else(|| dirs::data_local_dir().map(|d| d.join("homeos")))?;
-        Some(Self { data_dir })
+        Some(Self {
+            data_dir,
+            output_format: OutputFormat::default(),
+            yes: false,
+        })
+    }
+
+    pub fn with_output_format(mut self, output_format: OutputFormat) -> Self {
+        self.output_format = output_format;
+        self
+    }
+
+    pub fn with_yes(mut self, yes: bool) -> Self {
+        self.yes = yes;
+        self
     }
 
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    #[allow(dead_code)]
+    pub fn output_format(&self) -> OutputFormat {
+        self.output_format
+    }
+
+    pub fn yes(&self) -> bool {
+        self.yes
     }
 
     pub fn config_path(&self) -> PathBuf {
@@ -192,6 +222,42 @@ mod tests {
         // Assert
         let ctx = sut.expect("try_new should return Some when env var is set");
         assert_eq!(ctx.data_dir(), Path::new("/tmp/try-new-homeos"));
+    }
+
+    #[test]
+    fn test_default_output_format_is_text() {
+        // Arrange
+        let sut = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let result = sut.output_format();
+
+        // Assert
+        assert_eq!(result, OutputFormat::Text);
+    }
+
+    #[test]
+    fn test_with_output_format_sets_format() {
+        // Arrange
+        let ctx = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let sut = ctx.with_output_format(OutputFormat::Json);
+
+        // Assert
+        assert_eq!(sut.output_format(), OutputFormat::Json);
+    }
+
+    #[test]
+    fn test_with_output_format_preserves_data_dir() {
+        // Arrange
+        let ctx = Context::new(Some(PathBuf::from("/tmp/test-homeos")));
+
+        // Act
+        let sut = ctx.with_output_format(OutputFormat::Json);
+
+        // Assert
+        assert_eq!(sut.data_dir(), Path::new("/tmp/test-homeos"));
     }
 
     #[test]

@@ -16,10 +16,15 @@ mod config;
 mod context;
 #[cfg(test)]
 mod env_test;
+mod error;
 mod git;
+mod output;
 mod plan;
 mod state;
 mod topo;
+mod validation;
+
+use output::OutputFormat;
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +39,18 @@ pub struct Cli {
     /// Override the data directory (defaults to OS data directory)
     #[arg(long, global = true, hide = true)]
     pub data_dir: Option<PathBuf>,
+
+    /// Output format
+    #[arg(long, global = true, value_enum, conflicts_with = "json")]
+    pub output: Option<OutputFormat>,
+
+    /// Shorthand for --output json
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Skip the confirmation prompt and proceed immediately
+    #[arg(long, global = true)]
+    pub yes: bool,
 }
 
 #[derive(Subcommand)]
@@ -70,6 +87,8 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: commands::completion::CompletionShell,
     },
+    /// Render the AGENTS.md guide for AI agents to stdout
+    AgentsMd,
 }
 
 #[derive(Subcommand)]
@@ -260,38 +279,108 @@ pub enum PackageCommands {
     },
 }
 
-fn main() {
-    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
-
-    let cli = Cli::parse();
-    let ctx = context::Context::new(cli.data_dir);
-
-    match cli.command {
-        Commands::Init { url, strip_git } => {
-            if let Err(e) = commands::init::run(&ctx, url.as_deref(), strip_git) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
+fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
+    use validation::{validate_name, validate_url};
+    match command {
+        Commands::Init { url, .. } => {
+            if let Some(u) = url {
+                validate_url(u)?;
             }
         }
-        Commands::Cd => {
-            if let Err(e) = commands::cd::run(&ctx) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
-        Commands::Apply { dry_run } => {
-            if let Err(e) = commands::package::apply(&ctx, dry_run) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
+        Commands::Cd
+        | Commands::Apply { .. }
+        | Commands::Completion { .. }
+        | Commands::AgentsMd => {}
         Commands::Package { command } => match command {
-            PackageCommands::List => {
-                if let Err(e) = commands::package::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
+            PackageCommands::List => {}
+            PackageCommands::Add {
+                package,
+                depends_on,
+                plugin,
+                ..
+            } => {
+                validate_name(package)?;
+                for d in depends_on {
+                    validate_name(d)?;
+                }
+                if let Some(p) = plugin {
+                    validate_name(p)?;
                 }
             }
+            PackageCommands::Remove { packages, .. } => {
+                for p in packages {
+                    validate_name(p)?;
+                }
+            }
+            PackageCommands::Rename { old, new } => {
+                validate_name(old)?;
+                validate_name(new)?;
+            }
+            PackageCommands::AddDep {
+                package,
+                dependency,
+            }
+            | PackageCommands::RemoveDep {
+                package,
+                dependency,
+            } => {
+                validate_name(package)?;
+                for d in dependency {
+                    validate_name(d)?;
+                }
+            }
+            PackageCommands::AddAlias { package, .. }
+            | PackageCommands::RemoveAlias { package, .. }
+            | PackageCommands::Info { package }
+            | PackageCommands::Cat { package } => {
+                validate_name(package)?;
+            }
+            PackageCommands::Cd { package } => {
+                if let Some(p) = package {
+                    validate_name(p)?;
+                }
+            }
+            PackageCommands::Enable { packages }
+            | PackageCommands::Disable { packages }
+            | PackageCommands::Install { packages, .. }
+            | PackageCommands::Update { packages, .. }
+            | PackageCommands::Uninstall { packages, .. } => {
+                for p in packages {
+                    validate_name(p)?;
+                }
+            }
+        },
+        Commands::Plugin { command } => match command {
+            PluginCommands::List | PluginCommands::ListRemote => {}
+            PluginCommands::Add { plugin, url, .. } => {
+                validate_name(plugin)?;
+                if let Some(u) = url {
+                    validate_url(u)?;
+                }
+            }
+            PluginCommands::Remove { plugin, .. }
+            | PluginCommands::Info { plugin }
+            | PluginCommands::Cat { plugin } => {
+                validate_name(plugin)?;
+            }
+            PluginCommands::Cd { plugin } => {
+                if let Some(p) = plugin {
+                    validate_name(p)?;
+                }
+            }
+        },
+    }
+    Ok(())
+}
+
+fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std::error::Error>> {
+    validate_args(&command)?;
+    match command {
+        Commands::Init { url, strip_git } => commands::init::run(ctx, url.as_deref(), strip_git),
+        Commands::Cd => commands::cd::run(ctx),
+        Commands::Apply { dry_run } => commands::package::apply(ctx, dry_run),
+        Commands::Package { command } => match command {
+            PackageCommands::List => commands::package::list(ctx),
             PackageCommands::Add {
                 package,
                 depends_on,
@@ -302,163 +391,80 @@ fn main() {
                 let script_aliases_map: BTreeMap<String, String> =
                     script_aliases.into_iter().collect();
                 let params_map: BTreeMap<String, String> = params.into_iter().collect();
-                if let Err(e) = commands::package::add(
-                    &ctx,
+                commands::package::add(
+                    ctx,
                     &package,
                     &depends_on,
                     &script_aliases_map,
                     plugin.as_deref(),
                     &params_map,
-                ) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                )
             }
             PackageCommands::Remove { packages, purge } => {
-                if let Err(e) = commands::package::remove(&ctx, &packages, purge) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::remove(ctx, &packages, purge)
             }
-            PackageCommands::Rename { old, new } => {
-                if let Err(e) = commands::package::rename(&ctx, &old, &new) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PackageCommands::Rename { old, new } => commands::package::rename(ctx, &old, &new),
             PackageCommands::AddDep {
                 package,
                 dependency,
-            } => {
-                if let Err(e) = commands::package::add_dep(&ctx, &package, &dependency) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::add_dep(ctx, &package, &dependency),
             PackageCommands::RemoveDep {
                 package,
                 dependency,
-            } => {
-                if let Err(e) = commands::package::remove_dep(&ctx, &package, &dependency) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::remove_dep(ctx, &package, &dependency),
             PackageCommands::AddAlias { package, alias } => {
-                if let Err(e) = commands::package::add_alias(&ctx, &package, &alias) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::add_alias(ctx, &package, &alias)
             }
             PackageCommands::RemoveAlias { package, alias } => {
-                if let Err(e) = commands::package::remove_alias(&ctx, &package, &alias) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::remove_alias(ctx, &package, &alias)
             }
-            PackageCommands::Enable { packages } => {
-                if let Err(e) = commands::package::enable(&ctx, &packages) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Disable { packages } => {
-                if let Err(e) = commands::package::disable(&ctx, &packages) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Info { package } => {
-                if let Err(e) = commands::package::info(&ctx, &package) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Cat { package } => {
-                if let Err(e) = commands::package::cat(&ctx, &package) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PackageCommands::Cd { package } => {
-                if let Err(e) = commands::package::cd(&ctx, package.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PackageCommands::Enable { packages } => commands::package::enable(ctx, &packages),
+            PackageCommands::Disable { packages } => commands::package::disable(ctx, &packages),
+            PackageCommands::Info { package } => commands::package::info(ctx, &package),
+            PackageCommands::Cat { package } => commands::package::cat(ctx, &package),
+            PackageCommands::Cd { package } => commands::package::cd(ctx, package.as_deref()),
             PackageCommands::Install { packages, dry_run } => {
-                if let Err(e) = commands::package::install(&ctx, &packages, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::install(ctx, &packages, dry_run)
             }
             PackageCommands::Update { packages, dry_run } => {
-                if let Err(e) = commands::package::update(&ctx, &packages, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::package::update(ctx, &packages, dry_run)
             }
             PackageCommands::Uninstall {
                 packages,
                 all,
                 dry_run,
-            } => {
-                if let Err(e) = commands::package::uninstall(&ctx, &packages, all, dry_run) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            } => commands::package::uninstall(ctx, &packages, all, dry_run),
         },
         Commands::Plugin { command } => match command {
-            PluginCommands::List => {
-                if let Err(e) = commands::plugin::list(&ctx) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::ListRemote => {
-                if let Err(e) = commands::plugin::list_remote() {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PluginCommands::List => commands::plugin::list(ctx),
+            PluginCommands::ListRemote => commands::plugin::list_remote(ctx),
             PluginCommands::Add { plugin, url, local } => {
-                if let Err(e) = commands::plugin::add(&ctx, &plugin, url.as_deref(), local) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::plugin::add(ctx, &plugin, url.as_deref(), local)
             }
             PluginCommands::Remove { plugin, purge } => {
-                if let Err(e) = commands::plugin::remove(&ctx, &plugin, purge) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                commands::plugin::remove(ctx, &plugin, purge)
             }
-            PluginCommands::Info { plugin } => {
-                if let Err(e) = commands::plugin::info(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cat { plugin } => {
-                if let Err(e) = commands::plugin::cat(&ctx, &plugin) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
-            PluginCommands::Cd { plugin } => {
-                if let Err(e) = commands::plugin::cd(&ctx, plugin.as_deref()) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            PluginCommands::Info { plugin } => commands::plugin::info(ctx, &plugin),
+            PluginCommands::Cat { plugin } => commands::plugin::cat(ctx, &plugin),
+            PluginCommands::Cd { plugin } => commands::plugin::cd(ctx, plugin.as_deref()),
         },
-        Commands::Completion { shell } => {
-            if let Err(e) = commands::completion::run(shell) {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
-        }
+        Commands::Completion { shell } => commands::completion::run(shell),
+        Commands::AgentsMd => commands::agents_md::run(),
+    }
+}
+
+fn main() {
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
+
+    let cli = Cli::parse();
+    let output_format = OutputFormat::resolve(cli.output, cli.json);
+    let ctx = context::Context::new(cli.data_dir)
+        .with_output_format(output_format)
+        .with_yes(cli.yes);
+
+    if let Err(e) = dispatch(&ctx, cli.command) {
+        error::report(e.as_ref(), output_format);
+        std::process::exit(1);
     }
 }
 
@@ -1043,5 +1049,416 @@ mod tests {
         } else {
             panic!("Expected PackageCommands::Uninstall");
         }
+    }
+
+    #[test]
+    fn test_output_flag_defaults_to_none() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.output.is_none());
+        assert!(!cli.json);
+    }
+
+    #[test]
+    fn test_output_flag_parses_json() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--output", "json", "apply"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_output_flag_parses_text() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--output", "text", "apply"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Text));
+    }
+
+    #[test]
+    fn test_json_shorthand_flag() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--json", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.json);
+        assert!(cli.output.is_none());
+    }
+
+    #[test]
+    fn test_output_and_json_flags_conflict() {
+        // Arrange & Act
+        let result = Cli::try_parse_from(["homeos", "--output", "json", "--json", "apply"]);
+
+        // Assert
+        let err = match result {
+            Ok(_) => panic!("expected --output and --json to conflict"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn test_output_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "list", "--output", "json"]).unwrap();
+
+        // Assert
+        assert_eq!(cli.output, Some(OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_json_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "list", "--json"]).unwrap();
+
+        // Assert
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn test_validate_args_accepts_well_formed_package_add() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "add", "neovim"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_path_traversal_in_package_name() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "info", "../etc"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_plugin_name() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "plugin", "info", "BadName"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_dependency_in_package_add() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "package",
+            "add",
+            "claude",
+            "--depends-on",
+            "foo/bar",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_plugin_value_in_package_add() {
+        // Arrange
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "add", "claude", "--plugin", "Foo Bar"])
+                .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_validates_every_element_in_packages_list() {
+        // Arrange — first element valid, second element rejected
+        let cli =
+            Cli::try_parse_from(["homeos", "package", "install", "neovim", "bad/name"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_invalid_rename_new() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "package", "rename", "old", ".hidden"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_skips_validation_when_no_names_present() {
+        // Arrange — `package list` carries no name args
+        let cli = Cli::try_parse_from(["homeos", "package", "list"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_skips_optional_package_when_none() {
+        // Arrange — `package cd` without an argument
+        let cli = Cli::try_parse_from(["homeos", "package", "cd"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_validates_optional_package_when_some() {
+        // Arrange — `package cd <name>` with a bad name
+        let cli = Cli::try_parse_from(["homeos", "package", "cd", "-rf"]);
+
+        // Assert clap rejects the leading-dash form at parse time — it
+        // looks like an unknown flag. Validation is a defense-in-depth
+        // layer on top of clap, not a replacement.
+        assert!(cli.is_err());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_init_without_url() {
+        // Arrange — scaffold mode has no URL to validate
+        let cli = Cli::try_parse_from(["homeos", "init"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_init_with_https_url() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "init", "https://github.com/hainet50b/dotfiles"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_unsupported_scheme() {
+        // Arrange — `file://` is not in the allowed scheme list
+        let cli = Cli::try_parse_from(["homeos", "init", "file:///etc/passwd"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_no_scheme() {
+        // Arrange — bare host without explicit scheme
+        let cli = Cli::try_parse_from(["homeos", "init", "github.com/user/repo"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_percent_encoded_dotdot() {
+        // Arrange — common URL-encoded path traversal payload
+        let cli =
+            Cli::try_parse_from(["homeos", "init", "https://example.com/%2e%2e/etc"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_init_url_with_query_string() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "init", "https://example.com/repo.git?inject=1"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_accepts_plugin_add_without_url() {
+        // Arrange — URL is optional; auto-resolves to the official repo
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "dnf"]).unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_accepts_plugin_add_with_https_url() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "plugin",
+            "add",
+            "dnf",
+            "https://github.com/hainet50b/homeos-plugin-dnf",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_args_rejects_plugin_add_url_with_unsupported_scheme() {
+        // Arrange
+        let cli = Cli::try_parse_from(["homeos", "plugin", "add", "evil", "javascript:alert(1)"])
+            .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_validate_args_rejects_plugin_add_url_with_query_string() {
+        // Arrange
+        let cli = Cli::try_parse_from([
+            "homeos",
+            "plugin",
+            "add",
+            "dnf",
+            "https://example.com/repo.git?evil=1",
+        ])
+        .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+    }
+
+    #[test]
+    fn test_yes_flag_defaults_to_false() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply"]).unwrap();
+
+        // Assert
+        assert!(!cli.yes);
+    }
+
+    #[test]
+    fn test_yes_flag_is_global() {
+        // Arrange & Act — accept after the subcommand
+        let cli = Cli::try_parse_from(["homeos", "package", "install", "neovim", "--yes"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+    }
+
+    #[test]
+    fn test_yes_flag_compatible_with_json() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "--json", "--yes", "apply"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn test_yes_flag_compatible_with_dry_run() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "apply", "--dry-run", "--yes"]).unwrap();
+
+        // Assert
+        assert!(cli.yes);
+        if let Commands::Apply { dry_run } = cli.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Commands::Apply");
+        }
+    }
+
+    #[test]
+    fn test_validate_args_validates_plugin_name_before_url() {
+        // Arrange — both name and URL are invalid; name check should fire first
+        let cli =
+            Cli::try_parse_from(["homeos", "plugin", "add", "Bad/Name", "javascript:alert(1)"])
+                .unwrap();
+
+        // Act
+        let result = validate_args(&cli.command);
+
+        // Assert — error message should reference the name, not the URL
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, error::reasons::VALIDATION_ERROR);
+        assert!(
+            err.message.contains("Name 'Bad/Name'"),
+            "expected name-validation message, got: {}",
+            err.message
+        );
     }
 }

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
 use crate::git;
 use std::fs;
 
@@ -12,7 +13,11 @@ pub fn run(
     let config_path = ctx.config_path();
 
     if config_path.exists() {
-        return Err(format!("Already initialized at {}", data_dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::ALREADY_EXISTS,
+            format!("Already initialized at {}", data_dir.display()),
+        )
+        .into());
     }
 
     let data_dir_is_non_empty = data_dir
@@ -20,7 +25,11 @@ pub fn run(
         .map(|mut iter| iter.next().is_some())
         .unwrap_or(false);
     if data_dir_is_non_empty {
-        return Err(format!("Data directory at {} is not empty", data_dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DATA_DIR_NOT_EMPTY,
+            format!("Data directory at {} is not empty", data_dir.display()),
+        )
+        .into());
     }
 
     if let Some(url) = url {
@@ -32,7 +41,11 @@ pub fn run(
 
         if !config_path.exists() {
             fs::remove_dir_all(data_dir)?;
-            return Err("Not a valid homeos repository. Cloned directory removed.".into());
+            return Err(HomeosError::new(
+                reasons::NOT_A_VALID_HOMEOS_REPO,
+                "Not a valid homeos repository. Cloned directory removed.",
+            )
+            .into());
         }
 
         if strip_git {
@@ -41,6 +54,8 @@ pub fn run(
                 fs::remove_dir_all(&git_dir)?;
             }
         }
+
+        crate::commands::agents_md::write_files(data_dir)?;
 
         println!(
             "Initialized homeos at {} (cloned from {})",
@@ -59,8 +74,12 @@ pub fn run(
 
         let gitignore_path = ctx.gitignore_path();
         if !gitignore_path.exists() {
-            fs::write(&gitignore_path, "state.yml\n")?;
+            fs::write(&gitignore_path, "state.yml\nAGENTS.md\nCLAUDE.md\n")?;
         }
+
+        crate::commands::agents_md::write_files(data_dir)?;
+
+        git::init(data_dir)?;
 
         println!("Initialized homeos at {}", data_dir.display());
     }
@@ -71,6 +90,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{HomeosError, reasons};
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -194,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_creates_gitignore_excluding_state_yml() {
+    fn test_init_creates_gitignore_excluding_state_yml_and_agents_md() {
         // Arrange
         let (_tmp, ctx) = fixture();
 
@@ -205,7 +225,7 @@ mod tests {
         let gitignore_path = ctx.gitignore_path();
         assert!(gitignore_path.exists());
         let content = fs::read_to_string(&gitignore_path).unwrap();
-        assert_eq!(content, "state.yml\n");
+        assert_eq!(content, "state.yml\nAGENTS.md\nCLAUDE.md\n");
     }
 
     #[test]
@@ -373,6 +393,234 @@ mod tests {
         // Assert — scaffold mode ignores strip_git
         assert!(ctx.data_dir().exists());
         assert!(ctx.config_path().exists());
+    }
+
+    #[test]
+    fn test_init_already_initialized_reason_is_already_exists() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        run(&ctx, None, false).unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::ALREADY_EXISTS);
+    }
+
+    #[test]
+    fn test_init_data_dir_not_empty_reason_is_data_dir_not_empty() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        fs::create_dir_all(ctx.data_dir()).unwrap();
+        fs::write(ctx.data_dir().join("stray.txt"), "preexisting\n").unwrap();
+
+        // Act
+        let result = run(&ctx, None, false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DATA_DIR_NOT_EMPTY);
+    }
+
+    #[test]
+    fn test_init_with_url_invalid_url_reason_is_git_clone_failed() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        let result = run(&ctx, Some("not-a-valid-url"), false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::GIT_CLONE_FAILED);
+    }
+
+    #[test]
+    fn test_init_with_url_rejects_repo_without_homeos_yml_reason() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_local_git_repo(source_dir.path());
+
+        // Act
+        let result = run(&ctx, Some(&source_dir.path().to_string_lossy()), false);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::NOT_A_VALID_HOMEOS_REPO);
+    }
+
+    #[test]
+    fn test_init_scaffold_writes_agents_md() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let expected_marker = format!("<!-- generated by homeos {} -->", env!("CARGO_PKG_VERSION"));
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert
+        let agents_md = ctx.data_dir().join("AGENTS.md");
+        assert!(agents_md.exists());
+        let content = fs::read_to_string(&agents_md).unwrap();
+        assert!(
+            content.starts_with(&expected_marker),
+            "expected version marker on first line, got: {:?}",
+            content.lines().next()
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_init_scaffold_creates_claude_md_symlink_to_agents_md() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert
+        let claude_md = ctx.data_dir().join("CLAUDE.md");
+        let metadata = fs::symlink_metadata(&claude_md).unwrap();
+        assert!(metadata.file_type().is_symlink());
+        let target = fs::read_link(&claude_md).unwrap();
+        assert_eq!(target, std::path::PathBuf::from("AGENTS.md"));
+        // Reading through the symlink yields the AGENTS.md content.
+        let resolved = fs::read_to_string(&claude_md).unwrap();
+        let agents_content = fs::read_to_string(ctx.data_dir().join("AGENTS.md")).unwrap();
+        assert_eq!(resolved, agents_content);
+    }
+
+    #[test]
+    fn test_init_with_url_writes_agents_md() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+        let source_dir = TempDir::new().unwrap();
+        create_source_repo_with_config(source_dir.path());
+        let expected_marker = format!("<!-- generated by homeos {} -->", env!("CARGO_PKG_VERSION"));
+
+        // Act
+        run(&ctx, Some(&source_dir.path().to_string_lossy()), false).unwrap();
+
+        // Assert
+        let agents_md = ctx.data_dir().join("AGENTS.md");
+        assert!(agents_md.exists());
+        let content = fs::read_to_string(&agents_md).unwrap();
+        assert!(content.starts_with(&expected_marker));
+        assert!(ctx.data_dir().join("CLAUDE.md").exists());
+    }
+
+    #[test]
+    fn test_init_gitignore_excludes_claude_md() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert
+        let content = fs::read_to_string(ctx.gitignore_path()).unwrap();
+        assert!(content.contains("CLAUDE.md"));
+        assert!(content.contains("AGENTS.md"));
+        assert!(!content.contains("AGENTS.local.md"));
+    }
+
+    #[test]
+    fn test_init_scaffold_initializes_git_repo() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — scaffold mode creates a .git directory so the data dir is
+        // a git repository from the moment it exists.
+        let git_dir = ctx.data_dir().join(".git");
+        assert!(git_dir.exists());
+        assert!(git_dir.is_dir());
+    }
+
+    #[test]
+    fn test_init_scaffold_git_repo_tracks_scaffolded_files() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — `git status` succeeds against the data dir, confirming
+        // the directory is a valid working tree and the scaffolded files
+        // are visible to git (homeos.yml is tracked; state.yml/AGENTS.md
+        // are excluded via .gitignore).
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &ctx.data_dir().to_string_lossy(),
+                "status",
+                "--porcelain",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git status failed in data dir");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            stdout.contains("homeos.yml"),
+            "expected homeos.yml in `git status`, got: {stdout}"
+        );
+        assert!(
+            stdout.contains(".gitignore"),
+            "expected .gitignore in `git status`, got: {stdout}"
+        );
+        assert!(
+            !stdout.contains("state.yml"),
+            "state.yml should be ignored, got: {stdout}"
+        );
+        assert!(
+            !stdout.contains("AGENTS.md"),
+            "AGENTS.md should be ignored, got: {stdout}"
+        );
+    }
+
+    #[test]
+    fn test_init_scaffold_does_not_create_commits() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — homeos init must NOT create commits; the agent walks the
+        // user through the initial commit per the AGENTS.md "First-time
+        // setup" guide. `git rev-list HEAD` errors when no commits exist.
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &ctx.data_dir().to_string_lossy(),
+                "rev-list",
+                "--count",
+                "HEAD",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "expected no commits, but rev-list succeeded with stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
     }
 
     #[test]

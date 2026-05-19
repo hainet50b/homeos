@@ -1,5 +1,7 @@
-use crate::config::{Config, PluginManifest};
+use crate::config::{Config, PluginConfig, PluginManifest};
 use crate::context::Context;
+use crate::error::{HomeosError, reasons};
+use crate::output::OutputFormat;
 use std::io::Write;
 use std::process::Command;
 
@@ -14,10 +16,12 @@ fn info_to<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
-    let plugin_config = config
-        .plugins
-        .get(plugin)
-        .ok_or_else(|| format!("Plugin '{plugin}' not found"))?;
+    let plugin_config = config.plugins.get(plugin).ok_or_else(|| {
+        HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin}' not found"),
+        )
+    })?;
 
     let plugin_dir = ctx.plugins_dir().join(plugin);
 
@@ -29,13 +33,82 @@ fn info_to<W: Write>(
     };
     let description = manifest
         .as_ref()
-        .map(|m| m.description.as_str())
-        .unwrap_or("");
+        .map(|m| m.description.clone())
+        .unwrap_or_default();
     let params: Vec<String> = manifest
         .as_ref()
         .map(|m| m.params.clone())
         .unwrap_or_default();
 
+    match ctx.output_format() {
+        OutputFormat::Json => info_json(
+            writer,
+            plugin,
+            plugin_config,
+            &description,
+            &params,
+            &plugin_dir,
+        ),
+        OutputFormat::Text => info_text(
+            writer,
+            plugin,
+            plugin_config,
+            &description,
+            &params,
+            &plugin_dir,
+        ),
+    }
+}
+
+fn info_json<W: Write>(
+    writer: &mut W,
+    plugin: &str,
+    plugin_config: &PluginConfig,
+    description: &str,
+    params: &[String],
+    plugin_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let actions = ["install", "update", "uninstall"];
+    let extensions = ["sh", "ps1"];
+
+    let templates: Vec<serde_json::Value> = actions
+        .iter()
+        .flat_map(|action| {
+            extensions.iter().map(move |ext| {
+                let filename = format!("{action}.{ext}.tmpl");
+                let file_path = plugin_dir.join(&filename);
+                let path = if file_path.is_file() {
+                    serde_json::Value::String(file_path.display().to_string())
+                } else {
+                    serde_json::Value::Null
+                };
+                serde_json::json!({
+                    "filename": filename,
+                    "path": path,
+                })
+            })
+        })
+        .collect();
+
+    let value = serde_json::json!({
+        "name": plugin,
+        "description": description,
+        "url": plugin_config.url,
+        "parameters": params,
+        "templates": templates,
+    });
+    writeln!(writer, "{value}")?;
+    Ok(())
+}
+
+fn info_text<W: Write>(
+    writer: &mut W,
+    plugin: &str,
+    plugin_config: &PluginConfig,
+    description: &str,
+    params: &[String],
+    plugin_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(writer, "Plugin: {plugin}")?;
     writeln!(writer, "Description: {description}")?;
     writeln!(
@@ -48,7 +121,7 @@ fn info_to<W: Write>(
     if params.is_empty() {
         writeln!(writer, "  (none)")?;
     } else {
-        for p in &params {
+        for p in params {
             writeln!(writer, "  {p}")?;
         }
     }
@@ -84,7 +157,11 @@ fn cat_to<W: Write>(
     let config = Config::load(&ctx.config_path())?;
 
     if !config.plugins.contains_key(plugin) {
-        return Err(format!("Plugin '{plugin}' not found").into());
+        return Err(HomeosError::new(
+            reasons::PLUGIN_NOT_FOUND,
+            format!("Plugin '{plugin}' not found"),
+        )
+        .into());
     }
 
     let plugin_dir = ctx.plugins_dir().join(plugin);
@@ -140,7 +217,11 @@ fn resolve_cd_target(
     let dir = match plugin {
         Some(plugin_name) => {
             if !config.plugins.contains_key(plugin_name) {
-                return Err(format!("Plugin '{plugin_name}' not found").into());
+                return Err(HomeosError::new(
+                    reasons::PLUGIN_NOT_FOUND,
+                    format!("Plugin '{plugin_name}' not found"),
+                )
+                .into());
             }
             ctx.plugins_dir().join(plugin_name)
         }
@@ -148,7 +229,11 @@ fn resolve_cd_target(
     };
 
     if !dir.exists() {
-        return Err(format!("Directory not found at {}", dir.display()).into());
+        return Err(HomeosError::new(
+            reasons::DIRECTORY_NOT_FOUND,
+            format!("Directory not found at {}", dir.display()),
+        )
+        .into());
     }
 
     Ok(dir)
@@ -158,6 +243,7 @@ fn resolve_cd_target(
 mod tests {
     use super::*;
     use crate::config::{Config, PluginConfig};
+    use crate::error::reasons;
     use tempfile::TempDir;
 
     fn fixture(base_dir: &TempDir) -> Context {
@@ -433,6 +519,24 @@ mod tests {
     }
 
     #[test]
+    fn test_info_plugin_not_found_reason() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "nonexistent", &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PLUGIN_NOT_FOUND);
+    }
+
+    #[test]
     fn test_info_errors_when_not_initialized() {
         // Arrange
         let base_dir = TempDir::new().unwrap();
@@ -444,6 +548,170 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_info_json_emits_object_with_all_fields() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://github.com/hainet50b/homeos-plugin-dnf".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: DNF package manager plugin for homeos.\nparams:\n  - name\n",
+        )
+        .unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["name"], "dnf");
+        assert_eq!(
+            value["description"],
+            "DNF package manager plugin for homeos."
+        );
+        assert_eq!(
+            value["url"],
+            "https://github.com/hainet50b/homeos-plugin-dnf"
+        );
+        assert_eq!(value["parameters"], serde_json::json!(["name"]));
+        assert!(value["templates"].is_array());
+    }
+
+    #[test]
+    fn test_info_json_emits_null_url_for_local_plugin() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config
+            .plugins
+            .insert("custom".to_string(), PluginConfig { url: None });
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "custom", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["url"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_empty_string_description_when_plugin_yml_missing() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["description"], "");
+        assert_eq!(value["parameters"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_info_json_templates_have_path_or_null() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let plugin_dir = ctx.plugins_dir().join("dnf");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yml"),
+            "description: A plugin\nparams: []\n",
+        )
+        .unwrap();
+        std::fs::write(plugin_dir.join("install.sh.tmpl"), "sh install\n").unwrap();
+        let install_sh_tmpl_path = plugin_dir.join("install.sh.tmpl");
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let templates = value["templates"].as_array().unwrap();
+        assert_eq!(templates.len(), 6);
+        let install_sh_tmpl = templates
+            .iter()
+            .find(|t| t["filename"] == "install.sh.tmpl")
+            .unwrap();
+        assert_eq!(
+            install_sh_tmpl["path"],
+            install_sh_tmpl_path.display().to_string()
+        );
+        let install_ps1_tmpl = templates
+            .iter()
+            .find(|t| t["filename"] == "install.ps1.tmpl")
+            .unwrap();
+        assert_eq!(install_ps1_tmpl["path"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_info_json_emits_single_line() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir).with_output_format(OutputFormat::Json);
+        let mut config = Config::load(&ctx.config_path()).unwrap();
+        config.plugins.insert(
+            "dnf".to_string(),
+            PluginConfig {
+                url: Some("https://example.com".to_string()),
+            },
+        );
+        config.save(&ctx.config_path()).unwrap();
+        let mut output = Vec::new();
+
+        // Act
+        let result = info_to(&ctx, "dnf", &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let text = String::from_utf8(output).unwrap();
+        let non_trailing = text.trim_end_matches('\n');
+        assert!(!non_trailing.contains('\n'));
+        assert!(text.ends_with('\n'));
     }
 
     #[test]

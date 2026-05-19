@@ -1,3 +1,4 @@
+use crate::error::{HomeosError, reasons};
 use clap::ValueEnum;
 use clap_complete::env::Shells;
 use std::io::Write;
@@ -34,9 +35,9 @@ fn run_to<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let name = shell.as_engine_name();
     let shells = Shells::builtins();
-    let completer = shells
-        .completer(name)
-        .ok_or_else(|| format!("unknown shell `{name}`"))?;
+    let completer = shells.completer(name).ok_or_else(|| {
+        HomeosError::new(reasons::VALIDATION_ERROR, format!("unknown shell `{name}`"))
+    })?;
     completer.write_registration("COMPLETE", "homeos", "homeos", "homeos", writer)?;
     Ok(())
 }

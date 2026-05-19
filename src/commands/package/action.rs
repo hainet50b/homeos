@@ -1,6 +1,8 @@
 use crate::config::{Config, PackageConfig};
 use crate::context::Context;
-use crate::plan::{Action, Plan, confirm_plan};
+use crate::error::{HomeosError, reasons};
+use crate::output::OutputFormat;
+use crate::plan::{Action, Plan, confirm_plan, plans_to_json, write_execution_result};
 use crate::state::State;
 use crate::topo::topological_sort;
 use std::collections::HashSet;
@@ -30,6 +32,8 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         Vec::new()
     };
 
+    let is_json = ctx.output_format() == OutputFormat::Json;
+
     let mut to_install = Vec::new();
     let mut to_update = Vec::new();
     let mut disabled_packages = Vec::new();
@@ -54,12 +58,17 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             &installed,
             Some(&ctx.packages_dir()),
         )?;
-        let display = plan.display();
-        if !display.is_empty() {
-            writeln!(writer, "{display}")?;
-            writeln!(writer)?;
+        if is_json {
+            let value = plan.to_json_value();
+            writeln!(writer, "{value}")?;
+        } else {
+            let display = plan.display();
+            if !display.is_empty() {
+                writeln!(writer, "{display}")?;
+                writeln!(writer)?;
+            }
+            writeln!(writer, "Nothing to do.")?;
         }
-        writeln!(writer, "Nothing to do.")?;
         return Ok(());
     }
 
@@ -212,22 +221,46 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     // Display: enabled sections first (install, then update) so the order matches
     // README — installed → updated → skipped — followed by one consolidated skipped
     // section sourced from install_plan (which absorbs all skipped entries).
-    if let Some(ref plan) = install_plan {
-        let s = plan.display_enabled();
-        if !s.is_empty() {
-            writeln!(writer, "{s}")?;
+    if is_json {
+        // install_plan goes first so its skipped section becomes the canonical one
+        // (mirrors the text rendering where only install_plan.display_skipped() is used).
+        let mut plans: Vec<&Plan> = Vec::new();
+        if let Some(ref p) = install_plan {
+            plans.push(p);
         }
-    }
-    if let Some(ref plan) = update_plan {
-        let s = plan.display_enabled();
-        if !s.is_empty() {
-            writeln!(writer, "{s}")?;
+        if let Some(ref p) = update_plan {
+            plans.push(p);
         }
-    }
-    if let Some(ref plan) = install_plan {
-        let s = plan.display_skipped();
-        if !s.is_empty() {
-            writeln!(writer, "{s}")?;
+        let value = if plans.is_empty() {
+            serde_json::json!({
+                "is_empty": true,
+                "install": [],
+                "update": [],
+                "uninstall": [],
+                "skipped": [],
+            })
+        } else {
+            plans_to_json(&plans)
+        };
+        writeln!(writer, "{value}")?;
+    } else {
+        if let Some(ref plan) = install_plan {
+            let s = plan.display_enabled();
+            if !s.is_empty() {
+                writeln!(writer, "{s}")?;
+            }
+        }
+        if let Some(ref plan) = update_plan {
+            let s = plan.display_enabled();
+            if !s.is_empty() {
+                writeln!(writer, "{s}")?;
+            }
+        }
+        if let Some(ref plan) = install_plan {
+            let s = plan.display_skipped();
+            if !s.is_empty() {
+                writeln!(writer, "{s}")?;
+            }
         }
     }
 
@@ -235,8 +268,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     if install_plan.as_ref().is_none_or(|p| p.is_empty())
         && update_plan.as_ref().is_none_or(|p| p.is_empty())
     {
-        writeln!(writer)?;
-        writeln!(writer, "Nothing to do.")?;
+        if !is_json {
+            writeln!(writer)?;
+            writeln!(writer, "Nothing to do.")?;
+        }
         return Ok(());
     }
 
@@ -244,10 +279,18 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         return Ok(());
     }
 
-    writeln!(writer)?;
-    if !crate::plan::prompt_confirm(reader, writer) {
-        writeln!(writer, "Aborted.")?;
-        return Ok(());
+    if !ctx.yes() {
+        writeln!(writer)?;
+        let confirmed = crate::plan::prompt_confirm(reader, writer);
+        if is_json {
+            writeln!(writer)?;
+        }
+        if !confirmed {
+            if !is_json {
+                writeln!(writer, "Aborted.")?;
+            }
+            return Ok(());
+        }
     }
 
     // Collect enabled packages from both plans
@@ -278,28 +321,44 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         let script_path = ctx.packages_dir().join(name).join(&script_name);
 
         if !script_path.exists() {
-            writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+            let msg = format!("Script not found: {}", script_path.display());
+            if is_json {
+                write_execution_result(writer, name, *action, false, Some(&msg))?;
+            } else {
+                writeln!(writer, "Error: {msg}")?;
+            }
             had_errors = true;
             continue;
         }
 
-        let verb = action.gerund();
-        writeln!(writer, "{verb} {name}...")?;
+        if !is_json {
+            let verb = action.gerund();
+            writeln!(writer, "{verb} {name}...")?;
+        }
 
         match execute_script(&script_path) {
             Ok(_) => {
-                writeln!(writer, "done")?;
+                if is_json {
+                    write_execution_result(writer, name, *action, true, None)?;
+                } else {
+                    writeln!(writer, "done")?;
+                }
                 update_state_per_package(ctx, *action, name)?;
             }
             Err(e) => {
-                writeln!(writer, "Error: {e}")?;
-                writeln!(writer, "FAILED")?;
+                let err_string = e.to_string();
+                if is_json {
+                    write_execution_result(writer, name, *action, false, Some(&err_string))?;
+                } else {
+                    writeln!(writer, "Error: {err_string}")?;
+                    writeln!(writer, "FAILED")?;
+                }
                 had_errors = true;
             }
         }
     }
 
-    if had_errors {
+    if had_errors && !is_json {
         writeln!(writer, "Some packages failed")?;
     }
 
@@ -438,23 +497,53 @@ pub fn run_action<R: BufRead, W: Write>(
     plan.notes = plan_notes;
     plan.circular_dependency = cycle_packages;
 
+    let is_json = ctx.output_format() == OutputFormat::Json;
+
     if plan.is_empty() {
-        let display = plan.display();
-        if !display.is_empty() {
-            writeln!(writer, "{display}")?;
-            writeln!(writer)?;
+        if is_json {
+            let value = plan.to_json_value();
+            writeln!(writer, "{value}")?;
+        } else {
+            let display = plan.display();
+            if !display.is_empty() {
+                writeln!(writer, "{display}")?;
+                writeln!(writer)?;
+            }
+            writeln!(writer, "Nothing to do.")?;
         }
-        writeln!(writer, "Nothing to do.")?;
         return Ok(());
     }
 
     if dry_run {
-        let display = plan.display();
-        writeln!(writer, "{display}")?;
+        if is_json {
+            let value = plan.to_json_value();
+            writeln!(writer, "{value}")?;
+        } else {
+            let display = plan.display();
+            writeln!(writer, "{display}")?;
+        }
         return Ok(());
     }
 
-    if !confirm_plan(&plan, reader, writer) {
+    if ctx.yes() {
+        if is_json {
+            let value = plan.to_json_value();
+            writeln!(writer, "{value}")?;
+        } else {
+            let display = plan.display();
+            writeln!(writer, "{display}")?;
+            writeln!(writer)?;
+        }
+    } else if is_json {
+        let value = plan.to_json_value();
+        writeln!(writer, "{value}")?;
+        writeln!(writer)?;
+        let confirmed = crate::plan::prompt_confirm(reader, writer);
+        writeln!(writer)?;
+        if !confirmed {
+            return Ok(());
+        }
+    } else if !confirm_plan(&plan, reader, writer) {
         writeln!(writer, "Aborted.")?;
         return Ok(());
     }
@@ -469,27 +558,43 @@ pub fn run_action<R: BufRead, W: Write>(
         let script_path = ctx.packages_dir().join(name).join(&script_name);
 
         if !script_path.exists() {
-            writeln!(writer, "Error: Script not found: {}", script_path.display())?;
+            let msg = format!("Script not found: {}", script_path.display());
+            if is_json {
+                write_execution_result(writer, name, action, false, Some(&msg))?;
+            } else {
+                writeln!(writer, "Error: {msg}")?;
+            }
             had_errors = true;
             continue;
         }
 
-        writeln!(writer, "{verb} {name}...")?;
+        if !is_json {
+            writeln!(writer, "{verb} {name}...")?;
+        }
 
         match execute_script(&script_path) {
             Ok(_) => {
-                writeln!(writer, "done")?;
+                if is_json {
+                    write_execution_result(writer, name, action, true, None)?;
+                } else {
+                    writeln!(writer, "done")?;
+                }
                 update_state_per_package(ctx, action, name)?;
             }
             Err(e) => {
-                writeln!(writer, "Error: {e}")?;
-                writeln!(writer, "FAILED")?;
+                let err_string = e.to_string();
+                if is_json {
+                    write_execution_result(writer, name, action, false, Some(&err_string))?;
+                } else {
+                    writeln!(writer, "Error: {err_string}")?;
+                    writeln!(writer, "FAILED")?;
+                }
                 had_errors = true;
             }
         }
     }
 
-    if had_errors {
+    if had_errors && !is_json {
         writeln!(writer, "Some packages failed")?;
     }
 
@@ -560,7 +665,11 @@ fn execute_script(script_path: &Path) -> Result<(), Box<dyn std::error::Error>> 
             .code()
             .map(|c| c.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        return Err(format!("Script failed with exit code {code}").into());
+        return Err(HomeosError::new(
+            reasons::SCRIPT_FAILED,
+            format!("Script failed with exit code {code}"),
+        )
+        .into());
     }
     Ok(())
 }
@@ -4584,5 +4693,459 @@ mod tests {
         assert!(written.contains("Updating neovim...\ndone"));
         assert!(!written.contains("dependency disabled"));
         assert!(neovim_marker.exists());
+    }
+
+    // --- JSON output tests ---
+
+    fn fixture_json(yaml: &str) -> (TempDir, Context) {
+        let tmp = TempDir::new().unwrap();
+        let data_dir = tmp.path().to_path_buf();
+        let ctx = Context::new(Some(data_dir)).with_output_format(OutputFormat::Json);
+        std::fs::create_dir_all(ctx.config_path().parent().unwrap()).unwrap();
+        std::fs::write(ctx.config_path(), yaml).unwrap();
+        (tmp, ctx)
+    }
+
+    #[test]
+    fn test_run_action_json_dry_run_emits_plan_only() {
+        // Arrange
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n");
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["is_empty"], false);
+        assert_eq!(parsed["install"][0]["name"], "neovim");
+        assert!(!written.contains("Installing"));
+        assert!(!written.contains("Proceed"));
+    }
+
+    #[test]
+    fn test_run_action_json_empty_plan_emits_is_empty_true() {
+        // Arrange
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim:\n    enabled: false\n");
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["is_empty"], true);
+        assert_eq!(parsed["skipped"][0]["name"], "neovim");
+        assert_eq!(parsed["skipped"][0]["reason"], "disabled");
+        assert!(!written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_run_action_json_emits_ndjson_success_after_plan() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        let content = if cfg!(windows) {
+            format!(
+                "New-Item -Path '{}' -ItemType File | Out-Null\n",
+                marker_path.display()
+            )
+        } else {
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display())
+        };
+        std::fs::write(pkg_dir.join(format!("install.{ext}")), content).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — the output contains a plan line then an execution-result line.
+        let written = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        assert_eq!(lines.len(), 2);
+        let plan: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(plan["install"][0]["name"], "neovim");
+        let result: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(result["package"], "neovim");
+        assert_eq!(result["action"], "install");
+        assert_eq!(result["status"], "success");
+        assert_eq!(result["error"], serde_json::Value::Null);
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_json_emits_ndjson_failure_on_script_failure() {
+        // Arrange
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        let content = if cfg!(windows) {
+            "exit 1\n".to_string()
+        } else {
+            "#!/usr/bin/env sh\nexit 1\n".to_string()
+        };
+        std::fs::write(pkg_dir.join(format!("install.{ext}")), content).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        let result: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(result["status"], "failed");
+        assert!(
+            result["error"]
+                .as_str()
+                .unwrap()
+                .contains("Script failed with exit code 1")
+        );
+        // No "Some packages failed" text in JSON mode.
+        assert!(!written.contains("Some packages failed"));
+    }
+
+    #[test]
+    fn test_run_action_json_emits_ndjson_failure_when_script_missing() {
+        // Arrange
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        let result: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(result["status"], "failed");
+        assert!(
+            result["error"]
+                .as_str()
+                .unwrap()
+                .contains("Script not found")
+        );
+    }
+
+    #[test]
+    fn test_run_action_json_aborted_emits_only_plan_no_results() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n");
+        let pkg_dir = ctx.packages_dir().join("neovim");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let ext = script_extension();
+        std::fs::write(
+            pkg_dir.join(format!("install.{ext}")),
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+        )
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — only one JSON object (the plan); no execution result, no "Aborted." text.
+        let written = String::from_utf8(output).unwrap();
+        let json_lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        assert_eq!(json_lines.len(), 1);
+        let plan: serde_json::Value = serde_json::from_str(json_lines[0]).unwrap();
+        assert_eq!(plan["install"][0]["name"], "neovim");
+        assert!(!written.contains("Aborted."));
+        assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_apply_json_dry_run_emits_combined_plan() {
+        // Arrange — neovim is in state (update target), claude is not (install target)
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim: {}\n  claude: {}\n");
+        State {
+            installed: vec!["neovim".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        let install_names: Vec<&str> = parsed["install"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect();
+        let update_names: Vec<&str> = parsed["update"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect();
+        assert!(install_names.contains(&"claude"));
+        assert!(update_names.contains(&"neovim"));
+        assert!(!written.contains("Proceed"));
+    }
+
+    #[test]
+    fn test_apply_json_empty_emits_is_empty_true() {
+        // Arrange — only a disabled package present.
+        let (_tmp, ctx) = fixture_json("packages:\n  neovim:\n    enabled: false\n");
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["is_empty"], true);
+        assert_eq!(parsed["skipped"][0]["name"], "neovim");
+        assert_eq!(parsed["skipped"][0]["reason"], "disabled");
+    }
+
+    // --- --yes flag tests ---
+
+    #[test]
+    fn test_run_action_yes_skips_prompt_and_executes() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Installing neovim..."));
+        assert!(written.contains("done"));
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_yes_with_dry_run_does_not_execute() {
+        // Arrange — dry-run takes precedence over --yes; only the plan is shown.
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            true,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Installing"));
+        assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_yes_with_json_skips_prompt_and_emits_results() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_output_format(OutputFormat::Json).with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("Proceed"));
+        let json_lines: Vec<&str> = written
+            .lines()
+            .filter(|l| l.trim_start().starts_with('{'))
+            .collect();
+        assert_eq!(json_lines.len(), 2); // plan + execution result
+        let plan: serde_json::Value = serde_json::from_str(json_lines[0]).unwrap();
+        assert_eq!(plan["install"][0]["name"], "neovim");
+        let result_value: serde_json::Value = serde_json::from_str(json_lines[1]).unwrap();
+        assert_eq!(result_value["status"], "success");
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_apply_yes_skips_prompt_and_executes() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = apply_to(&ctx, false, &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(written.contains("Installing neovim..."));
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_apply_yes_with_dry_run_does_not_execute() {
+        // Arrange — dry-run still wins over --yes.
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let ctx = ctx.with_yes(true);
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = apply_to(&ctx, true, &mut input, &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be installed:"));
+        assert!(!written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Installing"));
+        assert!(!marker_path.exists());
     }
 }

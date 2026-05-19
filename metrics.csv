@@ -156,3 +156,17 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-17T10:40:00Z,c74fa01,"Switch completion to clap_complete dynamic engine",375,28,25584,2.56350425
 2026-05-17T10:49:20Z,48ec70c,"Attach ArgValueCompleter for package and plugin names",555,2838,39828,4.782159249999999
 2026-05-17T10:54:15Z,ede0c0e,"Verify dynamic completion installation flow end-to-end",291,32,20074,2.465853750000001
+2026-05-18T03:47:43Z,435564b,"Add --output/--json flags and HOMEOS_OUTPUT_FORMAT env var infrastructure",364,46,25348,3.9872294999999998
+2026-05-18T04:07:54Z,0ea4e53,"Migrate error output to dual stdout-JSON / stderr-human format",1207,139,79174,16.44931375000001
+2026-05-18T04:16:04Z,e938247,"Implement JSON output for list commands",486,70,32009,6.305967999999999
+2026-05-18T04:23:11Z,97f3294,"Implement JSON output for info commands",423,62,30268,5.3070325
+2026-05-18T04:36:43Z,6dc7de4,"Implement JSON output for plan display",808,68,59519,7.722273000000001
+2026-05-18T04:42:30Z,2a7af35,"Validate package and plugin names against strict whitelist",342,48,24267,3.7952945
+2026-05-18T04:47:59Z,2730b3a,"Validate URL inputs for init and plugin add",324,36,22380,3.2566935000000004
+2026-05-18T04:56:00Z,8ee0b27,"Add global --yes flag to skip confirmation prompts",477,80,27546,7.249576
+2026-05-18T05:01:20Z,1ddc8fe,"Implement homeos agents-md command (skeleton)",315,40,20664,3.190892500000001
+2026-05-18T05:06:37Z,764afd2,"Fill AGENTS.md template with comprehensive AI-agent guide content",312,27,19608,2.4742582499999997
+2026-05-18T05:12:13Z,0d680ed,"Integrate AGENTS.md generation into homeos init",331,32,22794,2.65475575
+2026-05-18T05:16:36Z,dcbf418,"Auto-refresh AGENTS.md on `homeos cd` when version differs",258,29,17267,2.2586977499999996
+2026-05-18T05:19:50Z,4af2b5c,"Add `Using with AI agents` section to README",190,20,12233,1.41236125
+2026-05-18T11:25:52Z,093049f,"Initialize git repository during homeos init scaffold",243,30,14929,2.8723195
