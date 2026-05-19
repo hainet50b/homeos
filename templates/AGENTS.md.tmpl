@@ -96,7 +96,14 @@ homeos --yes --json apply
 This is the canonical agent loop for any mutating operation:
 
 1. Read current state with `homeos <command> --json` (no mutation).
-2. Construct the change you intend to apply.
+2. Construct the change you intend to apply. **Use the narrowest
+   command that achieves it**: `package install <name>` for installing
+   a named package, `package update <name>` for updating one,
+   `package uninstall <name>` for removing one. Use `apply` only for
+   broad operations (full restore on a new machine, sync after
+   pulling the repo) — `apply` runs install on every enabled package
+   not in state and update on every package already in state, which
+   is too broad and too surprising when the user has named a target.
 3. Run `homeos <command> --dry-run --json` and parse the plan.
 4. For each package the plan will act on, run `homeos package cat <name>`
    and read the actual script content that will execute.
@@ -420,7 +427,7 @@ expected outputs. Use them as patterns; don't deviate without reason.
 
 The user gives a natural-language request and trusts you to make sensible
 choices. Pick the right package manager for the platform, add a package
-backed by that manager's plugin, and apply.
+backed by that manager's plugin, and install just that package.
 
 **Step 1.** Read current state.
 
@@ -455,23 +462,26 @@ The dnf plugin's `plugin.yml` requires a single parameter, `name`. The
 templates expand into `install.sh`, `update.sh`, and `uninstall.sh` under
 `packages/neovim/`.
 
-**Step 4.** Dry-run the plan.
+**Step 4.** Dry-run the install plan, scoped to just this package.
 
 ```sh
-homeos --json apply --dry-run
+homeos --json package install neovim --dry-run
 ```
 
-You will get a plan object showing `install: [{name: "neovim", plugin: "dnf",
-required_by: null}]`. Present it to the user: *"This will install neovim via
-dnf. Confirm?"*
+You will get a plan object showing only neovim. Present it to the user:
+*"This will install neovim via dnf. Confirm?"*
 
-**Step 5.** Apply with `--yes`.
+Do not use `homeos apply` here — it would also run `update` on every
+already-installed package and `install` on every other not-yet-installed
+package, which is too broad for a single-target request.
+
+**Step 5.** Install with `--yes`.
 
 ```sh
-homeos --yes --json apply
+homeos --yes --json package install neovim
 ```
 
-Parse the NDJSON execution results (one line per package). If any line has
+Parse the NDJSON execution results. If neovim's line has
 `status: "failed"`, surface the error and stop. Otherwise, report success.
 
 **Step 6.** Commit.
@@ -539,13 +549,16 @@ homeos --yes --json plugin add dnf-copr                              # skip if a
 homeos --yes --json plugin add dnf                                   # skip if already present
 homeos --json package add dnf-copr-mise --plugin dnf-copr --param name=jdxcode/mise
 homeos --json package add mise --plugin dnf --param name=mise --depends-on dnf-copr-mise
-homeos --json apply --dry-run                                        # plan shows dnf-copr-mise first, then mise (required by dnf-copr-mise)
-homeos --yes --json apply
+homeos --json package install mise --dry-run                         # plan shows dnf-copr-mise first (required by mise), then mise
+homeos --yes --json package install mise
 ```
 
-`homeos` rejects the package-add line if `dnf-copr-mise` is missing
-or the edge would create a cycle (`dependency-not-found`,
-`circular-dependency`). Commit at the end.
+`package install mise` pulls in `dnf-copr-mise` automatically through
+the `depends_on` edge, so naming only the leaf is enough; the dry-run
+plan confirms the dependency order before execution. `homeos` rejects
+the package-add line if `dnf-copr-mise` is missing or the edge would
+create a cycle (`dependency-not-found`, `circular-dependency`).
+Commit at the end.
 
 ### Workflow 5 — "Make a one-off package without a plugin"
 
@@ -583,11 +596,11 @@ If `update` equals `install`, an alias is shorter than duplicating:
 homeos --json package add-alias rustup update=install
 ```
 
-Then apply and commit:
+Then install and commit, scoped to just this package:
 
 ```sh
-homeos --json apply --dry-run
-homeos --yes --json apply
+homeos --json package install rustup --dry-run
+homeos --yes --json package install rustup
 git commit -am "Add rustup with curl-installer scripts"
 ```
 
