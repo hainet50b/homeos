@@ -745,8 +745,23 @@ Options:
       --purge  Also delete the plugin directory
 ```
 
-> [!NOTE]
-> The plugin directory is not deleted. To update a plugin, run `remove`, then `plugin cd` to navigate to the plugins directory, delete the plugin directory, and `add` again.
+#### `homeos plugin refresh`
+
+Refetch a plugin's templates from its registered URL. Useful when the upstream plugin has been updated and you want the new templates locally.
+
+```
+Usage: homeos plugin refresh [OPTIONS] [PLUGIN]
+
+Arguments:
+  [PLUGIN]  Plugin name (required unless --all)
+
+Options:
+      --all      Refresh every registered plugin
+      --dry-run  Show what would change without writing
+      --yes      Skip the confirmation prompt
+```
+
+The diff is computed file by file (added / modified / removed). Local edits to a plugin's templates are overwritten by the refresh — review the summary before confirming. Plugins added via `plugin add --local` are skipped (they have no upstream URL).
 
 #### `homeos plugin info`
 

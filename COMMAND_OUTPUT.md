@@ -360,6 +360,44 @@ JSON schema (one object per plugin, ordered alphabetically by name):
 | Success with --purge | stdout | `Removed plugin '{name}' and removed directory` |
 | Plugin not found (error) | stderr | `Error: Plugin '{name}' not found` (reason: `plugin-not-found`) |
 
+## homeos plugin refresh
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Text mode — per-plugin progress | stdout | `Fetching {name} from {url}...` |
+| Text mode — up to date | stdout | `Plugin '{name}' is up to date` |
+| Text mode — changes detected | stdout | `The following files differ from upstream:` / `  M {path}` / `  A {path}` / `  D {path}` (one line per file) |
+| Text mode — confirmation prompt | stdout | `Local changes will be replaced with upstream content. Proceed? [y/N]` |
+| Text mode — `--all` aggregate prompt | stdout | `Changes detected in:` / `  {plugin} — {n} modified, {m} added, {k} removed` / `Apply all? [y/N]` |
+| Text mode — user declines | stdout | `Aborted.` |
+| Text mode — dry-run (`--dry-run`) | stdout | Summary only; exits without prompt or replacement |
+| Text mode — success | stdout | `Refreshed plugin '{name}'` (printed per plugin in `--all` mode) |
+| Text mode — local plugin skipped | stdout | `Plugin '{name}' is local; nothing to refresh` |
+| `--all` with no registered plugins | stdout | `No plugins to refresh` |
+| JSON mode | stdout | NDJSON, one object per plugin processed (see schema below) |
+| Plugin not found in homeos.yml (error) | stderr | `Error: Plugin '{name}' not found` (reason: `plugin-not-found`) |
+| Missing arg without `--all` (error) | stderr | `Error: specify a plugin name or use --all` (reason: `validation-error`) |
+| git clone fails (error) | stderr | `Error: git clone failed: {stderr}` (reason: `git-clone-failed`) |
+| Cloned plugin has no plugin.yml (error) | stderr | `Error: Not a valid homeos plugin. Cloned directory removed.` (reason: `not-a-valid-homeos-plugin`) |
+
+JSON schema (NDJSON, one object per plugin in the order processed):
+
+```json
+{"name":"dnf","url":"https://github.com/hainet50b/homeos-plugin-dnf","status":"up-to-date"}
+{"name":"winget","url":"https://github.com/hainet50b/homeos-plugin-winget","status":"refreshed","changes":{"modified":["install.ps1.tmpl"],"added":[],"removed":[]}}
+{"name":"local-thing","url":null,"status":"local-skipped"}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | Plugin name (the `homeos.yml` key) |
+| `url` | string \| null | Configured upstream URL; `null` for local plugins |
+| `status` | string | One of `up-to-date`, `would-refresh` (dry-run only), `refreshed`, `local-skipped`, `error` |
+| `changes` | object | Present when `status` is `would-refresh` or `refreshed`; arrays of paths under `modified`, `added`, `removed` |
+| `error` | object | Present when `status` is `error`; same `{reason, message}` shape as the global error envelope |
+
+`--dry-run --json` emits one line per plugin with status `up-to-date` / `would-refresh` / `local-skipped` / `error` and exits without prompting. `--json --yes` skips the confirmation step and emits one line per plugin with the actual outcome (`refreshed` instead of `would-refresh`). `--json` without `--yes` still uses the stdin prompt, which is impractical for agents; agents should always pair `--json` with `--yes`. In `--all` mode lines are emitted as each plugin completes so an agent can observe progress without buffering.
+
 ## homeos plugin info
 
 | Condition | Dest | Output |
