@@ -116,6 +116,21 @@ pub enum PluginCommands {
         #[arg(long)]
         purge: bool,
     },
+    /// Refetch a plugin's templates from its registered URL
+    Refresh {
+        /// Plugin name (required unless --all)
+        #[arg(
+            required_unless_present = "all",
+            add = ArgValueCompleter::new(completers::plugin_completer),
+        )]
+        plugin: Option<String>,
+        /// Refresh every registered plugin
+        #[arg(long)]
+        all: bool,
+        /// Show what would change without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Display plugin details
     Info {
         /// Plugin name
@@ -363,6 +378,11 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
             | PluginCommands::Cat { plugin } => {
                 validate_name(plugin)?;
             }
+            PluginCommands::Refresh { plugin, .. } => {
+                if let Some(p) = plugin {
+                    validate_name(p)?;
+                }
+            }
             PluginCommands::Cd { plugin } => {
                 if let Some(p) = plugin {
                     validate_name(p)?;
@@ -444,6 +464,11 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
             PluginCommands::Remove { plugin, purge } => {
                 commands::plugin::remove(ctx, &plugin, purge)
             }
+            PluginCommands::Refresh {
+                plugin,
+                all,
+                dry_run,
+            } => commands::plugin::refresh(ctx, plugin.as_deref(), all, dry_run),
             PluginCommands::Info { plugin } => commands::plugin::info(ctx, &plugin),
             PluginCommands::Cat { plugin } => commands::plugin::cat(ctx, &plugin),
             PluginCommands::Cd { plugin } => commands::plugin::cd(ctx, plugin.as_deref()),

@@ -170,3 +170,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-18T05:16:36Z,dcbf418,"Auto-refresh AGENTS.md on `homeos cd` when version differs",258,29,17267,2.2586977499999996
 2026-05-18T05:19:50Z,4af2b5c,"Add `Using with AI agents` section to README",190,20,12233,1.41236125
 2026-05-18T11:25:52Z,093049f,"Initialize git repository during homeos init scaffold",243,30,14929,2.8723195
+2026-05-19T06:07:36Z,58f630e,"Force main as the initial branch in homeos init",177,27,9199,1.8196772499999998
