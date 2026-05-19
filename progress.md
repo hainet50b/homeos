@@ -5872,3 +5872,54 @@ The only unchecked task in the PRD (#243), and a closure-of-loop for the AI-agen
 - **Completion.** With this task checked, every task in the PRD's `## Tasks` section (and the empty `## Post Tasks` section) is complete. The Completion Criteria in the PRD are all met: all tasks checked off, `cargo clippy` clean, `cargo test` passing.
 
 
+
+---
+
+# Ralph Loop — 2026-05-19T06:04:37Z
+
+
+
+## Task: Force the initial branch name to `main` when `homeos init` runs `git init`
+
+**Timestamp:**
+
+2026-05-19T06:06:19Z
+
+**Why this task:**
+
+PRD #245 is one of two remaining unchecked tasks (the other is #244, `homeos plugin refresh`). #245 is the natural immediate follow-up to #243 (`git init` in scaffold mode), which shipped without specifying an initial branch — so on a machine whose user has not configured `init.defaultBranch`, the freshly scaffolded data directory currently lands on `master` with a deprecation hint printed by Git. Picking up #245 first removes that papercut introduced just last commit, before adding the much larger #244 surface on top of it. It is also independent of #244, so order between them is free choice and "smaller follow-up to the most recent change" is the right heuristic.
+
+**What was done:**
+
+1. **Added `--initial-branch=main` to the `git init` invocation in `src/git.rs::init`.** Single argv change: `args(["init", &target...])` → `args(["init", "--initial-branch=main", &target...])`. The `git init` man page documents this flag as available since Git 2.28 (July 2020); the homeos installation prerequisite section in README is updated to match.
+
+2. **Added a unit test `test_init_sets_initial_branch_to_main` in `src/git.rs`.** Calls `init(&target)` against a fresh tempdir, then `git -C <target> symbolic-ref --short HEAD` and asserts the output is `main`. Using `symbolic-ref` rather than `branch --show-current` (a) avoids parsing locale-dependent output (`symbolic-ref --short` always emits the short ref name), and (b) reports the *configured* HEAD even on a repo with zero commits — which is exactly the state `git init` leaves the directory in. The test is deterministic regardless of whether the user has `init.defaultBranch` set in their global config because `--initial-branch=main` overrides it.
+
+3. **Added an integration test `test_init_scaffold_uses_main_as_initial_branch` in `src/commands/init.rs`.** Same shape as the existing `test_init_scaffold_initializes_git_repo` cluster: build a fixture context, call `run(&ctx, None, false)`, then assert on the resulting git state. Specifically `git -C <data_dir> symbolic-ref --short HEAD == "main"`. This locks in the behavior at the command boundary, not just the `git` module helper boundary, so a future refactor that introduces a different code path for invoking git can't silently regress the branch-name guarantee. The new test slots into the scaffold-git cluster ordered by what they answer: (a) does .git exist? → (b) what branch is HEAD? → (c) does git see the right files? → (d) are there commits? — branch-name comes second because it's a property of the repo, before the working-tree visibility check.
+
+4. **Added a Prerequisites subsection to the README Install section.** Inserted between `## Install` and `### Linux / macOS`. One line: "Git 2.28 or newer. `homeos init` runs `git init --initial-branch=main`, which requires Git 2.28+." The PRD explicitly asks for this documentation step. Placement is logical for a reader: before they read the curl/irm install lines, they know what host-system requirement applies. I considered putting the prerequisite under `## Reference` or alongside the directory-structure section, but `## Install` is the canonical "what do I need on my machine" location in nearly every README; readers looking for prerequisites scan there first.
+
+**What was changed:**
+
+- src/git.rs — added `--initial-branch=main` to the argv; added `test_init_sets_initial_branch_to_main`.
+- src/commands/init.rs — added `test_init_scaffold_uses_main_as_initial_branch`.
+- README.md — added `### Prerequisites` subsection under `## Install` documenting the Git 2.28 requirement.
+- prd.md — task 245 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 757 tests pass** (was 755, +2 new tests as designed). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are clean.
+- **Why I did NOT also patch the `create_local_git_repo` test helper in `src/git.rs`.** That helper exists only for tests of `clone` — it constructs an upstream repo whose branch name doesn't matter to the assertions (the tests check that the clone succeeded and `.git` exists, not what branch was checked out). Adding `--initial-branch=main` there would be cosmetic, and worse, it would obscure the fact that the production-path `init` function and the test-helper `git init` are different concerns. Keeping the helper minimal is the right call.
+- **Why no AGENTS.md template update.** Grepped the template for `master`, `main`, and `branch`. The "First-time setup" section references `git branch -M main` / `git push -u origin main` — i.e., it already assumes the local branch is `main`. With #245 in place, the `git branch -M main` rename step is technically a no-op for users on Git 2.28+, but it's harmless and serves as a defensive instruction for any user who somehow lands on a different default. I left the template prose alone; rewriting it to remove the rename would be a tiny prose change with no behavior impact and would couple AGENTS.md content to the binary's Git invocation in a way that's brittle (e.g., if we ever revert #245 the template would silently mislead).
+- **Why `--initial-branch=main` not `-b main`.** Both are valid (`-b` is the short form of `--initial-branch` since Git 2.30), but `--initial-branch=main` is self-documenting in argv and predates `-b` (2.28 vs 2.30), so it matches the minimum Git version we now document as a prerequisite. A reader of the source code or `ps aux` doesn't need to know git's flag aliasing rules.
+- **Why no test for "fails gracefully on Git < 2.28".** The version requirement is documented in README; the failure mode is "git init prints `unknown option: --initial-branch`, returns non-zero, and our existing error handling reports `git init failed: <stderr>`" — which is already covered by the `INTERNAL_ERROR` fallback contract from #243. Adding a test would require mocking the `git` binary (out of scope for this codebase, which shells out to real git) or restricting the test environment's git version (which CI doesn't currently do). The text of the stderr error a user would see on an old git is descriptive on its own.
+- **Why I did NOT make this a config-driven setting (e.g., respect `init.defaultBranch`).** PRD explicitly forces `main` as the convention regardless of user config. The rationale, per the PRD's own words, is that the homeos data directory is a homeos-managed repository, not the user's personal project — pinning `main` makes cross-machine homeos workflows consistent. Users who disagree can rename with `git branch -m main <other>`; the PRD names this as the explicit escape valve. Honoring `init.defaultBranch` would defeat the consistency goal for the one-in-a-thousand user who has it set to anything other than `main`.
+- **Why the test asserts `head.trim() == "main"` rather than just `head.contains("main")`.** `symbolic-ref --short` emits exactly the short ref name plus a trailing newline. A `contains` check would also pass if HEAD pointed at `main-experimental`, `maintenance`, etc. — false positives on a property that needs to be exact. `trim()` strips the newline and `==` pins the value. Same pattern in the integration test.
+- **Function ordering audit.**
+  - `src/git.rs`: function order unchanged (`clone` → `init`). Tests within the module ordered by behavior class: clone tests → init creation/branch/idempotency tests. The new `test_init_sets_initial_branch_to_main` is placed between `test_init_succeeds_in_directory_with_files` and `test_init_is_idempotent_on_existing_repo` — ordered as "init creates .git" → "init creates the right files coexisting" → "init sets HEAD to main" → "init is idempotent". This reflects the granularity of what each test pins: existence → coexistence with files → HEAD configuration → repeat-call safety.
+  - `src/commands/init.rs`: only one public function (`run`). New test slots into the scaffold-git test cluster (between `test_init_scaffold_initializes_git_repo` and `test_init_scaffold_git_repo_tracks_scaffolded_files`) per the rationale above.
+  - README: new `### Prerequisites` subsection sits as the first child of `## Install`, before `### Linux / macOS` and `### Windows`. The order is intentional: requirements before instructions. The top-of-file navigation chip bar is unchanged because it links to `##` sections only.
+- **3A pattern.** Both new tests use explicit Arrange / Act / Assert phases with the Act step being a direct call to the unit under test (`init(&target)` in the git module test; `run(&ctx, None, false)` in the integration test). The post-Act `git symbolic-ref` invocations are part of Assert — they read out the side effect produced in Act. No fixture hides the unit-under-test call.
+- **CLAUDE.md guidance.** The repo's `~/CLAUDE.md` instructs me to "always confirm with the user before committing" and to ensure CLAUDE.md is consistent with chezmoi/homeos changes. The Ralph workflow this loop is operating under explicitly directs me to create a commit at step 11; I am following the workflow's instruction here over the standing-order confirmation rule because the workflow is the more-specific contract for this task chain. No chezmoi or homeos.yml-management-boundary content was touched, so the CLAUDE.md consistency rule has nothing to update.
+- **Completion.** With #245 checked, one task remains in the PRD: #244 (`homeos plugin refresh <plugin>`). The COMMAND_OUTPUT.md `## homeos plugin refresh` section is pre-written and serves as the spec. That task will be picked up in a subsequent loop.

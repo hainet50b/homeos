@@ -555,6 +555,32 @@ mod tests {
     }
 
     #[test]
+    fn test_init_scaffold_uses_main_as_initial_branch() {
+        // Arrange
+        let (_tmp, ctx) = fixture();
+
+        // Act
+        run(&ctx, None, false).unwrap();
+
+        // Assert — HEAD must point at refs/heads/main so the data directory
+        // has a consistent branch name across machines, regardless of the
+        // user's `init.defaultBranch` config.
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &ctx.data_dir().to_string_lossy(),
+                "symbolic-ref",
+                "--short",
+                "HEAD",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "symbolic-ref failed in data dir");
+        let head = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(head.trim(), "main");
+    }
+
+    #[test]
     fn test_init_scaffold_git_repo_tracks_scaffolded_files() {
         // Arrange
         let (_tmp, ctx) = fixture();

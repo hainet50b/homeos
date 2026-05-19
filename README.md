@@ -230,6 +230,10 @@ done
 
 ## Install
 
+### Prerequisites
+
+- **Git 2.28 or newer.** `homeos init` runs `git init --initial-branch=main`, which requires Git 2.28+.
+
 ### Linux / macOS
 
 ```sh
