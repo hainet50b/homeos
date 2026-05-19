@@ -3,7 +3,7 @@ name = "homeos"
 version = "0.3.5"
 edition = "2024"
 rust-version = "1.85"
-description = "Manage install scripts in one place, reproducible on any machine"
+description = "An AI-agent-driven CLI for keeping install scripts reproducible across machines"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hainet50b/homeos"
 

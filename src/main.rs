@@ -27,11 +27,7 @@ mod validation;
 use output::OutputFormat;
 
 #[derive(Parser)]
-#[command(
-    name = "homeos",
-    version,
-    about = "Manage install scripts in one place, reproducible on any machine"
-)]
+#[command(name = "homeos", version, about)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
