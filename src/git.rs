@@ -7,6 +7,8 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
         .args([
             "-c",
             "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
             "clone",
             url,
             &target.to_string_lossy(),
@@ -30,6 +32,8 @@ pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
         .args([
             "-c",
             "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
             "init",
             "--initial-branch=main",
             &target.to_string_lossy(),
