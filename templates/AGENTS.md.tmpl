@@ -212,6 +212,12 @@ something is wrong.
 `state.yml`, `AGENTS.md`, and `CLAUDE.md` are excluded by the generated
 `.gitignore`. You do not need to add them to the commit.
 
+If `git remote` lists an entry, offer the push to the user and wait for
+an explicit yes before running `git push` — never push on your own
+initiative. Once approval is established in the session, folding the
+push into the same suggestion as the next commit is fine. Skip silently
+when no remote is configured.
+
 ### Verify against the OS when in doubt (best-effort)
 
 `homeos`'s installation state is a logical view of what its scripts
@@ -415,10 +421,9 @@ git config --local user.email "<email>"
 Ask whether the user wants to back up this homeos repository to a
 remote Git host (GitHub, GitLab, or self-hosted). If yes:
 
-1. Have the user create the repository. If they have `gh` installed,
-   `gh repo create` works; otherwise they create it on the web UI and
-   paste the URL back. Let the user decide whether the repo is public
-   or private — homeos imposes no preference.
+1. Have the user create the repository (via `gh repo create` if `gh`
+   is installed, or the host's web UI). Public vs private is the
+   user's choice — homeos imposes no preference.
 2. Configure the remote:
 
 ```sh
