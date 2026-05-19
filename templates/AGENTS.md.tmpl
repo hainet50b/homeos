@@ -69,52 +69,27 @@ rules; it followed them step by step."*
 
 ## Operating principles
 
-### Use `--json` for every read
+### Three core flags: `--json`, `--dry-run`, `--yes`
 
-Always pass `--json` (or `--output json`) when you need to parse output. The
-text mode is for humans; the JSON mode emits a documented schema you can
-consume reliably. Examples:
+These three flags shape every interaction. Use them in concert.
+
+- **`--json`** (or `--output json`) — pass it whenever you need to parse
+  output. List commands return a JSON array, info commands return a
+  single object, plan commands return a plan object followed by NDJSON
+  execution result lines (one per package). Text mode is for humans.
+- **`--dry-run`** — for any plan-display command (`apply`,
+  `package install/update/uninstall`). Prints the plan and exits without
+  executing or prompting. The *preview* step before any mutation.
+- **`--yes`** — skips the `Proceed? [y/N]` prompt after the user
+  approved the plan in conversation. You cannot answer stdin prompts
+  from your subprocess; `--yes` is the only way through. Compatible
+  with `--dry-run`, but `--dry-run` wins (display only).
 
 ```sh
 homeos package list --json
-homeos plugin list --json
-homeos plugin list-remote --json
-homeos package info <name> --json
-homeos plugin info <name> --json
-```
-
-The list commands emit a JSON array. The info commands emit a single JSON
-object. The plan-display commands (`apply`, `package install/update/uninstall`)
-emit a single JSON plan object followed (when execution runs) by NDJSON
-execution result objects, one per package.
-
-### Use `--dry-run` to inspect plans before mutation
-
-For any plan-display command, run `--dry-run --json` first. This prints the
-plan and exits without executing or prompting. Show the plan to the user and
-get explicit confirmation in conversation before re-running without
-`--dry-run`.
-
-```sh
 homeos apply --dry-run --json
-homeos package install neovim --dry-run --json
-homeos package uninstall obsidian --dry-run --json
-```
-
-### Use `--yes` to bypass the interactive prompt
-
-The default `homeos apply` and similar commands prompt `Proceed? [y/N]` on
-stdin. You cannot answer an interactive prompt. Once the user has approved the
-plan in conversation, re-run without `--dry-run` and pass `--yes` to skip the
-prompt and proceed straight to execution:
-
-```sh
 homeos --yes --json apply
-homeos --yes --json package install neovim
 ```
-
-`--yes` is mutually compatible with `--dry-run`; if both are present,
-`--dry-run` still wins (display only, no execution).
 
 ### The dry-run → confirm → `--yes` apply pattern
 
@@ -132,50 +107,39 @@ This is the canonical agent loop for any mutating operation:
 
 Do not collapse steps 3–5 into a single tool call. The user must see the
 plan and the script content, and approve, before any script runs on their
-machine.
+machine. A few mutation-safety rules apply throughout:
+
+- Never use `homeos package uninstall --all` or `--purge` flags unless
+  the user asked for that exact scope. Without `--purge`, removals are
+  reversible by re-adding the entry.
+- Do not run raw shell commands that touch the data directory (e.g.
+  `rm -rf packages/foo`). Use `homeos` commands so `homeos.yml` and
+  the installation state stay consistent.
+- On a `homeos` failure, surface the JSON error's `reason` field to
+  the user. Don't retry blindly.
 
 ### Read scripts before mutating
 
-The package *name* in `homeos.yml` is just a key; what actually runs is
-the file at `packages/<name>/install.sh` (or `update.sh` / `uninstall.sh`,
-or the `.ps1` counterpart on Windows). Reading the script before
-execution is the only way to know what side effects are about to happen.
+The package *name* in `homeos.yml` is just a key; what actually runs
+is the script under `packages/<name>/`. Read the script before
+execution to know the real side effects.
 
-Be selective about *which* scripts you read, to keep the conversation
-token-efficient:
+Be selective to keep this token-efficient:
 
-- **Action-scoped**: for `package install`, only read the install
-  script. For `update`, only the update script. For `uninstall`, only the
-  uninstall script. `apply` may run install or update per package — read
-  whichever applies according to the plan.
-- **OS-scoped**: read only the script for the current OS (`.sh` on
-  Linux/macOS, `.ps1` on Windows). Do not cat the counterpart.
-- **Plugin-generated packages can be skipped**: when `homeos package info
-  <name> --json` shows the package was generated from a plugin
-  (`plugin` field is non-null and the script content matches the
-  template), the template's provenance is verifiable via
-  `homeos plugin info <plugin> --json`. Read the template instead of the
-  rendered script if you need to verify behavior.
-- **Hand-authored packages always read**: anything the user wrote
-  themselves, edited from a skeleton, or pulled in from a cloned
-  repository must be read. `homeos` does not enforce that the file on
-  disk still matches any template.
+- **Read only the relevant action and OS**: install script for
+  `install`, update for `update`, etc.; `.sh` on Linux/macOS, `.ps1`
+  on Windows. Skip the counterpart.
+- **Skip plugin-generated packages**: when `homeos package info
+  <name> --json` reports a `plugin`, verify the plugin's template via
+  `homeos plugin info <plugin> --json` instead of the rendered file.
+- **Always read hand-authored packages**: `homeos` doesn't enforce
+  that the on-disk file still matches any template.
 
-When presenting to the user, **do not paste the raw script content**.
-Instead:
-
-- **Summarize** each script in one or two lines, in plain language.
-  E.g. *"`neovim/install.sh`: runs `dnf -y install neovim` (single
-  line, non-interactive)."*
-- **Flag anomalies** explicitly: `curl | sh` from a non-mainstream URL,
-  writes outside the user's home directory, `sudo` invocations, network
-  calls to unfamiliar domains, anything that prompts on stdin (see the
-  non-interactive section above), unexplained `rm -rf` patterns.
-- **Offer the raw content on request**: if the user asks to see the
-  script verbatim, then paste it. Otherwise the summary is enough.
-
-Treat script content as the source of truth; treat your summary as a
-faithful one-line index pointing at it.
+When presenting to the user, **do not paste the raw script**.
+Summarize each in one or two lines (e.g. *"`neovim/install.sh`: runs
+`dnf -y install neovim`"*), flag anomalies (`curl | sh`, writes
+outside `$HOME`, `sudo` invocations, stdin prompts, unexplained
+`rm -rf` patterns), and offer the raw content only on request.
 
 ### Commit to git after every mutation
 
@@ -196,95 +160,56 @@ something is wrong.
 `state.yml`, `AGENTS.md`, and `CLAUDE.md` are excluded by the generated
 `.gitignore`. You do not need to add them to the commit.
 
-### Verify state with the underlying tool when in doubt (best-effort)
+### Verify against the OS when in doubt (best-effort)
 
-`state.yml` is `homeos`'s logical view: it records what `homeos` *thinks*
-is installed (i.e. install scripts that ran successfully under homeos's
-supervision). The OS itself may disagree — the user could have removed
-the package outside `homeos`, the script may have returned success without
-actually installing anything, or a binary may have been deleted manually.
-
-When user feedback contradicts `state.yml`, or when an install seems to
-have silently failed, verify with the native package manager directly.
-This is best-effort: do it when the discrepancy matters, skip it when the
-homeos view is plausibly correct.
-
-- `dnf list installed <pkg>` (dnf)
-- `apt list --installed 2>/dev/null | grep -i <pkg>` (apt)
-- `brew list --formula <pkg>` or `brew list --cask <pkg>` (homebrew)
-- `winget list <pkg>` (winget)
-- `scoop list <pkg>` (scoop)
-- `command -v <bin>` for arbitrary CLIs on PATH
-
-Reconcile the two views with the user in conversation before mutating.
+`homeos`'s installation state is a logical view of what its scripts
+ran successfully; it may disagree with the OS (user removed something
+outside `homeos`, a script returned success without installing, a
+binary was deleted manually). When user feedback contradicts that
+view, verify with the native tool directly — `dnf list installed`,
+`brew list`, `winget list`, `command -v <bin>`, etc. — and reconcile
+in conversation before mutating. Skip this step when the homeos view
+is plausibly correct.
 
 ### Interactive operations and sudo
 
-The agent's subprocess has no controlling terminal. Anything that reads
-from stdin during execution — sudo password prompts, GPG key acceptance
-on first use, SSH `known_hosts` confirmation, TLS cert acceptance,
-license agreements, package manager confirmations missing `-y` — fails
-immediately because there is no tty to prompt on.
+The agent's subprocess has no controlling terminal. Anything reading
+from stdin during execution — sudo password prompts, GPG key
+acceptance, SSH `known_hosts` confirmation, TLS cert acceptance,
+license agreements, package manager confirmations missing `-y` —
+fails immediately.
 
-**When authoring** a script (Workflow 5) or a plugin template, use the
-non-interactive flags from the start:
+**When authoring** a script or plugin template, use the non-interactive
+flags from the start: `dnf -y`, `apt-get -y`, `pacman --noconfirm`,
+`winget --accept-source-agreements --accept-package-agreements`,
+`curl -fsSL ... | sh -s -- -y`. `brew` is non-interactive by default.
 
-- `dnf -y install ...`
-- `apt-get -y install ...`
-- `pacman --noconfirm -S ...`
-- `winget install --accept-source-agreements --accept-package-agreements ...`
-- `brew install ...` (non-interactive by default)
-- `curl -fsSL ... | sh -s -- -y` for installer scripts that support `-y`
+**When reviewing** an existing script via `homeos package cat <name>`
+and finding an interactive operation:
 
-**When reviewing an existing script** via `homeos package cat <name>`
-and you find an interactive operation, choose one of two paths:
+1. **Mechanical fix** — if a missing `-y` / `--noconfirm` would solve
+   it on a command you recognize, edit the script in place, show the
+   diff, get approval, then proceed.
+2. **Manual offload** — when interactivity is unavoidable (sudo
+   password, GPG key acceptance, license prompt), hand control back to
+   the user. Briefly explain that your subprocess has no tty, then ask
+   them to run the appropriate **homeos command** (e.g.
+   `homeos package install neovim`) in their own terminal. **Always
+   propose a `homeos` command — never a raw underlying-tool command**.
+   Once they confirm completion, resume.
 
-1. **Mechanical fix** — if the problem is a missing `-y` / `--noconfirm`
-   on a command you recognize, edit the script in place, show the diff
-   to the user, get approval, and proceed with the mutation.
-
-2. **Manual offload** — when the interactivity is unavoidable (sudo
-   password, GPG key acceptance, license prompt, etc.), hand control
-   back to the user. Tell them briefly why (your subprocess has no
-   tty so the inner command cannot prompt), then ask them to run the
-   appropriate **homeos command** in their own terminal where a real
-   tty is available. **Always propose a `homeos` command — never a
-   raw underlying-tool command** (no `sudo dnf install ...` in your
-   message; the user's interface is `homeos`).
-
-   Example:
-
-   > *Agent*: "The neovim install script invokes `sudo dnf install`.
-   > My subprocess has no terminal, so sudo can't prompt for your
-   > password from here. Please run this in your terminal:
-   >
-   > ```sh
-   > homeos package install neovim
-   > ```
-   >
-   > sudo will prompt for your password there. Let me know when it
-   > finishes and I'll commit the change."
-
-   Once the user confirms it completed, resume the homeos workflow
-   (commit, etc.).
-
-**Do not work around the constraint.** No piping passwords on stdin
-(`echo ... | sudo -S` leaks through process listings, shell history,
-and logs). No proposing `NOPASSWD` sudoers configuration on your own
-initiative — if the user explicitly asks about fully unattended
-operation you may describe it, but flag the security implications and
-let them decide.
+Do not pipe passwords (`echo ... | sudo -S` leaks through logs and
+process listings). Do not propose `NOPASSWD` sudoers on your own
+initiative; only describe it if the user explicitly asks about fully
+unattended operation, and flag the security implications.
 
 ### Clean up unused-OS scripts
 
-`homeos package add` creates skeleton scripts for both Linux/macOS
-(`.sh`) and Windows (`.ps1`) so the same repository can be applied on
-any OS. In practice most users run on one OS only, and the counterpart
-skeletons sit unused as noise in `packages/`.
-
-After `homeos package add` (especially the no-plugin Workflow 5), ask
-the user whether they want to keep the counterpart-OS scripts. If they
-confirm single-OS, remove them in the same commit as the addition:
+`homeos package add` creates both `.sh` and `.ps1` skeletons so the
+repo is OS-portable, but most users run on one OS. After
+`homeos package add` (especially the no-plugin Workflow 5), ask once
+whether the user is single-OS, and if so remove the counterpart in
+the same commit:
 
 ```sh
 # On Linux/macOS:
@@ -293,30 +218,10 @@ rm packages/<name>/{install,update,uninstall}.ps1
 rm packages/<name>/{install,update,uninstall}.sh
 ```
 
-Ask once per session; subsequent packages in the same session can
-follow the same convention without re-asking. If the user explicitly
-maintains a cross-OS repository (sharing with a team on different OSes,
-or running multiple OSes themselves), keep both sets.
-
-This applies primarily to **hand-authored packages** where homeos
-generates both skeletons. Plugin-based packages render only the OS
-files the plugin's templates provide — the `dnf` plugin is Linux-only
-and never creates `.ps1` files in the first place — so there is
-nothing to clean up.
-
-### Mutation safety in general
-
-- Never run `homeos package uninstall --all` unless the user asked for that
-  specific scope. Prefer naming the packages explicitly.
-- Never run `homeos package remove --purge` or `homeos plugin remove --purge`
-  unless the user asked you to delete the on-disk directory in addition to the
-  `homeos.yml` entry. Without `--purge`, the directory is preserved and the
-  operation is reversible by re-adding the entry.
-- Do not run shell commands that touch the data directory directly (e.g.
-  `rm -rf packages/foo`). Use `homeos` commands so `homeos.yml` and `state.yml`
-  stay consistent.
-- If a `homeos` command fails, read the JSON error envelope's `reason` field
-  and surface a meaningful explanation to the user. Do not retry blindly.
+Apply the same answer to subsequent packages in the session. Keep
+both sets for users who explicitly maintain a cross-OS repo. Plugin-
+based packages render only the OS files the plugin's templates
+provide, so this rarely applies to them.
 
 ## Error JSON schema
 
@@ -578,104 +483,44 @@ git commit -m "Add neovim via dnf plugin"
 
 ### Workflow 2 — "I'm on a new machine; restore my setup"
 
-Note: by the time you (the agent) are reading this AGENTS.md, the data
-directory has already been initialized. This workflow is here so you can
-**guide the user through the same procedure on another machine** — not
-because you'll execute it on this one.
-
-The user wants to reproduce their existing homeos repository on a fresh
-machine. The repository is on GitHub.
-
-**Step 1.** Initialize from the remote.
+By the time you're reading this AGENTS.md, init has already happened
+on this machine. This workflow is here so you can guide the user
+through the same flow on *another* machine.
 
 ```sh
 homeos init https://github.com/<username>/<repo>
+homeos --json apply --dry-run        # preview
+homeos --yes --json apply            # execute
 ```
 
-`init` clones the remote into the data directory and verifies that
-`homeos.yml` is present. Failure modes: `data-dir-not-empty` (the user has
-existing homeos state already), `git-clone-failed` (network/auth issue),
-`not-a-valid-homeos-repo` (the URL points to a directory without
-`homeos.yml`).
-
-**Step 2.** Inspect the plan.
-
-```sh
-homeos --json apply --dry-run
-```
-
-Show the user what will be installed.
-
-**Step 3.** Apply.
-
-```sh
-homeos --yes --json apply
-```
-
-No git commit at the end — initialization clones the repo with its existing
-history; running `apply` only updates `state.yml`, which is gitignored.
+`init` clones the remote and verifies `homeos.yml` is present; common
+failures are `data-dir-not-empty`, `git-clone-failed`, and
+`not-a-valid-homeos-repo`. No git commit at the end — `apply` only
+touches the installation state, which is gitignored.
 
 ### Workflow 3 — "Uninstall neovim"
 
-Reverse a previous install. Note that `uninstall` ignores enabled/disabled
-status: its only concern is whether the package is currently in `state.yml`.
-
-**Step 1.** Resolve the user's intent to an exact package name.
-
-The user's term may not match the `homeos.yml` key — case, suffix, or
-prefix can differ (e.g. they say "neovim" but the package is registered
-as "neovim-nightly"). Start with the package list:
+Reverse a previous install. `uninstall` ignores enabled/disabled
+status; it only cares about the installation state.
 
 ```sh
-homeos package list --json
-```
-
-Pick the entry whose name matches the user's intent. If multiple plausible
-matches exist, ask the user before proceeding. If none match, tell the
-user and stop.
-
-**Step 2.** Inspect the chosen package and verify it is installed.
-
-```sh
-homeos package info neovim --json
-```
-
-Check `installed: true`. If false, tell the user and stop.
-
-**Step 3.** Read the uninstall script to see what will run.
-
-```sh
-homeos package cat neovim
-```
-
-Show the contents of `uninstall.sh` (or `.ps1` on Windows) to the user.
-
-**Step 4.** Dry-run.
-
-```sh
+homeos package list --json                   # resolve the user's term to an exact name
+homeos package info neovim --json            # verify it's installed
+homeos package cat neovim                    # read the uninstall script
 homeos --json package uninstall neovim --dry-run
-```
-
-The plan will list `neovim` and any reverse dependents (packages whose
-`depends_on` includes neovim). Show this to the user; if there are
-dependents, name them explicitly.
-
-**Step 5.** Apply.
-
-```sh
 homeos --yes --json package uninstall neovim
 ```
 
-`uninstall` removes neovim from `state.yml` and disables it in `homeos.yml`.
-The directory under `packages/neovim/` is preserved by default; the user
-can re-enable and re-install later without re-authoring the scripts.
+If multiple package names look plausible, ask the user before
+choosing. The plan shows reverse dependents — surface them.
+`uninstall` removes the package from the installation state and
+disables it in `homeos.yml`; the `packages/<name>/` directory is
+preserved by default so the user can re-enable and re-install later.
 
-**Step 6.** Commit (because `homeos.yml` changed — neovim's `enabled` was
-set to `false`).
+Finish with a commit because `homeos.yml` changed:
 
 ```sh
-git add -A
-git commit -m "Disable neovim after uninstall"
+git commit -am "Disable neovim after uninstall"
 ```
 
 ### Workflow 4 — "Compose a package with a dependency"
@@ -685,89 +530,38 @@ Scoop bucket). Express the setup as its own package and declare `depends_on`.
 This is the same pattern shown in the README's "Composing packages with a
 repo" section.
 
-**Step 1.** Read current state.
+Read current state, then add only the missing pieces:
 
 ```sh
 homeos plugin list --json
 homeos package list --json
-```
-
-Check which plugins and packages are already present so you only add the
-missing pieces.
-
-**Step 2.** Ensure both plugins are present.
-
-```sh
-homeos --yes --json plugin add dnf-copr
-homeos --yes --json plugin add dnf
-```
-
-Skip the ones that already appeared in the list from Step 1.
-
-**Step 3.** Add the setup package.
-
-```sh
+homeos --yes --json plugin add dnf-copr                              # skip if already present
+homeos --yes --json plugin add dnf                                   # skip if already present
 homeos --json package add dnf-copr-mise --plugin dnf-copr --param name=jdxcode/mise
-```
-
-**Step 4.** Add the actual package, depending on the setup package.
-
-```sh
 homeos --json package add mise --plugin dnf --param name=mise --depends-on dnf-copr-mise
+homeos --json apply --dry-run                                        # plan shows dnf-copr-mise first, then mise (required by dnf-copr-mise)
+homeos --yes --json apply
 ```
 
-`homeos` rejects this command if `dnf-copr-mise` is missing or if adding the
-edge would create a cycle. The `dependency-not-found` and
-`circular-dependency` reasons map to specific error messages.
-
-**Step 5.** Dry-run.
-
-```sh
-homeos --json apply --dry-run
-```
-
-The plan should show `dnf-copr-mise` first (because mise requires it), then
-`mise (required by dnf-copr-mise)` annotated with its requester.
-
-**Step 6.** Apply with `--yes`, then commit.
+`homeos` rejects the package-add line if `dnf-copr-mise` is missing
+or the edge would create a cycle (`dependency-not-found`,
+`circular-dependency`). Commit at the end.
 
 ### Workflow 5 — "Make a one-off package without a plugin"
 
-The user has a single tool (e.g. rustup) with a curl-pipe-sh installer that
-doesn't fit any package manager. Use the default skeleton scripts.
-
-**Step 1.** Read current state to confirm the package is not already present.
+The user has a single tool (e.g. rustup) with a curl-pipe-sh
+installer that doesn't fit any package manager. Use skeleton scripts.
 
 ```sh
-homeos package list --json
+homeos package list --json                 # confirm not already present
+homeos --json package add rustup           # creates install.sh / update.sh / uninstall.sh skeletons (+ .ps1)
+homeos package cat rustup                  # read what was generated
 ```
 
-If `rustup` already appears, ask the user what they want to do — re-create
-it, re-install it, or just edit the scripts — before mutating.
-
-**Step 2.** Add the package without a plugin.
-
-```sh
-homeos --json package add rustup
-```
-
-This creates `packages/rustup/install.sh`, `update.sh`, `uninstall.sh`, and
-their `.ps1` counterparts. Each is a skeleton marked
-`# Generated by homeos — fill this in`.
-
-**Step 3.** Read the existing skeletons so you know what to overwrite.
-
-```sh
-homeos package cat rustup
-```
-
-**Step 4.** Edit the scripts in place. Use your file-edit tool to write the
-real curl/installer commands. On Linux/macOS, fill `install.sh`,
-`update.sh`, and `uninstall.sh`. On Windows fill the `.ps1` variants. Remove
-the `# Generated by homeos` marker so the script is no longer flagged as
-unmodified.
-
-For rustup specifically:
+Edit the relevant action scripts in place with your file-edit tool.
+Remove the `# Generated by homeos` marker after filling them in;
+otherwise the plan reports `script unmodified: ...` and skips
+execution. For rustup specifically:
 
 ```sh
 # packages/rustup/install.sh
@@ -783,29 +577,18 @@ rustup update
 rustup self uninstall -y
 ```
 
-If `update` is just `install`, you can either fill both files identically or
-add a script alias:
+If `update` equals `install`, an alias is shorter than duplicating:
 
 ```sh
 homeos --json package add-alias rustup update=install
 ```
 
-**Step 5.** Apply.
+Then apply and commit:
 
 ```sh
 homeos --json apply --dry-run
 homeos --yes --json apply
-```
-
-If a script you forgot to fill still has the `Generated by homeos` marker,
-the plan reports `rustup (script unmodified: install.sh)` and skips
-execution. Edit the file and try again.
-
-**Step 6.** Commit.
-
-```sh
-git add -A
-git commit -m "Add rustup with curl-installer scripts"
+git commit -am "Add rustup with curl-installer scripts"
 ```
 
 ## Choosing a package manager plugin
