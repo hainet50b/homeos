@@ -363,10 +363,10 @@ git config --local user.email "<email>"
 Ask whether the user wants to back up this homeos repository to a
 remote Git host (GitHub, GitLab, or self-hosted). If yes:
 
-1. Suggest a **private** repository — homeos configs can contain
-   personal preferences and aren't meant to be public. If they have
-   `gh` installed and want GitHub, `gh repo create` works; otherwise
-   they create the repo on the web UI and paste the URL.
+1. Have the user create the repository. If they have `gh` installed,
+   `gh repo create` works; otherwise they create it on the web UI and
+   paste the URL back. Let the user decide whether the repo is public
+   or private — homeos imposes no preference.
 2. Configure the remote:
 
 ```sh

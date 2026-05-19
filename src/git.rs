@@ -21,7 +21,7 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
 
 pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("git")
-        .args(["init", &target.to_string_lossy()])
+        .args(["init", "--initial-branch=main", &target.to_string_lossy()])
         .output()?;
 
     if !output.status.success() {
@@ -130,6 +130,37 @@ mod tests {
         // Pre-existing files are untouched.
         assert!(target.join("homeos.yml").exists());
         assert!(target.join(".gitignore").exists());
+    }
+
+    #[test]
+    fn test_init_sets_initial_branch_to_main() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("new-repo");
+        std::fs::create_dir_all(&target).unwrap();
+
+        // Act
+        init(&target).unwrap();
+
+        // Assert — the freshly initialized repo's symbolic HEAD must point at
+        // refs/heads/main regardless of the user's `init.defaultBranch` config.
+        let output = Command::new("git")
+            .args([
+                "-C",
+                &target.to_string_lossy(),
+                "symbolic-ref",
+                "--short",
+                "HEAD",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "symbolic-ref failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let head = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(head.trim(), "main");
     }
 
     #[test]

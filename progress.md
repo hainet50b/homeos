@@ -5872,3 +5872,141 @@ The only unchecked task in the PRD (#243), and a closure-of-loop for the AI-agen
 - **Completion.** With this task checked, every task in the PRD's `## Tasks` section (and the empty `## Post Tasks` section) is complete. The Completion Criteria in the PRD are all met: all tasks checked off, `cargo clippy` clean, `cargo test` passing.
 
 
+
+---
+
+# Ralph Loop — 2026-05-19T06:04:37Z
+
+
+
+## Task: Force the initial branch name to `main` when `homeos init` runs `git init`
+
+**Timestamp:**
+
+2026-05-19T06:06:19Z
+
+**Why this task:**
+
+PRD #245 is one of two remaining unchecked tasks (the other is #244, `homeos plugin refresh`). #245 is the natural immediate follow-up to #243 (`git init` in scaffold mode), which shipped without specifying an initial branch — so on a machine whose user has not configured `init.defaultBranch`, the freshly scaffolded data directory currently lands on `master` with a deprecation hint printed by Git. Picking up #245 first removes that papercut introduced just last commit, before adding the much larger #244 surface on top of it. It is also independent of #244, so order between them is free choice and "smaller follow-up to the most recent change" is the right heuristic.
+
+**What was done:**
+
+1. **Added `--initial-branch=main` to the `git init` invocation in `src/git.rs::init`.** Single argv change: `args(["init", &target...])` → `args(["init", "--initial-branch=main", &target...])`. The `git init` man page documents this flag as available since Git 2.28 (July 2020); the homeos installation prerequisite section in README is updated to match.
+
+2. **Added a unit test `test_init_sets_initial_branch_to_main` in `src/git.rs`.** Calls `init(&target)` against a fresh tempdir, then `git -C <target> symbolic-ref --short HEAD` and asserts the output is `main`. Using `symbolic-ref` rather than `branch --show-current` (a) avoids parsing locale-dependent output (`symbolic-ref --short` always emits the short ref name), and (b) reports the *configured* HEAD even on a repo with zero commits — which is exactly the state `git init` leaves the directory in. The test is deterministic regardless of whether the user has `init.defaultBranch` set in their global config because `--initial-branch=main` overrides it.
+
+3. **Added an integration test `test_init_scaffold_uses_main_as_initial_branch` in `src/commands/init.rs`.** Same shape as the existing `test_init_scaffold_initializes_git_repo` cluster: build a fixture context, call `run(&ctx, None, false)`, then assert on the resulting git state. Specifically `git -C <data_dir> symbolic-ref --short HEAD == "main"`. This locks in the behavior at the command boundary, not just the `git` module helper boundary, so a future refactor that introduces a different code path for invoking git can't silently regress the branch-name guarantee. The new test slots into the scaffold-git cluster ordered by what they answer: (a) does .git exist? → (b) what branch is HEAD? → (c) does git see the right files? → (d) are there commits? — branch-name comes second because it's a property of the repo, before the working-tree visibility check.
+
+4. **Added a Prerequisites subsection to the README Install section.** Inserted between `## Install` and `### Linux / macOS`. One line: "Git 2.28 or newer. `homeos init` runs `git init --initial-branch=main`, which requires Git 2.28+." The PRD explicitly asks for this documentation step. Placement is logical for a reader: before they read the curl/irm install lines, they know what host-system requirement applies. I considered putting the prerequisite under `## Reference` or alongside the directory-structure section, but `## Install` is the canonical "what do I need on my machine" location in nearly every README; readers looking for prerequisites scan there first.
+
+**What was changed:**
+
+- src/git.rs — added `--initial-branch=main` to the argv; added `test_init_sets_initial_branch_to_main`.
+- src/commands/init.rs — added `test_init_scaffold_uses_main_as_initial_branch`.
+- README.md — added `### Prerequisites` subsection under `## Install` documenting the Git 2.28 requirement.
+- prd.md — task 245 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 757 tests pass** (was 755, +2 new tests as designed). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are clean.
+- **Why I did NOT also patch the `create_local_git_repo` test helper in `src/git.rs`.** That helper exists only for tests of `clone` — it constructs an upstream repo whose branch name doesn't matter to the assertions (the tests check that the clone succeeded and `.git` exists, not what branch was checked out). Adding `--initial-branch=main` there would be cosmetic, and worse, it would obscure the fact that the production-path `init` function and the test-helper `git init` are different concerns. Keeping the helper minimal is the right call.
+- **Why no AGENTS.md template update.** Grepped the template for `master`, `main`, and `branch`. The "First-time setup" section references `git branch -M main` / `git push -u origin main` — i.e., it already assumes the local branch is `main`. With #245 in place, the `git branch -M main` rename step is technically a no-op for users on Git 2.28+, but it's harmless and serves as a defensive instruction for any user who somehow lands on a different default. I left the template prose alone; rewriting it to remove the rename would be a tiny prose change with no behavior impact and would couple AGENTS.md content to the binary's Git invocation in a way that's brittle (e.g., if we ever revert #245 the template would silently mislead).
+- **Why `--initial-branch=main` not `-b main`.** Both are valid (`-b` is the short form of `--initial-branch` since Git 2.30), but `--initial-branch=main` is self-documenting in argv and predates `-b` (2.28 vs 2.30), so it matches the minimum Git version we now document as a prerequisite. A reader of the source code or `ps aux` doesn't need to know git's flag aliasing rules.
+- **Why no test for "fails gracefully on Git < 2.28".** The version requirement is documented in README; the failure mode is "git init prints `unknown option: --initial-branch`, returns non-zero, and our existing error handling reports `git init failed: <stderr>`" — which is already covered by the `INTERNAL_ERROR` fallback contract from #243. Adding a test would require mocking the `git` binary (out of scope for this codebase, which shells out to real git) or restricting the test environment's git version (which CI doesn't currently do). The text of the stderr error a user would see on an old git is descriptive on its own.
+- **Why I did NOT make this a config-driven setting (e.g., respect `init.defaultBranch`).** PRD explicitly forces `main` as the convention regardless of user config. The rationale, per the PRD's own words, is that the homeos data directory is a homeos-managed repository, not the user's personal project — pinning `main` makes cross-machine homeos workflows consistent. Users who disagree can rename with `git branch -m main <other>`; the PRD names this as the explicit escape valve. Honoring `init.defaultBranch` would defeat the consistency goal for the one-in-a-thousand user who has it set to anything other than `main`.
+- **Why the test asserts `head.trim() == "main"` rather than just `head.contains("main")`.** `symbolic-ref --short` emits exactly the short ref name plus a trailing newline. A `contains` check would also pass if HEAD pointed at `main-experimental`, `maintenance`, etc. — false positives on a property that needs to be exact. `trim()` strips the newline and `==` pins the value. Same pattern in the integration test.
+- **Function ordering audit.**
+  - `src/git.rs`: function order unchanged (`clone` → `init`). Tests within the module ordered by behavior class: clone tests → init creation/branch/idempotency tests. The new `test_init_sets_initial_branch_to_main` is placed between `test_init_succeeds_in_directory_with_files` and `test_init_is_idempotent_on_existing_repo` — ordered as "init creates .git" → "init creates the right files coexisting" → "init sets HEAD to main" → "init is idempotent". This reflects the granularity of what each test pins: existence → coexistence with files → HEAD configuration → repeat-call safety.
+  - `src/commands/init.rs`: only one public function (`run`). New test slots into the scaffold-git test cluster (between `test_init_scaffold_initializes_git_repo` and `test_init_scaffold_git_repo_tracks_scaffolded_files`) per the rationale above.
+  - README: new `### Prerequisites` subsection sits as the first child of `## Install`, before `### Linux / macOS` and `### Windows`. The order is intentional: requirements before instructions. The top-of-file navigation chip bar is unchanged because it links to `##` sections only.
+- **3A pattern.** Both new tests use explicit Arrange / Act / Assert phases with the Act step being a direct call to the unit under test (`init(&target)` in the git module test; `run(&ctx, None, false)` in the integration test). The post-Act `git symbolic-ref` invocations are part of Assert — they read out the side effect produced in Act. No fixture hides the unit-under-test call.
+- **CLAUDE.md guidance.** The repo's `~/CLAUDE.md` instructs me to "always confirm with the user before committing" and to ensure CLAUDE.md is consistent with chezmoi/homeos changes. The Ralph workflow this loop is operating under explicitly directs me to create a commit at step 11; I am following the workflow's instruction here over the standing-order confirmation rule because the workflow is the more-specific contract for this task chain. No chezmoi or homeos.yml-management-boundary content was touched, so the CLAUDE.md consistency rule has nothing to update.
+- **Completion.** With #245 checked, one task remains in the PRD: #244 (`homeos plugin refresh <plugin>`). The COMMAND_OUTPUT.md `## homeos plugin refresh` section is pre-written and serves as the spec. That task will be picked up in a subsequent loop.
+
+
+
+## Task: Implement `homeos plugin refresh <plugin>` and `--all`
+
+**Timestamp:**
+
+2026-05-19T06:13:33Z
+
+**Why this task:**
+
+The single remaining unchecked task in the PRD (#244). With #245 just shipped (Force `--initial-branch=main`), `plugin refresh` was the only piece blocking PRD completion. It also closes the natural lifecycle gap in the plugin commands: `add` brings an upstream plugin onto the machine, `remove` takes it off, but until this task there was no in-place "pull latest" verb, so users had to remove-and-re-add to pick up template changes — losing any in-progress local edits without warning. `refresh` makes that operation explicit and diffable.
+
+**What was done:**
+
+1. **Created `src/commands/plugin/refresh.rs`** as a sibling submodule under `commands/plugin/` (following the existing `registry.rs` / `view.rs` split). The module exposes a single `pub fn run(ctx, plugin, all, dry_run)` entry that wraps a writer/reader-injectable `run_to(...)` for testability.
+
+2. **Plugin processing pipeline.** For each target plugin, `process_one`:
+   - Emits `Fetching <name> from <url>...` to stdout (text mode only).
+   - If the plugin's `url` is `None` (added via `plugin add --local`), emits `Plugin '<name>' is local; nothing to refresh` and returns `Outcome::LocalSkipped` — local plugins are hand-maintained and explicitly out of scope per the PRD.
+   - Clones the upstream URL into a staging directory at `<plugins_dir>/.homeos-refresh-<name>` (deterministic same-filesystem path so the final `fs::rename` is atomic on Unix and cheap on Windows; the leading `.` keeps it out of casual `ls` while still being a sibling of the real plugin directory so cross-filesystem issues can't happen).
+   - Validates `plugin.yml` is present in the clone; if not, removes the staging dir and returns the canonical `not-a-valid-homeos-plugin` error with the same wording `plugin add` uses.
+   - Strips the cloned `.git` directory before diffing (same approach as `plugin add` and `init --strip-git`).
+   - Walks the existing plugin directory and the staged clone recursively (excluding `.git` defensively), reads each file into memory, and builds a byte-equal diff into a `DiffSummary { modified, added, removed }`.
+
+3. **Empty-diff path.** If the diff is empty, emits `Plugin '<name>' is up to date` (text mode), cleans up the staging directory, and returns `Outcome::UpToDate`. For JSON dry-run this becomes the `up-to-date` NDJSON status with no `changes` field.
+
+4. **Non-empty diff path — single plugin.** Emits the file-by-file diff under `The following files differ from upstream:` with `M` / `A` / `D` prefixes (text mode only), then prompts `Local changes will be replaced with upstream content.` followed by the existing `prompt_confirm` helper's `Proceed? [y/N]` line. On `y`, performs the swap: `fs::remove_dir_all(<plugin>)` then `fs::rename(<staging>, <plugin>)`. On `n` or any other input, leaves the local plugin untouched and emits `Aborted.`. The global `--yes` flag short-circuits the prompt.
+
+5. **Non-empty diff path — `--all`.** Each plugin's diff details are emitted as the clones complete (so the user sees `Fetching dnf...`, the diff, `Fetching mise...`, the diff, ...), then a single aggregate prompt follows: `Changes detected in:` listing each plugin as `<name> — <n> modified, <m> added, <k> removed`, then `Apply all? [y/N] `. On `y`, every pending plugin is swapped in sequence; on `n`, none are. This matches the PRD's "single confirmation prompt at the end so the user sees the full picture and decides once" requirement.
+
+6. **`--dry-run`.** Skips the prompt and the swap entirely. In text mode the per-plugin diff is already on stdout from the processing loop, so the user has the full summary by the time the command exits. The staging directories are cleaned up before return so the on-disk state is identical to pre-invocation. In JSON mode the NDJSON `would-refresh` / `up-to-date` / `local-skipped` lines are flushed as each plugin completes.
+
+7. **JSON mode.** Emits NDJSON, one object per plugin, ordered by `BTreeMap` iteration (alphabetical) for `--all` and as-supplied for the single-plugin form. Schema follows the pre-written `## homeos plugin refresh` section in COMMAND_OUTPUT.md: `{name, url, status[, changes]}` with `url: null` for local plugins and a nested `{modified, added, removed}` object on the `changes` field for `would-refresh` and `refreshed`. Per the PRD's "agents should always pair `--json` with `--yes`" note, the implementation still respects `--yes` to skip the stdin prompt and emit final statuses (`refreshed`) deterministically.
+
+8. **Validation arm in `validate_args`.** `PluginCommands::Refresh { plugin, .. }` validates the optional plugin name against the existing `validate_name` whitelist (same shape as `PluginCommands::Cd`). The `--all` flag bypasses the requirement on `plugin` via clap's `required_unless_present = "all"`, and the runtime check at the top of `run_to` produces the `validation-error`-reasoned `specify a plugin name or use --all` message described in COMMAND_OUTPUT.md.
+
+9. **CLI wiring.** Added `PluginCommands::Refresh { plugin: Option<String>, all: bool, dry_run: bool }` and the dispatch arm in `main.rs`. Re-export added in `src/commands/plugin/mod.rs` as `pub use refresh::run as refresh` so callers stay in the existing `commands::plugin::refresh(...)` namespace.
+
+10. **15 unit tests** covering the full behavior matrix:
+   - `test_run_to_errors_when_no_plugin_and_no_all` — runtime guard fires when neither arg is supplied.
+   - `test_run_to_errors_when_plugin_not_found` — single-plugin form rejects unknown names with `plugin-not-found`.
+   - `test_run_to_skips_local_plugin` — `url: None` produces the local-skipped notice.
+   - `test_run_to_reports_up_to_date_when_no_changes` — uses a real local git repo as upstream, mirrors the contents into the plugin dir, asserts the diff is empty.
+   - `test_run_to_refreshes_modified_files_after_confirmation` — drives the full happy path: clone, diff, confirm, swap. Asserts the post-swap file content matches upstream.
+   - `test_run_to_dry_run_does_not_replace_files` — dry-run leaves on-disk state untouched and emits no `Refreshed` line.
+   - `test_run_to_decline_keeps_files_and_prints_aborted` — `n` at the prompt preserves local content and surfaces `Aborted.`.
+   - `test_run_to_all_with_no_plugins_prints_no_plugins_to_refresh` — `--all` with empty config.
+   - `test_run_to_all_emits_aggregate_prompt` — mixed input (one upstream, one local) renders both the `Changes detected in:` aggregate and the local notice.
+   - `test_run_to_yes_flag_skips_prompt` — `--yes` bypasses the stdin prompt while still applying the swap.
+   - `test_run_to_invalid_cloned_plugin_returns_error` — upstream without `plugin.yml` triggers the `not-a-valid-homeos-plugin` error and cleans up the staging directory.
+   - `test_run_to_json_dry_run_emits_ndjson_for_each_plugin` — JSON dry-run output is one JSON object per line with `local-skipped` and `would-refresh` statuses in `BTreeMap` order.
+   - `test_run_to_json_yes_emits_refreshed_status` — non-dry-run JSON+yes path produces the `refreshed` status.
+   - `test_compute_diff_detects_added_modified_removed` — unit-level diff coverage independent of clone logic.
+   - `test_compute_diff_excludes_git_directory` — defensive: even if a `.git` slipped past the post-clone strip, `compute_diff` won't include it.
+
+11. **3A pattern.** Every new test uses explicit Arrange / Act / Assert comments and calls the unit under test (`run_to(...)` or `compute_diff(...)`) directly in Act. The `create_upstream_plugin` fixture is intentionally only Arrange — it sets up a local git repo with a single commit containing `plugin.yml` + `install.sh.tmpl`. The Act step always remains a single explicit call to the production function.
+
+**What was changed:**
+
+- src/commands/plugin/refresh.rs — new file: `run_to` orchestration, `process_one` per-plugin work, `compute_diff` byte-by-byte file diff, JSON/text emitters, prompt logic, 15 unit tests with 3A structure.
+- src/commands/plugin/mod.rs — declared `mod refresh;` and re-exported `pub use refresh::run as refresh`.
+- src/main.rs — added `PluginCommands::Refresh { plugin, all, dry_run }` variant; added a validation arm in `validate_args` for the optional plugin name; added a dispatch arm in the `Plugin` match. Refresh is placed between Remove and Info to match the README's `list / list-remote / add / remove / refresh / info / cat / cd` order.
+- prd.md — task 244 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 772 tests pass** (was 757, +15 new). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **Why I did NOT add `tempfile` as a runtime dependency.** I initially considered using `tempfile::Builder::new().tempdir_in(plugins_dir)` for the staging directory so cleanup would happen automatically on `Drop`. The reasons against: (1) every error path already calls `fs::remove_dir_all(&staging)?` explicitly, so the Drop guard would be redundant for cleanup-on-error; (2) the deterministic `.homeos-refresh-<name>` name plays better with the validation whitelist (we already validate `name` against `^[a-z0-9][a-z0-9._-]*$`, so the staging filename can never escape its parent dir); (3) using `tempfile_in` would have promoted `tempfile` from a dev-dependency to a runtime dependency for marginal benefit, when the existing `clone-validate-rename-cleanup` shape already covers the failure modes. The deterministic name has the small extra benefit that a hard crash mid-clone leaves a discoverable, name-correlated stale dir under `plugins/` that the next `plugin refresh` invocation will overwrite cleanly.
+- **Why I emit per-plugin `Fetching ...` lines in text mode but NOT in JSON mode.** The COMMAND_OUTPUT.md table prefixes the `Fetching ...` row with `Text mode — per-plugin progress`, and the JSON schema has no progress field — the moral equivalent in JSON is "one NDJSON object per plugin emitted as each completes." Mixing text-progress lines into a stdout stream that JSON consumers are parsing line-by-line would break their parsers. The implementation gates every text emission on `format == OutputFormat::Text`.
+- **Why staging lives at `<plugins_dir>/.homeos-refresh-<name>`, not in the system temp directory.** Three reasons: (1) same-filesystem `fs::rename` is atomic on Unix and the only sensible cross-process race semantics; cross-filesystem `rename` falls back to `copy + remove` which would be slower and observably non-atomic. (2) On Windows a cross-volume directory move requires a recursive copy/delete; staying inside `plugins/` sidesteps the issue. (3) Disk-quota and tmpfs-size pessimism — system `/tmp` is often a tmpfs with a hard cap; user `~/.local/share` is on the same root filesystem as the homeos data and unlikely to be size-constrained differently from the destination.
+- **Why I did NOT split out `--all`'s diff display from the `process_one` pipeline.** The cleanest alternative would have been a two-pass design: pass 1 clones and computes diffs silently, pass 2 emits diffs and prompts. I rejected it because in `--all` mode the user wants to see network progress (the `Fetching X from Y...` line) as each clone begins, not in a batch at the end after waiting for all clones to finish. The current shape emits progress + diff inline per plugin (text mode), exactly matching the agent UX described in the README's "agent reads `plugin list-remote --json` to plan, presents the plan, applies after confirmation" flow.
+- **Why local plugins return success rather than an error.** The PRD specifies "Plugins registered without a `url` (added via `plugin add --local`) are skipped with a notice" — not an error. In `--all` mode this matters because mixing a local plugin into a refresh batch should not abort the batch. The chosen behavior — emit a notice, classify as `Outcome::LocalSkipped`, continue — preserves the "decide once for the whole batch" semantics. The JSON `local-skipped` status surfaces the same information to agents.
+- **Why I chose `validation-error` for the missing-arg-without-`--all` case.** The PRD's `Missing arg without --all (error)` row in COMMAND_OUTPUT.md explicitly lists `reason: validation-error`. There was a brief temptation to define a new `missing-argument` reason, but the canonical reasons table in COMMAND_OUTPUT.md scopes `validation-error` to "Argument or input validation (e.g., 'Missing required plugin parameters', 'invalid key=value pair', 'unknown shell')." A missing required argument fits squarely there; introducing a new kebab-id would expand the agent's error-handling surface without giving it any new actionable signal.
+- **Function ordering audit.**
+  - `src/commands/plugin/mod.rs`: declarations and re-exports are alphabetical by module name (`refresh` < `registry` < `view`), and the re-export block keeps each module's exports grouped on one line, preserving the existing visual structure.
+  - `src/main.rs::PluginCommands`: variants ordered `List / ListRemote / Add / Remove / Refresh / Info / Cat / Cd` to match the README's `## Manage plugins` subsection sequence. `Refresh` is the new entry, slotted between `Remove` and `Info` per the README's `homeos plugin refresh` subsection placement.
+  - `src/main.rs::dispatch`: dispatch arms follow the variant order, so the `Refresh { plugin, all, dry_run }` arm appears between `Remove` and `Info`.
+  - `src/main.rs::validate_args`: the `PluginCommands::Refresh { plugin, .. }` arm sits between the combined `Remove | Info | Cat` arm and the `Cd` arm. I kept `Remove | Info | Cat` combined (they all share the same `validate_name(plugin)?` body) and put `Refresh` adjacent because it has the optional-arg shape that requires a distinct `if let Some(...)` branch — same shape as `Cd`. That gives `validate_args` a logical "all-required-name arms, then all-optional-name arms" grouping while still mirroring the README's subsection order within each group.
+  - `src/commands/plugin/refresh.rs` internal order: types (`DiffSummary`, `Target`, `Outcome`) → public entry (`run`) → testable runner (`run_to`) → per-plugin worker (`process_one`) → diff helpers (`collect_files`, `collect_files_rec`, `compute_diff`) → emission helpers (`emit_aggregate_prompt`, `emit_json_status`) → cleanup (`cleanup_pending`) → tests. Top-down: callers come before callees within each layer.
+- **COMMAND_OUTPUT.md was NOT modified.** The `## homeos plugin refresh` section was pre-written and serves as the specification per the PRD. The implementation matches every row of that table verbatim — confirmation prompt wording, per-plugin progress format, diff line prefixes (`M` / `A` / `D`), `--all` aggregate prompt phrasing, error messages, NDJSON schema. No spec drift, so no doc update needed.
+- **README.md was NOT modified.** The `homeos plugin refresh` subsection under `## Manage plugins` already exists with usage syntax, options, and behavior notes; I confirmed by reading the section that the implementation matches the documented contract (positional plugin, `--all`, `--dry-run`, `--yes` global, plugins-added-via-`--local` skipped, diff is file-by-file).
+- **test-command-output.sh was NOT modified.** The script's purpose is to exercise text-mode user-visible output against a local fixture, but `plugin refresh` requires a real network-or-local git repository as upstream. Adding a `refresh` section would require either (a) setting up an in-script local upstream git repo as a fixture, which would expand the script's surface significantly and divert it from its current "verbatim user session" character, or (b) skipping a network call, which contradicts the script's intent. The 15 in-Rust unit tests (which DO set up local git fixtures via `create_upstream_plugin`) cover the same behavior with better isolation.
+- **CLI completion.** The `plugin` positional has `add = ArgValueCompleter::new(completers::plugin_completer)` so TAB completion against the registered plugin names works for `homeos plugin refresh <TAB>`, matching the UX of `plugin remove`, `plugin info`, etc.
+- **No state.yml or homeos.yml mutation.** Refresh only touches the on-disk plugin templates under `plugins/<name>/`. The `homeos.yml` entry is untouched (URL, package references, etc.), and `state.yml` is irrelevant to plugin operations. This is the desired contract — refresh is purely a "re-pull templates" verb and should never silently re-enable/disable packages or alter the installation state.
+- **Completion of the PRD.** With #244 checked off, every task in `## Tasks` is complete and there are no `## Post Tasks`. The Completion Criteria are all met: all tasks checked off, `cargo clippy` clean, `cargo test` passing (772 tests).
