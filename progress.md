@@ -6245,3 +6245,67 @@ Replaced the direct `Move-Item -Force` overwrite in `install.ps1` (line 55) with
 - **install.sh was NOT modified.** Per the PRD: "install.sh is unaffected — Linux / macOS file semantics already allow replacing a running binary because the existing inode keeps the running process alive while a new inode takes the path." This is correct — POSIX `rename(2)` / `unlink(2)` on a running binary unlinks the directory entry while leaving the inode in use by the running process. The next `tar -x` / `mv` writes a new inode at the same path, fully decoupled.
 - **No state.yml or homeos.yml mutation.** This is an install-script change. The Rust binary, plan classification, action execution, and on-disk repo layout are all untouched.
 - **CLAUDE.md guidance.** The repo's `~/CLAUDE.md` instructs to "always confirm with the user before committing." The Ralph workflow this loop is operating under directs me to create a commit at step 11; I follow the workflow's instruction here over the standing-order confirmation rule because the workflow is the more-specific contract for this task chain. No chezmoi or homeos.yml management-boundary content was touched.
+
+---
+
+# Ralph Loop — 2026-05-20T09:12:11Z
+
+
+
+## Task: Best-effort "update available" notification in homeos cd
+
+**Timestamp:**
+
+2026-05-20T09:19:37Z
+
+**Why this task:**
+
+Sole remaining unchecked task in the PRD (#250). After #248 (already-latest short-circuit in install.sh / install.ps1) and #249 (rename-then-replace in install.ps1) closed out the installer side of the release ergonomics work, #250 is the runtime side: surface the "you should update" signal to users who installed homeos at v0.3.7 and have since been running v0.3.8 binaries indefinitely. No dependency on other unchecked work — this is the last one.
+
+**What was done:**
+
+1. **New module `src/commands/update_check.rs`.** Contains:
+   - `UpdateCheckCache` — `serde`-derived struct with `last_checked_at: u64` (Unix epoch seconds) and `latest_tag: String`. Both fields are public so other modules and tests can construct/inspect it without going through the file path. A dedicated struct (rather than an ad-hoc `serde_json::Value`) so future fields can be added without breaking parsing, per the PRD.
+   - `cache_path(data_dir) -> PathBuf` — public so init's tests can locate the seeded file deterministically. Resolves to `<data_dir>/.last-update-check`.
+   - `current_tag() -> String` — returns `format\!("v{}", env\!("CARGO_PKG_VERSION"))`. Public because init seeding tests assert against it.
+   - `seed_cache(data_dir)` — public. Writes the cache with `last_checked_at = now` and `latest_tag = current_tag()` without any network call. Used by `homeos init` (both scaffold and clone modes).
+   - `check_and_notify(data_dir)` — public entry point used by `homeos cd`. Honors `HOMEOS_SKIP_UPDATE_CHECK`: if set to any non-empty value, returns immediately with no cache read and no file write.
+   - `check_and_notify_to(data_dir, writer, fetch, now)` — pure-function variant for tests. Takes an injectable `now` (so freshness is testable without sleeping) and an injectable `fetch` closure (so the GitHub API call is never exercised in unit tests). The behavior:
+     - cache miss / corrupt JSON → call `fetch`; if `Some(tag)` write `{now, tag}`, otherwise seed with `{now, current_tag()}`.
+     - cache fresh (`now - last_checked_at < 7 days`) → reuse `latest_tag` without network, without file write.
+     - cache stale → call `fetch`; on `Some(tag)` write `{now, tag}`, on `None` write `{now, previous_tag}` (preserving the previous tag with a refreshed timestamp, exactly as the PRD requires).
+     - After resolving `latest_tag`, compare with `current_tag()`. On mismatch, emit one stderr line `homeos: {latest_tag} available — update at https://github.com/hainet50b/homeos`.
+   - `default_fetch()` — private. Builds a `ureq::Agent` with `timeout_global(Some(Duration::from_millis(1500)))` per the PRD spec, GETs `https://api.github.com/repos/hainet50b/homeos/releases/latest` with `User-Agent: homeos`, parses the response as `serde_json::Value`, returns `tag_name` as `String`. Every error path returns `None` so the caller falls back to the cached / current tag — no exceptions ever propagate out of the update-check pipeline.
+   - 10 unit tests covering: seed_cache writes current tag; fresh cache hit makes no network call AND does not rewrite the file (timestamp unchanged); cache-miss + fetch-success writes the fetched tag and emits a notice; cache-stale + fetch-success rewrites the file; cache-miss + fetch-timeout falls back to current tag; cache-stale + fetch-timeout preserves the previous tag with a refreshed timestamp AND emits the notice for that preserved tag; corrupt-JSON is treated as a cache miss; `HOMEOS_SKIP_UPDATE_CHECK=1` (with `EnvVarGuard` for proper test isolation) creates no cache file; current-already-latest emits no notice; notice format exactly matches the PRD's specified line.
+2. **`src/commands.rs`** — added `pub mod update_check;`.
+3. **`src/commands/cd.rs`** — added a single line `let _ = crate::commands::update_check::check_and_notify(&dir);` immediately after `resolve_target` and before `refresh_if_stale`, per the PRD ("Place the call site right before the existing AGENTS.md auto-refresh"). The `let _ = ...` swallows any error so a transient update-check failure can never block the user from entering the shell — best-effort is the whole point.
+4. **`src/commands/init.rs`** — added `crate::commands::update_check::seed_cache(data_dir)?;` to both the scaffold path (after `agents_md::write_files`, before `git::init`) and the clone path (after `agents_md::write_files`, before the success `println\!`). Updated the scaffold-mode `.gitignore` write to `"state.yml\n.last-update-check\nAGENTS.md\nCLAUDE.md\n"`. Added three new tests: `test_init_scaffold_seeds_update_check_cache`, `test_init_with_url_seeds_update_check_cache`, `test_init_gitignore_excludes_last_update_check`. Updated the existing `test_init_creates_gitignore_excluding_state_yml_and_agents_md` to assert the new `.gitignore` content with `.last-update-check` interleaved between `state.yml` and `AGENTS.md`.
+5. **PRD** — task #250 marked checked.
+
+**What was changed:**
+
+- src/commands/update_check.rs — new module.
+- src/commands.rs — register `update_check` module.
+- src/commands/cd.rs — invoke `update_check::check_and_notify` before AGENTS.md refresh.
+- src/commands/init.rs — seed the cache in both scaffold and clone modes; extend `.gitignore` with `.last-update-check`; add three new tests; update one existing gitignore assertion.
+- prd.md — task #250 checked off.
+- progress.md — this entry.
+
+**Remarks:**
+
+- **All 796 Rust tests pass** (up from 783; the new module adds 10 tests and init.rs adds 3). `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean.
+- **Why the cache hit path does NOT rewrite the file even though the PRD says "Always update last_checked_at to the current time after a check attempt."** Re-reading the PRD carefully: "after a check attempt." The fresh-cache path is explicitly described as "reuse the cached `latest_tag` without a network call" — that is, no attempt is made, so the rule does not apply. The "always update" guarantee is for the bounded-cost case: when we *do* attempt (cache stale or missing), the timestamp moves forward regardless of network outcome so we don't pay the 1500 ms timeout twice in the same week. I wrote a dedicated test (`test_cache_hit_still_fresh_makes_no_network_call`) that asserts both no-network-call (panic in the fetch closure if invoked) and no-rewrite (timestamp unchanged) on the fresh path, to lock this interpretation in.
+- **Why I derive `Serialize`, `Deserialize`, `Clone`, `Debug`, `PartialEq` on `UpdateCheckCache`.** Serialize/Deserialize for the JSON roundtrip; Clone because the stale-fetch path needs to move the previous tag out of the struct AND store it back as a new struct (move semantics fight here — Clone keeps the code simple); Debug/PartialEq for test ergonomics and future debug output. Removing any of these would only cost expressivity; none is dead.
+- **Why I use `serde_json::Value` rather than a typed struct in `default_fetch`.** The GitHub releases endpoint returns a large object with many fields; we only need `tag_name`. A typed struct (`#[derive(Deserialize)] struct ReleaseResponse { tag_name: String }`) would also work, but `serde_json::Value` keeps the dependency surface to one type and matches the "best-effort" spirit — if GitHub renames or restructures the response we silently fall back rather than failing with a parse error that propagates to the user. The `.get("tag_name")?.as_str()?` chain is precisely as defensive as the PRD requires.
+- **Why `EnvVarGuard` for the HOMEOS_SKIP_UPDATE_CHECK test.** The same env-var-leak concern raised in task #224 applies here: an ambient `HOMEOS_SKIP_UPDATE_CHECK` set in the developer's shell would silently disable the test. `EnvVarGuard::capture(SKIP_ENV_VAR)` takes the global env lock, captures the previous value, sets the new one, and restores it on Drop. The lock guarantees no concurrent test mutates the same env var.
+- **Why `is_some_and(|v| \!v.is_empty())` rather than `is_some()`.** The PRD says "set to any non-empty value, skips both the cache read and the network call entirely." An accidentally-empty `HOMEOS_SKIP_UPDATE_CHECK=""` should NOT disable the check, per the PRD wording. `is_some_and(...)` enforces non-empty.
+- **Why the URL constant says `https://github.com/hainet50b/homeos` and not the repo's actual canonical URL.** That's exactly the URL the PRD specifies in the notice template: "homeos: v<latest> available — update at https://github.com/hainet50b/homeos". Verbatim match.
+- **Why I match the spec's em-dash separator (`—`) in the notice rather than a hyphen.** PRD writes: "homeos: v<latest> available — update at https://github.com/hainet50b/homeos". The em-dash is intentional in the spec's wording. Changing it to a hyphen would deviate; matching it exactly is the safest reading.
+- **Why I use `unwrap_or(0)` for `now_seconds`.** Pre-1970 system clocks are nominally possible (clock-skew on a fresh VM, RTC battery fail, etc.) but the cache logic only cares that timestamps are monotonic within a single process invocation. `unwrap_or(0)` means the cache file would carry `last_checked_at = 0` on such a machine, and any subsequent `now` would treat it as stale (because `now - 0 >> 7 days`) — which triggers a refetch, which is harmless. The alternative (panic) would break `homeos cd` on every invocation, which is the opposite of "best-effort."
+- **Why `let _ = crate::commands::update_check::check_and_notify(&dir);` and not `?`.** "Best-effort" — a network failure, a permission denied on the cache file, a system-clock anomaly, any of these must not block the user from entering their data directory. The `let _ = ...` is the explicit non-propagation marker. Using `if let Err(...) = ... { /* ignore */ }` would be equivalent but noisier.
+- **Function/method/CLI ordering audit.** README maps user-visible homeos command order: list, add, remove, rename, add-dep, remove-dep, add-alias, remove-alias, enable, disable, info, cat, cd, install, update, uninstall (package); list, list-remote, add, remove, refresh, info, cat, cd (plugin); init, cd, apply (core). The new `update_check` module is a private implementation detail of `homeos cd`, not a user-facing command, so it is not part of the README ordering contract. Within the module, the order is: constants → struct → public helpers (`cache_path`, `current_tag`) → public entry points (`seed_cache`, `check_and_notify`) → private helpers (`skip_check`, `default_fetch`, `read_cache`, `write_cache`) → testable core (`check_and_notify_to`) → tests. Top-down readable. No reordering of unrelated symbols in `cd.rs` or `init.rs`.
+- **No README.md updates.** Task #250 explicitly says "No README / AGENTS.md changes in this task — the maintainer handles documentation by hand."
+- **No AGENTS.md template updates.** Same.
+- **No COMMAND_OUTPUT.md updates.** The `homeos cd` table in COMMAND_OUTPUT.md only specifies command-level output (Data directory not found error). The stderr notice from `update_check` is a passive, opt-out-able auxiliary signal that runs before the command-level logic — analogous to the existing "homeos: refreshed AGENTS.md to v<X.Y.Z>" notice from task #241, which is also not enumerated in COMMAND_OUTPUT.md. Treating both consistently: command-level output goes in COMMAND_OUTPUT.md, side-channel stderr advisory notices live in the source as documented behavior. If the maintainer wants the notice to be part of the command-output spec, a follow-up task can add it.
+- **No `Cargo.toml` changes needed.** `serde`, `serde_json`, `ureq`, and `dirs` are already direct dependencies (per the existing dependency tree). The `ureq` `json` feature is already enabled (per Cargo.toml line 16). No new transitive surface added.
+- **CLAUDE.md guidance.** The repo's `~/CLAUDE.md` instructs to "always confirm with the user before committing." The Ralph workflow this loop is operating under directs me to create a commit at step 11; I follow the workflow's instruction here over the standing-order confirmation rule because the workflow is the more-specific contract for this task chain. No chezmoi or homeos.yml management-boundary content was touched.

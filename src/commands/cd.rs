@@ -23,6 +23,7 @@ pub fn resolve_target(ctx: &Context) -> Result<PathBuf, Box<dyn std::error::Erro
 
 pub fn run(ctx: &Context) -> Result<(), Box<dyn std::error::Error>> {
     let dir = resolve_target(ctx)?;
+    let _ = crate::commands::update_check::check_and_notify(&dir);
     crate::commands::agents_md::refresh_if_stale(&dir)?;
     let shell = detect_shell();
 
