@@ -52,9 +52,27 @@ try {
     if (-not (Test-Path $InstallDir)) {
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     }
-    Move-Item -Path (Join-Path $TempDir "homeos.exe") -Destination (Join-Path $InstallDir "homeos.exe") -Force
+    $TargetExe = Join-Path $InstallDir "homeos.exe"
+    if (Test-Path $TargetExe) {
+        $Suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+        $OldName = "homeos.exe.old-$Suffix"
+        try {
+            Rename-Item -Path $TargetExe -NewName $OldName -ErrorAction Stop
+        } catch {
+            throw "Failed to rename existing $TargetExe. Close any running 'homeos' processes and any terminals where homeos was recently invoked, then re-run the installer. Original error: $_"
+        }
+    }
+    Move-Item -Path (Join-Path $TempDir "homeos.exe") -Destination $TargetExe -Force
 
-    Write-Host "Installed homeos to $InstallDir\homeos.exe"
+    Get-ChildItem -Path $InstallDir -Filter "homeos.exe.old-*" -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            Remove-Item $_.FullName -Force -ErrorAction Stop
+        } catch {
+            # Still locked by a running process; the next install will retry.
+        }
+    }
+
+    Write-Host "Installed homeos to $TargetExe"
 
     $CompletionDir = Join-Path $env:USERPROFILE ".homeos"
     $CompletionFile = Join-Path $CompletionDir "completion.ps1"
