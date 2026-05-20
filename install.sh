@@ -12,6 +12,30 @@ err() {
     exit 1
 }
 
+check_already_latest() {
+    if [ -n "${HOMEOS_FORCE_INSTALL:-}" ]; then
+        return 0
+    fi
+    if ! command -v homeos >/dev/null 2>&1; then
+        return 0
+    fi
+    _ver_local="$(homeos --version 2>/dev/null | awk '{print $NF}')"
+    if [ -z "$_ver_local" ]; then
+        return 0
+    fi
+    _ver_response="$(curl -fsSL --max-time 5 "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)" || return 0
+    _ver_latest="$(printf '%s' "$_ver_response" | sed -n 's/.*"tag_name":[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1)"
+    if [ -z "$_ver_latest" ]; then
+        return 0
+    fi
+    if [ "$_ver_local" = "$_ver_latest" ]; then
+        echo "homeos $_ver_local is already the latest. Set HOMEOS_FORCE_INSTALL=1 to reinstall."
+        exit 0
+    fi
+}
+
+check_already_latest
+
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 

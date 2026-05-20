@@ -7,6 +7,28 @@ $ErrorActionPreference = "Stop"
 $Repo = "hainet50b/homeos"
 $InstallDir = if ($env:HOMEOS_INSTALL_DIR) { $env:HOMEOS_INSTALL_DIR } else { "$env:USERPROFILE\.homeos\bin" }
 
+function Test-AlreadyLatest {
+    if ($env:HOMEOS_FORCE_INSTALL) { return }
+    if (-not (Get-Command homeos -ErrorAction SilentlyContinue)) { return }
+    $LocalVersionLine = & homeos --version 2>$null
+    if (-not $LocalVersionLine) { return }
+    $LocalVersion = ($LocalVersionLine -split '\s+')[-1]
+    if (-not $LocalVersion) { return }
+    try {
+        $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+        return
+    }
+    $LatestVersion = if ($Release.tag_name) { $Release.tag_name -replace '^v', '' } else { $null }
+    if (-not $LatestVersion) { return }
+    if ($LocalVersion -eq $LatestVersion) {
+        Write-Host "homeos $LocalVersion is already the latest. Set HOMEOS_FORCE_INSTALL=1 to reinstall."
+        exit 0
+    }
+}
+
+Test-AlreadyLatest
+
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 $Target = switch ($Arch) {
     "X64"   { "x86_64-pc-windows-msvc" }
