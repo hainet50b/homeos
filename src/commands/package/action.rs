@@ -244,6 +244,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         };
         writeln!(writer, "{value}")?;
     } else {
+        if let Some(notice) = crate::commands::package::windows_powershell_fallback_notice() {
+            writeln!(writer, "{notice}")?;
+            writeln!(writer)?;
+        }
         if let Some(ref plan) = install_plan {
             let s = plan.display_enabled();
             if !s.is_empty() {

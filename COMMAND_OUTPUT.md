@@ -501,6 +501,15 @@ The following packages will be skipped:
 Nothing to do.
 ```
 
+On a Windows host where homeos falls back to Windows PowerShell 5.1 because `pwsh` (PowerShell 7+) is not on `PATH`, every plan display is prefixed with the following notice followed by a blank line:
+
+```
+(running under Windows PowerShell 5.1; PowerShell 7 recommended)
+
+The following packages will be installed:
+  {name}
+```
+
 ### JSON mode
 
 In JSON mode, the plan is emitted as a single JSON object to stdout. `--dry-run --json` writes the plan and exits 0 without prompting or executing. `--json` without `--dry-run` writes the plan, prompts as today (the prompt text goes to the same stream as today — currently stdout — so JSON consumers should combine `--json` with non-interactive flags), and then writes execution results as additional JSON objects (one per package, NDJSON style — one JSON object per line — appended after the plan).
@@ -510,6 +519,7 @@ Plan envelope:
 ```json
 {
   "is_empty": false,
+  "windows_powershell_fallback": false,
   "install": [
     {"name": "claude", "plugin": null, "required_by": null},
     {"name": "dnf-copr-mise", "plugin": "dnf-copr", "required_by": "mise"}
@@ -534,6 +544,7 @@ Plan envelope:
 | Field | Type | Notes |
 |-------|------|-------|
 | `is_empty` | boolean | `true` when nothing will be executed (every section's enabled list is empty) |
+| `windows_powershell_fallback` | boolean | `true` on a Windows host where `pwsh` is not on `PATH` and homeos falls back to Windows PowerShell 5.1 for script execution; `false` on every other host |
 | `install` | array of objects | Packages that will be installed; empty for `update` / `uninstall` commands |
 | `update` | array of objects | Packages that will be updated; empty for `install` / `uninstall` commands |
 | `uninstall` | array of objects | Packages that will be uninstalled; empty for `install` / `update` / `apply` |

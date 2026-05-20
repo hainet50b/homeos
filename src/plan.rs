@@ -207,15 +207,31 @@ impl Plan {
         })
     }
 
-    /// Format the plan as a human-readable string for display.
+    /// Format the plan as a human-readable string for display. On a Windows host
+    /// that has fallen back to Windows PowerShell 5.1 (because `pwsh` is not on
+    /// `PATH`), the rendered string is prefixed with a one-line notice followed
+    /// by a blank line.
     pub fn display(&self) -> String {
+        self.display_with_notice(crate::commands::package::windows_powershell_fallback_notice())
+    }
+
+    /// Format the plan as a human-readable string, optionally prefixed with a
+    /// system notice (e.g., the Windows PowerShell 5.1 fallback warning).
+    /// Exposed crate-internal so tests can assert the rendered notice without
+    /// depending on the host's actual PATH state.
+    pub(crate) fn display_with_notice(&self, notice: Option<&str>) -> String {
         let enabled_part = self.display_enabled();
         let skipped_part = self.display_skipped();
-        match (enabled_part.is_empty(), skipped_part.is_empty()) {
+        let body = match (enabled_part.is_empty(), skipped_part.is_empty()) {
             (true, true) => String::new(),
             (false, true) => enabled_part,
             (true, false) => skipped_part,
             (false, false) => format!("{enabled_part}\n{skipped_part}"),
+        };
+        match notice {
+            Some(n) if !body.is_empty() => format!("{n}\n\n{body}"),
+            Some(n) => n.to_string(),
+            None => body,
         }
     }
 
@@ -348,6 +364,8 @@ impl Plan {
 
         serde_json::json!({
             "is_empty": self.is_empty(),
+            "windows_powershell_fallback":
+                crate::commands::package::is_windows_powershell_fallback(),
             "install": install,
             "update": update,
             "uninstall": uninstall,
@@ -464,6 +482,8 @@ pub fn plans_to_json(plans: &[&Plan]) -> serde_json::Value {
 
     serde_json::json!({
         "is_empty": is_empty,
+        "windows_powershell_fallback":
+            crate::commands::package::is_windows_powershell_fallback(),
         "install": install,
         "update": update,
         "uninstall": uninstall,
@@ -2579,5 +2599,140 @@ The following packages will be skipped:
         let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
         assert_eq!(parsed["status"], "failed");
         assert_eq!(parsed["error"], "Script failed with exit code 1");
+    }
+
+    #[test]
+    fn test_display_with_notice_prepends_notice_and_blank_line() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec!["docker".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+        let notice = Some("(running under Windows PowerShell 5.1; PowerShell 7 recommended)");
+
+        // Act
+        let sut = plan.display_with_notice(notice);
+
+        // Assert
+        let expected = "\
+(running under Windows PowerShell 5.1; PowerShell 7 recommended)
+
+The following packages will be installed:
+  neovim
+The following packages will be skipped:
+  docker (disabled)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_with_notice_none_matches_unprefixed_display() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display_with_notice(None);
+
+        // Assert
+        assert_eq!(sut, "The following packages will be installed:\n  neovim");
+    }
+
+    #[test]
+    fn test_display_with_notice_renders_notice_only_when_body_is_empty() {
+        // Arrange — an empty plan should still surface the notice when supplied
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+        let notice = Some("(running under Windows PowerShell 5.1; PowerShell 7 recommended)");
+
+        // Act
+        let sut = plan.display_with_notice(notice);
+
+        // Assert
+        assert_eq!(
+            sut,
+            "(running under Windows PowerShell 5.1; PowerShell 7 recommended)"
+        );
+    }
+
+    #[test]
+    fn test_to_json_value_includes_windows_powershell_fallback_field() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let value = plan.to_json_value();
+
+        // Assert
+        assert!(value.get("windows_powershell_fallback").is_some());
+        // On non-Windows hosts the field is always false; on Windows it reflects
+        // the host's PATH state which isn't asserted here.
+        if !cfg!(windows) {
+            assert_eq!(value["windows_powershell_fallback"], false);
+        }
+    }
+
+    #[test]
+    fn test_plans_to_json_includes_windows_powershell_fallback_field() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let value = plans_to_json(&[&plan]);
+
+        // Assert
+        assert!(value.get("windows_powershell_fallback").is_some());
+        if !cfg!(windows) {
+            assert_eq!(value["windows_powershell_fallback"], false);
+        }
     }
 }
