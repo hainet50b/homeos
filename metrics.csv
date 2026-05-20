@@ -176,3 +176,4 @@ timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd
 2026-05-20T06:10:24Z,d0bf6b1,"Detect Windows shell at action-execution time with PowerShell 5.1 fallback",623,61,40988,4.81632125
 2026-05-20T06:14:38Z,9780f0a,"Add version-check short-circuit to install.sh and install.ps1",250,28,15873,2.0390565000000005
 2026-05-20T06:17:03Z,f5b6ab9,"Rename-then-replace homeos.exe in install.ps1 to survive locked binaries",142,19,8136,1.28194175
+2026-05-20T09:21:30Z,5155575,"Add update-available notice to homeos cd",557,39,24637,3.5981807499999987
