@@ -242,6 +242,7 @@ JSON schema:
 | Default mode | (no stdout) | Launches an interactive shell in the resolved directory: `packages/` root when called without a name, `packages/{name}/` when a name is given |
 | `--print` text mode | stdout | `{absolute path to the resolved directory}` (single line, no decoration); no shell launched |
 | `--print` JSON mode | stdout | `{"path": "{absolute path to the resolved directory}"}` (single object); no shell launched |
+| `homeos.yml` not found (error, default or `--print`) | stderr | `Error: homeos.yml not found at {path}. Run 'homeos init' first.` (reason: `not-initialized`) |
 | Package not found (error, when a name is given) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
 | Directory not found (error, default or `--print`) | stderr | `Error: Directory not found at {path}` (reason: `directory-not-found`) |
 
@@ -456,6 +457,7 @@ JSON schema:
 | Default mode | (no stdout) | Launches an interactive shell in the resolved directory: `plugins/` root when called without a name, `plugins/{name}/` when a name is given |
 | `--print` text mode | stdout | `{absolute path to the resolved directory}` (single line, no decoration); no shell launched |
 | `--print` JSON mode | stdout | `{"path": "{absolute path to the resolved directory}"}` (single object); no shell launched |
+| `homeos.yml` not found (error, default or `--print`) | stderr | `Error: homeos.yml not found at {path}. Run 'homeos init' first.` (reason: `not-initialized`) |
 | Plugin not found (error, when a name is given) | stderr | `Error: Plugin '{name}' not found` (reason: `plugin-not-found`) |
 | Directory not found (error, default or `--print`) | stderr | `Error: Directory not found at {path}` (reason: `directory-not-found`) |
 
