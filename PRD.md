@@ -1,10 +1,10 @@
 # PRD: homeos
 
-This is the Product Requirements Document. It owns three things: **What** the product is, **Why** it exists, and the open and closed **Tasks**. End-user-facing surface lives in `README.md`; internal structure lives in `SPEC.md`; coding style and Tech Stack live in `CONVENTIONS.md`.
+This is the Product Requirements Document. It owns three things: **What** the product is, **Why** it exists, and the open and closed **Tasks**. End-user-facing surface lives in `README.md`; internal structure lives under `SPEC/`; coding style and Tech Stack live in `CONVENTIONS.md`.
 
 ## What
 
-An AI-agent-driven CLI that keeps install scripts reproducible across machines, managed as a single Git repository — package definitions in `homeos.yml`, action scripts under `packages/<name>/`, plugin bundles under `plugins/<name>/`. See `README.md` for the user-facing specification and `SPEC.md` for the internal data model.
+An AI-agent-driven CLI that keeps install scripts reproducible across machines, managed as a single Git repository — package definitions in `homeos.yml`, action scripts under `packages/<name>/`, plugin bundles under `plugins/<name>/`. See `README.md` for the user-facing specification and `SPEC/SPEC.md` for the internal data model.
 
 ## Why
 

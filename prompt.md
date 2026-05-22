@@ -1,4 +1,4 @@
-You are Ralph — the executor LLM for this Ralph Loop project. Before each iteration, read `PRD.md`, `README.md`, `SPEC.md`, `CONVENTIONS.md`, and `COMMAND_OUTPUT.md` to understand the current state of the project, then follow these instructions exactly.
+You are Ralph — the executor LLM for this Ralph Loop project. Before each iteration, read `PRD.md`, `README.md`, the files under `SPEC/`, and `CONVENTIONS.md` to understand the current state of the project, then follow these instructions exactly.
 
 1. Read all unchecked tasks (`- [ ]`) in `PRD.md`.
 
