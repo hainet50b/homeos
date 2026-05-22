@@ -196,14 +196,38 @@ fn cat_to<W: Write>(
     Ok(())
 }
 
-pub fn cd(ctx: &Context, plugin: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cd(
+    ctx: &Context,
+    plugin: Option<&str>,
+    print: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let dir = resolve_cd_target(ctx, plugin)?;
+    if print {
+        return print_cd_path(&dir, ctx.output_format(), &mut std::io::stdout());
+    }
     let shell = crate::commands::detect_shell();
 
     let status = Command::new(&shell).current_dir(&dir).status()?;
 
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+fn print_cd_path<W: Write>(
+    dir: &std::path::Path,
+    format: OutputFormat,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match format {
+        OutputFormat::Json => {
+            let value = serde_json::json!({ "path": dir.display().to_string() });
+            writeln!(writer, "{value}")?;
+        }
+        OutputFormat::Text => {
+            writeln!(writer, "{}", dir.display())?;
+        }
     }
     Ok(())
 }
@@ -973,5 +997,65 @@ mod tests {
 
         // Assert
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cd_print_text_emits_plugins_root() {
+        // Arrange
+        let dir = std::path::PathBuf::from("/home/user/.local/share/homeos/plugins");
+        let mut output = Vec::new();
+
+        // Act
+        print_cd_path(&dir, OutputFormat::Text, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(text, "/home/user/.local/share/homeos/plugins\n");
+    }
+
+    #[test]
+    fn test_cd_print_text_emits_plugin_dir() {
+        // Arrange
+        let dir = std::path::PathBuf::from("/home/user/.local/share/homeos/plugins/dnf");
+        let mut output = Vec::new();
+
+        // Act
+        print_cd_path(&dir, OutputFormat::Text, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(text, "/home/user/.local/share/homeos/plugins/dnf\n");
+    }
+
+    #[test]
+    fn test_cd_print_json_emits_object_with_path() {
+        // Arrange
+        let dir = std::path::PathBuf::from("/home/user/.local/share/homeos/plugins/dnf");
+        let mut output = Vec::new();
+
+        // Act
+        print_cd_path(&dir, OutputFormat::Json, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["path"], "/home/user/.local/share/homeos/plugins/dnf");
+    }
+
+    #[test]
+    fn test_cd_print_errors_when_plugin_not_found() {
+        // Arrange
+        let base_dir = TempDir::new().unwrap();
+        let ctx = fixture_with_config(&base_dir);
+
+        // Act
+        let result = cd(&ctx, Some("nonexistent"), true);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PLUGIN_NOT_FOUND);
     }
 }

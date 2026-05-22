@@ -369,7 +369,10 @@ Options:
 Launch a shell in the data directory.
 
 ```
-Usage: homeos cd
+Usage: homeos cd [OPTIONS]
+
+Options:
+      --print  Print the data directory path to stdout and exit, without launching a shell
 ```
 
 #### `homeos apply`
@@ -616,10 +619,13 @@ rustup update
 Launch a shell in the package root or specific package directory.
 
 ```
-Usage: homeos package cd [PACKAGE]
+Usage: homeos package cd [OPTIONS] [PACKAGE]
 
 Arguments:
   [PACKAGE]  Package name (optional — defaults to packages root)
+
+Options:
+      --print  Print the resolved path to stdout and exit, without launching a shell
 ```
 
 ### Operate packages
@@ -833,10 +839,13 @@ sudo dnf remove -y {{name}}
 Launch a shell in the plugins root or specific plugin directory.
 
 ```
-Usage: homeos plugin cd [PLUGIN]
+Usage: homeos plugin cd [OPTIONS] [PLUGIN]
 
 Arguments:
   [PLUGIN]  Plugin name (optional — defaults to plugins root)
+
+Options:
+      --print  Print the resolved path to stdout and exit, without launching a shell
 ```
 
 ### Shell completion
