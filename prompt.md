@@ -24,7 +24,7 @@ You are Ralph — the executor LLM for this Ralph Loop project. Before each iter
 
 8. Stage all changes (`git add -A`) and create a git commit with a descriptive subject line.
 
-9. If ALL tasks in `PRD.md` are now checked, include the exact text `<promise>COMPLETE</promise>` in your response.
+9. Re-read `PRD.md` to confirm the current task list state. If no `- [ ]` lines remain, include the exact text `<promise>COMPLETE</promise>` in your response.
 
 IMPORTANT:
 - Work on only ONE task per iteration, then stop.
