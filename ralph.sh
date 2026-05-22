@@ -1,68 +1,90 @@
 #!/usr/bin/env bash
+# ralph.sh — Ralph Loop driver.
+#
+# Usage:
+#   ./ralph.sh [<max-iterations>]
+#
+# Defaults:
+#   max-iterations: 10
+#
+# Environment variables:
+#   RALPH_REPORT_ROTATE_BYTES   size threshold for reports/report.html
+#                               rotation (default: 524288 = 512 KB)
+#
+# Behavior:
+#   - On each iteration: rotate reports/report.html if it exceeds the size
+#     threshold (the current file becomes reports/report-<UTC>.html and a
+#     fresh one is started on the next iteration), then invoke `claude`
+#     with prompt.md as the prompt.
+#   - claude failure exits immediately (no retry); transient failures are
+#     rare and retrying wastes time / tokens.
+#   - Detects `<promise>COMPLETE</promise>` in claude's output and exits 0
+#     when seen.
+#   - Reaching max-iterations without completion exits 1.
+#
+# Dependencies:
+#   - claude (Anthropic CLI)
+#   - jq
+
 set -euo pipefail
 
 MAX_ITERATIONS=${1:-10}
 PROMPT_FILE="prompt.md"
+REPORTS_DIR="reports"
+REPORT_FILE="$REPORTS_DIR/report.html"
+ROTATE_BYTES=${RALPH_REPORT_ROTATE_BYTES:-524288}
 SLEEP_SECONDS=2
 
-METRICS_FILE="metrics.csv"
+mkdir -p "$REPORTS_DIR"
 
-total_duration_ms=0
-total_input_tokens=0
-total_output_tokens=0
-total_cost=0
-
-if [[ ! -s "$METRICS_FILE" ]]; then
-  echo "timestamp,commit,message,duration_s,input_tokens,output_tokens,cost_usd" > "$METRICS_FILE"
+if [[ ! -f "$PROMPT_FILE" ]]; then
+  echo "error: $PROMPT_FILE not found in $(pwd)." >&2
+  exit 1
 fi
 
-echo -e "\n---\n\n# Ralph Loop — $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n" >> progress.md
+command -v claude >/dev/null 2>&1 || { echo "error: 'claude' CLI not found on PATH." >&2; exit 1; }
+command -v jq     >/dev/null 2>&1 || { echo "error: 'jq' not found on PATH."     >&2; exit 1; }
 
 echo "=== Ralph Loop ==="
 echo "Max iterations: $MAX_ITERATIONS"
+echo "Rotation threshold: $ROTATE_BYTES bytes"
 echo ""
 
 for ((i = 1; i <= MAX_ITERATIONS; i++)); do
   echo "--- Iteration $i / $MAX_ITERATIONS ---"
 
-  json=$(claude --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" --output-format json 2>&1) || true
+  # Rotate report.html before the iteration if it exceeds the threshold.
+  if [[ -f "$REPORT_FILE" ]]; then
+    size=$(wc -c < "$REPORT_FILE")
+    if (( size > ROTATE_BYTES )); then
+      ts=$(date -u +%Y%m%dT%H%M%SZ)
+      mv "$REPORT_FILE" "$REPORTS_DIR/report-$ts.html"
+      echo "Rotated $REPORT_FILE ($size bytes) -> $REPORTS_DIR/report-$ts.html"
+    fi
+  fi
+
+  if ! json=$(claude --dangerously-skip-permissions -p "$(cat "$PROMPT_FILE")" --output-format json 2>&1); then
+    echo "error: claude invocation failed; exiting." >&2
+    echo "$json" >&2
+    exit 1
+  fi
 
   result=$(echo "$json" | jq -r '.result // empty')
   duration_ms=$(echo "$json" | jq -r '.duration_ms // 0')
-  input_tokens=$(echo "$json" | jq -r '.usage.input_tokens // 0')
-  output_tokens=$(echo "$json" | jq -r '.usage.output_tokens // 0')
-  cost=$(echo "$json" | jq -r '.total_cost_usd // 0')
-
-  duration_s=$(echo "$duration_ms / 1000" | bc)
-  timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  commit=$(git rev-parse --short HEAD)
-  message=$(git log -1 --format=%s)
-  echo "${timestamp},${commit},\"${message}\",${duration_s},${input_tokens},${output_tokens},${cost}" >> "$METRICS_FILE"
-
-  total_duration_ms=$((total_duration_ms + duration_ms))
-  total_input_tokens=$((total_input_tokens + input_tokens))
-  total_output_tokens=$((total_output_tokens + output_tokens))
-  total_cost=$(echo "$total_cost + $cost" | bc)
+  duration_s=$(( duration_ms / 1000 ))
 
   echo "$result"
   echo ""
-  cost_display=$(printf "%.2f" "$cost")
-  echo "--- Iteration $i completed in ${duration_s}s | in: ${input_tokens} out: ${output_tokens} cost: \$${cost_display} ---"
+  echo "--- Iteration $i completed in ${duration_s}s ---"
   echo ""
 
   if [[ "$result" == *"<promise>COMPLETE</promise>"* ]]; then
-    total_duration_s=$(echo "$total_duration_ms / 1000" | bc)
-    git add "$METRICS_FILE" && git commit -m "Add metrics.csv for Ralph Loop run"
-    total_cost_display=$(printf "%.2f" "$total_cost")
-    echo "=== All tasks complete! (total: ${total_duration_s}s | in: ${total_input_tokens} out: ${total_output_tokens} cost: \$${total_cost_display}) ==="
+    echo "=== All tasks complete ==="
     exit 0
   fi
 
   sleep "$SLEEP_SECONDS"
 done
 
-git add "$METRICS_FILE" && git commit -m "Add metrics.csv for Ralph Loop run (incomplete)"
-total_duration_s=$(echo "$total_duration_ms / 1000" | bc)
-total_cost_display=$(printf "%.2f" "$total_cost")
-echo "=== Reached max iterations ($MAX_ITERATIONS) without completing all tasks (total: ${total_duration_s}s | in: ${total_input_tokens} out: ${total_output_tokens} cost: \$${total_cost_display}) ==="
+echo "=== Reached max iterations ($MAX_ITERATIONS) without completion ==="
 exit 1
