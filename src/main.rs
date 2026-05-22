@@ -60,7 +60,11 @@ pub enum Commands {
         strip_git: bool,
     },
     /// Launch a shell in the repositories directory
-    Cd,
+    Cd {
+        /// Print the data directory path to stdout and exit, without launching a shell
+        #[arg(long)]
+        print: bool,
+    },
     /// Install new packages and update installed ones
     Apply {
         /// Display the plan without executing scripts or prompting
@@ -144,6 +148,9 @@ pub enum PluginCommands {
         /// Plugin name (optional — defaults to plugins root)
         #[arg(add = ArgValueCompleter::new(completers::plugin_completer))]
         plugin: Option<String>,
+        /// Print the resolved path to stdout and exit, without launching a shell
+        #[arg(long)]
+        print: bool,
     },
 }
 
@@ -254,6 +261,9 @@ pub enum PackageCommands {
         /// Package name (optional — defaults to packages root)
         #[arg(add = ArgValueCompleter::new(completers::package_completer))]
         package: Option<String>,
+        /// Print the resolved path to stdout and exit, without launching a shell
+        #[arg(long)]
+        print: bool,
     },
     /// Execute install scripts
     Install {
@@ -298,7 +308,7 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
                 validate_url(u)?;
             }
         }
-        Commands::Cd
+        Commands::Cd { .. }
         | Commands::Apply { .. }
         | Commands::Completion { .. }
         | Commands::AgentsMd => {}
@@ -346,7 +356,7 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
             | PackageCommands::Cat { package } => {
                 validate_name(package)?;
             }
-            PackageCommands::Cd { package } => {
+            PackageCommands::Cd { package, .. } => {
                 if let Some(p) = package {
                     validate_name(p)?;
                 }
@@ -379,7 +389,7 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
                     validate_name(p)?;
                 }
             }
-            PluginCommands::Cd { plugin } => {
+            PluginCommands::Cd { plugin, .. } => {
                 if let Some(p) = plugin {
                     validate_name(p)?;
                 }
@@ -393,7 +403,7 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
     validate_args(&command)?;
     match command {
         Commands::Init { url, strip_git } => commands::init::run(ctx, url.as_deref(), strip_git),
-        Commands::Cd => commands::cd::run(ctx),
+        Commands::Cd { print } => commands::cd::run(ctx, print),
         Commands::Apply { dry_run } => commands::package::apply(ctx, dry_run),
         Commands::Package { command } => match command {
             PackageCommands::List => commands::package::list(ctx),
@@ -438,7 +448,9 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
             PackageCommands::Disable { packages } => commands::package::disable(ctx, &packages),
             PackageCommands::Info { package } => commands::package::info(ctx, &package),
             PackageCommands::Cat { package } => commands::package::cat(ctx, &package),
-            PackageCommands::Cd { package } => commands::package::cd(ctx, package.as_deref()),
+            PackageCommands::Cd { package, print } => {
+                commands::package::cd(ctx, package.as_deref(), print)
+            }
             PackageCommands::Install { packages, dry_run } => {
                 commands::package::install(ctx, &packages, dry_run)
             }
@@ -467,7 +479,9 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
             } => commands::plugin::refresh(ctx, plugin.as_deref(), all, dry_run),
             PluginCommands::Info { plugin } => commands::plugin::info(ctx, &plugin),
             PluginCommands::Cat { plugin } => commands::plugin::cat(ctx, &plugin),
-            PluginCommands::Cd { plugin } => commands::plugin::cd(ctx, plugin.as_deref()),
+            PluginCommands::Cd { plugin, print } => {
+                commands::plugin::cd(ctx, plugin.as_deref(), print)
+            }
         },
         Commands::Completion { shell } => commands::completion::run(shell),
         Commands::AgentsMd => commands::agents_md::run(),
