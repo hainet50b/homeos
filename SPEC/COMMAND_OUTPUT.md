@@ -76,8 +76,10 @@ Each error condition below is annotated with `(reason: <kebab-id>)`. The full se
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Text mode | stdout | Table: `Package`, `Enabled`, `Installed`, `Dependencies` columns (empty table if no packages) |
+| Text mode | stdout | Table: `Package`, `Enabled`, `Installed`, `Plugin`, `Dependencies` columns (empty table if no packages) |
 | JSON mode | stdout | JSON array of package objects (empty array if no packages) |
+
+In text mode, the `Plugin` column renders the backing plugin name (e.g., `dnf`, `winget`) or `-` when the package is not plugin-backed.
 
 JSON schema (one object per package, ordered alphabetically by name):
 
@@ -87,6 +89,7 @@ JSON schema (one object per package, ordered alphabetically by name):
     "name": "claude",
     "enabled": true,
     "installed": true,
+    "plugin": null,
     "depends_on": ["bubblewrap", "socat"]
   }
 ]
@@ -97,6 +100,7 @@ JSON schema (one object per package, ordered alphabetically by name):
 | `name` | string | Package name (the `homeos.yml` key) |
 | `enabled` | boolean | Whether the package is enabled |
 | `installed` | boolean | Whether the package is in `state.yml` |
+| `plugin` | string \| null | Backing plugin name from the package's `plugin:` field; `null` when absent |
 | `depends_on` | array of strings | Forward dependencies; empty array when none |
 
 ## homeos package add

@@ -419,15 +419,15 @@ List all packages.
 Usage: homeos package list
 ```
 
-Displays a table with package name, enabled status, installed status, and dependencies.
+Displays a table with package name, enabled status, installed status, backing plugin, and dependencies.
 
 ```
 $ homeos package list
-Package  Enabled  Installed  Dependencies
--------  -------  ---------  -----------------
-neovim   yes      yes        -
-claude   yes      yes        bubblewrap, socat
-docker   no       no         -
+Package  Enabled  Installed  Plugin  Dependencies
+-------  -------  ---------  ------  -----------------
+neovim   yes      yes        dnf     -
+claude   yes      yes        -       bubblewrap, socat
+docker   no       no         dnf     -
 ```
 
 #### `homeos package add`
