@@ -69,6 +69,28 @@
   <p>Nothing requiring special attention — purely additive to existing list output, all 811 tests pass.</p>
 </section>
 
+<section>
+  <h2>Add <code>ls</code> / <code>ls-remote</code> visible aliases to list-family subcommands</h2>
+
+  <h3>Judgement points</h3>
+  <ul>
+    <li>Used clap's <code>#[command(visible_alias = "...")]</code> attribute directly on the <code>List</code> / <code>ListRemote</code> enum variants, which is the mechanism the task names explicitly. No dispatch or handler changes are needed — clap routes the alias to the same variant, so output is byte-identical for free.</li>
+    <li>For the smoke tests I asserted two things per command: (1) the alias form parses to the same <code>Commands</code>/<code>*Commands</code> variant as the canonical form via <code>matches!</code> (identical variant ⇒ identical handler ⇒ identical output), and (2) the alias appears in <code>get_visible_aliases()</code> so the <code>--help</code> surfacing requirement is covered. I put them in <code>main.rs</code> alongside the existing CLI-parse tests since the alias is purely a parse-layer concern.</li>
+  </ul>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>None.</p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>None.</p>
+
+  <h3>Change summary</h3>
+  <p><code>homeos package ls</code>, <code>homeos plugin ls</code>, and <code>homeos plugin ls-remote</code> now work as aliases for the corresponding <code>list</code> / <code>list-remote</code> commands, and the aliases show up in <code>--help</code>.</p>
+
+  <h3>Review highlights</h3>
+  <p>Nothing requiring special attention — additive clap attributes only, all 816 tests pass.</p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>

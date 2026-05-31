@@ -94,8 +94,10 @@ pub enum Commands {
 #[derive(Subcommand)]
 pub enum PluginCommands {
     /// List all plugins
+    #[command(visible_alias = "ls")]
     List,
     /// List official plugins available from GitHub
+    #[command(visible_alias = "ls-remote")]
     ListRemote,
     /// Register a plugin
     Add {
@@ -157,6 +159,7 @@ pub enum PluginCommands {
 #[derive(Subcommand)]
 pub enum PackageCommands {
     /// List all packages
+    #[command(visible_alias = "ls")]
     List,
     /// Add a new package
     Add {
@@ -524,6 +527,79 @@ mod tests {
 
         // Assert
         assert_eq!(args, vec!["dependency"]);
+    }
+
+    #[test]
+    fn test_package_ls_alias_resolves_to_list() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "package", "ls"]).unwrap();
+
+        // Assert
+        assert!(matches!(
+            cli.command,
+            Commands::Package {
+                command: PackageCommands::List
+            }
+        ));
+    }
+
+    #[test]
+    fn test_plugin_ls_alias_resolves_to_list() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "plugin", "ls"]).unwrap();
+
+        // Assert
+        assert!(matches!(
+            cli.command,
+            Commands::Plugin {
+                command: PluginCommands::List
+            }
+        ));
+    }
+
+    #[test]
+    fn test_plugin_ls_remote_alias_resolves_to_list_remote() {
+        // Arrange & Act
+        let cli = Cli::try_parse_from(["homeos", "plugin", "ls-remote"]).unwrap();
+
+        // Assert
+        assert!(matches!(
+            cli.command,
+            Commands::Plugin {
+                command: PluginCommands::ListRemote
+            }
+        ));
+    }
+
+    #[test]
+    fn test_package_ls_alias_visible_in_help() {
+        // Arrange
+        let cmd = Cli::command();
+        let package_cmd = cmd.find_subcommand("package").unwrap();
+        let list_cmd = package_cmd.find_subcommand("list").unwrap();
+
+        // Act
+        let aliases: Vec<&str> = list_cmd.get_visible_aliases().collect();
+
+        // Assert
+        assert_eq!(aliases, vec!["ls"]);
+    }
+
+    #[test]
+    fn test_plugin_ls_aliases_visible_in_help() {
+        // Arrange
+        let cmd = Cli::command();
+        let plugin_cmd = cmd.find_subcommand("plugin").unwrap();
+        let list_cmd = plugin_cmd.find_subcommand("list").unwrap();
+        let list_remote_cmd = plugin_cmd.find_subcommand("list-remote").unwrap();
+
+        // Act
+        let list_aliases: Vec<&str> = list_cmd.get_visible_aliases().collect();
+        let list_remote_aliases: Vec<&str> = list_remote_cmd.get_visible_aliases().collect();
+
+        // Assert
+        assert_eq!(list_aliases, vec!["ls"]);
+        assert_eq!(list_remote_aliases, vec!["ls-remote"]);
     }
 
     #[test]
