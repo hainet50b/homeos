@@ -46,6 +46,29 @@
 </ul>
 </section>
 
+<section class="entry">
+  <h2>Add Plugin column to <code>homeos package list</code></h2>
+
+  <h3>Judgement points</h3>
+  <ul>
+    <li>Column placement followed the spec exactly: <code>Package</code>, <code>Enabled</code>, <code>Installed</code>, <code>Plugin</code>, <code>Dependencies</code>. The <code>Plugin</code> separator is sized to the widest value (consistent with the existing <code>Package</code> and <code>Dependencies</code> columns), matching the README sample where the separator under <code>Plugin</code> is six dashes (header width) because no value exceeds it.</li>
+    <li>For the JSON field I placed <code>plugin</code> between <code>installed</code> and <code>depends_on</code> to mirror the schema block in COMMAND_OUTPUT.md. Since <code>PackageConfig.plugin</code> is already <code>Option&lt;String&gt;</code>, <code>serde_json::json!</code> renders it as a string or <code>null</code> with no extra handling.</li>
+    <li>Text-mode uses <code>"-"</code> for the absent case via <code>unwrap_or_else</code>; JSON keeps <code>null</code> rather than <code>"-"</code> so consumers can distinguish "no plugin" structurally.</li>
+  </ul>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>None.</p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>The text table layout logic in <code>list_text</code> now repeats a per-column width-then-separator pattern for each column; if a sixth column is ever added, extracting a small column-rendering helper would reduce the boilerplate. Not urgent.</p>
+
+  <h3>Change summary</h3>
+  <p><code>homeos package list</code> now shows a <code>Plugin</code> column (the backing plugin name, or <code>-</code> when none) between <code>Installed</code> and <code>Dependencies</code>, and the JSON output gained a matching <code>plugin</code> field (string or <code>null</code>).</p>
+
+  <h3>Review highlights</h3>
+  <p>Nothing requiring special attention — purely additive to existing list output, all 811 tests pass.</p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>

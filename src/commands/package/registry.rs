@@ -42,6 +42,7 @@ fn list_json<W: Write>(
                 "name": name,
                 "enabled": pkg.enabled,
                 "installed": installed,
+                "plugin": pkg.plugin,
                 "depends_on": pkg.depends_on,
             })
         })
@@ -66,49 +67,59 @@ fn list_text<W: Write>(
     let deps_header = "Dependencies";
     let installed_header = "Installed";
     let installed_width = installed_header.len();
+    let plugin_header = "Plugin";
 
-    let rows: Vec<(String, bool, bool, String)> = config
+    let rows: Vec<(String, bool, bool, String, String)> = config
         .packages
         .iter()
         .map(|(name, pkg)| {
             let installed = installed_packages.contains(name);
+            let plugin = pkg.plugin.clone().unwrap_or_else(|| "-".to_string());
             let deps = if pkg.depends_on.is_empty() {
                 "-".to_string()
             } else {
                 pkg.depends_on.join(", ")
             };
-            (name.clone(), pkg.enabled, installed, deps)
+            (name.clone(), pkg.enabled, installed, plugin, deps)
         })
         .collect();
 
+    let plugin_width = rows
+        .iter()
+        .map(|(_, _, _, p, _)| p.len())
+        .max()
+        .unwrap_or(0)
+        .max(plugin_header.len());
+
     let deps_width = rows
         .iter()
-        .map(|(_, _, _, d)| d.len())
+        .map(|(_, _, _, _, d)| d.len())
         .max()
         .unwrap_or(0)
         .max(deps_header.len());
 
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<deps_width$}",
-        "Package", "Enabled", installed_header, deps_header
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
+        "Package", "Enabled", installed_header, plugin_header, deps_header
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<deps_width$}",
+        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
         "-".repeat(name_width),
         "-------",
         "-".repeat(installed_width),
+        "-".repeat(plugin_width),
         "-".repeat(deps_width)
     )?;
 
-    for (name, enabled, installed, deps) in &rows {
+    for (name, enabled, installed, plugin, deps) in &rows {
         let enabled_str = if *enabled { "yes" } else { "no" };
         let installed_str = if *installed { "yes" } else { "no" };
         writeln!(
             writer,
-            "{:<name_width$}  {:<7}  {:<installed_width$}  {}",
-            name, enabled_str, installed_str, deps
+            "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {}",
+            name, enabled_str, installed_str, plugin, deps
         )?;
     }
 
@@ -1214,6 +1225,43 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines[2].contains("neovim"));
         assert!(lines[2].ends_with("-"));
+    }
+
+    #[test]
+    fn test_list_shows_plugin_column() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    plugin: dnf\n  ripgrep: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains("Plugin"));
+        // neovim is backed by the dnf plugin
+        assert!(lines[2].contains("neovim"));
+        assert!(lines[2].contains("dnf"));
+        // ripgrep has no plugin and renders a dash
+        assert!(lines[3].contains("ripgrep"));
+    }
+
+    #[test]
+    fn test_list_shows_dash_when_no_plugin() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert — Plugin column renders "-" for every package, none being plugin-backed
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[0].contains("Plugin"));
+        assert!(!lines[2].contains("dnf"));
+        assert!(!lines[3].contains("dnf"));
     }
 
     #[test]
@@ -4512,5 +4560,26 @@ mod tests {
             .find(|v| v["name"] == "bubblewrap")
             .expect("bubblewrap entry");
         assert_eq!(bubblewrap["depends_on"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_list_json_plugin_field_present_and_null() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim:\n    plugin: dnf\n  ripgrep: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        // BTreeMap iterates alphabetically: neovim, ripgrep
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["plugin"], "dnf");
+        assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["plugin"], serde_json::Value::Null);
     }
 }
