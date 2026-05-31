@@ -417,6 +417,9 @@ List all packages.
 
 ```
 Usage: homeos package list
+
+Aliases:
+  ls
 ```
 
 Displays a table with package name, enabled status, installed status, backing plugin, and dependencies.
@@ -695,6 +698,9 @@ List all plugins.
 
 ```
 Usage: homeos plugin list
+
+Aliases:
+  ls
 ```
 
 Displays a table with plugin name, description, and URL. `Description` is loaded from each plugin's `plugin.yml`.
@@ -712,6 +718,9 @@ List official plugins available from GitHub.
 
 ```
 Usage: homeos plugin list-remote
+
+Aliases:
+  ls-remote
 ```
 
 Displays name, description, and URL for each official plugin.

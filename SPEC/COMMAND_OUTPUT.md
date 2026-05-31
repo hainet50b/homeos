@@ -74,6 +74,8 @@ Each error condition below is annotated with `(reason: <kebab-id>)`. The full se
 
 ## homeos package list
 
+Aliases: `ls`.
+
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Text mode | stdout | Table: `Package`, `Enabled`, `Installed`, `Plugin`, `Dependencies` columns (empty table if no packages) |
@@ -291,6 +293,8 @@ JSON schema:
 
 ## homeos plugin list
 
+Aliases: `ls`.
+
 | Condition | Dest | Output |
 |-----------|------|--------|
 | Text mode | stdout | Table: `Name`, `Description`, `URL` columns (empty table if no plugins). `Description` is loaded from each plugin's `plugin.yml`. `URL` shows `(local)` when the plugin has no remote URL. |
@@ -320,6 +324,8 @@ JSON schema (one object per plugin, ordered alphabetically by name):
 | `url` | string or null | Plugin URL; `null` for plugins created via `--local` |
 
 ## homeos plugin list-remote
+
+Aliases: `ls-remote`.
 
 | Condition | Dest | Output |
 |-----------|------|--------|
