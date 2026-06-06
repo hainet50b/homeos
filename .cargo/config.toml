@@ -1,0 +1,7 @@
+# Statically link the MSVC C runtime into Windows binaries so homeos runs on a
+# fresh Windows machine without the Visual C++ Redistributable (vcruntime140.dll).
+# Applies to both x86_64-pc-windows-msvc and aarch64-pc-windows-msvc, and to
+# local Windows dev builds for dev/release parity. cfg(target_env = "msvc")
+# matches neither Linux nor macOS, so those targets are unaffected.
+[target.'cfg(target_env = "msvc")']
+rustflags = ["-C", "target-feature=+crt-static"]

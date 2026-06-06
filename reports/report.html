@@ -177,6 +177,67 @@
     targets; Windows behavior rests on the CI Build workflow.
   </p>
 </section>
+<section class="entry">
+<h2>Statically link the MSVC C runtime into Windows binaries</h2>
+
+<h3>Judgement points</h3>
+<ul>
+  <li>Added a new <code>.cargo/config.toml</code> at the repository root with a single
+    <code>[target.'cfg(target_env = "msvc")']</code> section setting
+    <code>rustflags = ["-C", "target-feature=+crt-static"]</code>, exactly as the task and the
+    <em>Windows binary linkage</em> note in <code>SPEC/SPEC.md</code> prescribe. Using the
+    <code>cfg(target_env = "msvc")</code> predicate (rather than naming the two MSVC targets explicitly)
+    is the idiomatic way to cover both <code>x86_64-pc-windows-msvc</code> and
+    <code>aarch64-pc-windows-msvc</code> at once while leaving Linux/macOS untouched, and it also applies
+    to local Windows dev builds for dev/release parity.</li>
+  <li>Added a short comment block at the top of the config explaining the why (vcruntime140.dll on a
+    fresh machine) so the next reader doesn't have to reconstruct the rationale from git history.</li>
+  <li>No <code>.rs</code> source, <code>README.md</code>, or <code>COMMAND_OUTPUT.md</code> changes —
+    the task scopes this to a build-config addition with no user-visible output change, and the spec note
+    in <code>SPEC/SPEC.md</code> was already present.</li>
+</ul>
+
+<h3>Unresolved / workarounds</h3>
+<ul>
+  <li><strong>Local compile/link checks could not be run on this host.</strong> The development machine
+    has no MSVC toolchain installed — no Visual Studio / Build Tools, no <code>cl.exe</code> / external
+    <code>link.exe</code>, and no Windows SDK (<code>kernel32.lib</code> is absent). The
+    <code>x86_64-pc-windows-msvc</code> target requires both an MSVC linker and the SDK import libraries,
+    so <code>cargo clippy</code> / <code>cargo test</code> fail at the <em>link</em> stage regardless of
+    this change — the same limitation prior Windows-specific entries in this report noted. What was
+    verified locally: <code>cargo fmt --check</code> passes, and <code>cargo build -v</code> confirms
+    every MSVC-target <code>rustc</code> invocation now carries <code>-C target-feature=+crt-static</code>,
+    i.e. the config is valid TOML and is correctly picked up and applied by cargo. Full
+    compile/link/test verification rests on the CI <em>Build</em> workflow across all targets, which the
+    task explicitly designates as sufficient for this Windows-only concern.</li>
+</ul>
+
+<h3>Next PRD suggestions</h3>
+<ul>
+  <li>Consider a task to optionally assert CRT independence in CI on the Windows job — e.g. run
+    <code>dumpbin /dependents target\release\homeos.exe</code> and fail if <code>VCRUNTIME140.dll</code>
+    appears in the import table. That would turn the "no Redistributable needed" guarantee into an
+    enforced invariant rather than a build-config assumption.</li>
+</ul>
+
+<h3>Change summary</h3>
+<p>
+  Released <code>homeos.exe</code> for Windows now statically links the MSVC C runtime, so the binary
+  starts on a clean Windows install without first installing the Visual C++ Redistributable
+  (<code>vcruntime140.dll</code>) — removing a fresh-machine bootstrap failure. Linux and macOS builds are
+  unaffected.
+</p>
+
+<h3>Review highlights</h3>
+<p>
+  Please rely on the CI <em>Build</em> workflow to confirm the Windows targets compile, link, and run with
+  the static CRT — this was <strong>not</strong> verifiable on the local host, which lacks any MSVC
+  toolchain (see Unresolved above). Locally I confirmed <code>cargo fmt --check</code> passes and that the
+  <code>crt-static</code> flag is applied to MSVC compilations; the remaining link/run verification is
+  CI-only by design.
+</p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
