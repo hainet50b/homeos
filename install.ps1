@@ -27,10 +27,10 @@ function Test-AlreadyLatest {
 }
 
 if (-not (Test-AlreadyLatest)) {
-    $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    $Arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
     $Target = switch ($Arch) {
-        "X64"   { "x86_64-pc-windows-msvc" }
-        "Arm64" { "aarch64-pc-windows-msvc" }
+        "AMD64" { "x86_64-pc-windows-msvc" }
+        "ARM64" { "aarch64-pc-windows-msvc" }
         default { throw "Unsupported architecture: $Arch" }
     }
 

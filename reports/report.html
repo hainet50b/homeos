@@ -91,6 +91,25 @@
   <p>Nothing requiring special attention — additive clap attributes only, all 816 tests pass.</p>
 </section>
 
+<section>
+  <h2>Fix install.ps1 architecture detection on Windows PowerShell 5.1</h2>
+
+  <h3>Judgement points</h3>
+  <p>The PRD prescribed the exact replacement, so there was little discretion. I followed it verbatim: <code>$Arch</code> now reads <code>$env:PROCESSOR_ARCHITEW6432</code> (falling back to <code>$env:PROCESSOR_ARCHITECTURE</code>) and the switch matches <code>AMD64</code>/<code>ARM64</code> instead of the <code>X64</code>/<code>Arm64</code> values that <code>RuntimeInformation::OSArchitecture</code> produced. The default-throw branch is kept, now echoing the raw env-var value. PowerShell's <code>switch</code> is case-insensitive by default, so lowercase variants still match.</p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>None. This is a PowerShell-only change with no Rust surface, so <code>cargo test</code> does not exercise it; the 816 existing Rust tests still pass unchanged. Real verification requires running the bootstrap under Windows PowerShell 5.1, which is outside this environment.</p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>None.</p>
+
+  <h3>Change summary</h3>
+  <p>The Windows install script now detects CPU architecture via environment variables instead of a .NET type that misbehaves under the preinstalled Windows PowerShell 5.1, so <code>iwr ... | iex</code> bootstraps correctly on a fresh machine instead of failing with "Unsupported architecture:".</p>
+
+  <h3>Review highlights</h3>
+  <p>No automated coverage for <code>install.ps1</code> exists; the fix should be confirmed by a real curl-pipe-iex run on a 5.1 machine before the next release.</p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
