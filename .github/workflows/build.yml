@@ -32,3 +32,25 @@ jobs:
 
       - name: Test
         run: cargo test
+
+      - name: Verify CRT independence (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build
+          $exe = "target/debug/homeos.exe"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) {
+            Write-Host "::error::dumpbin.exe not found via vswhere"
+            exit 1
+          }
+          Write-Host "Using dumpbin: $dumpbin"
+          $dependents = & $dumpbin /dependents $exe | Out-String
+          Write-Host "=== dumpbin /dependents $exe ==="
+          Write-Host $dependents
+          if ($dependents -match '(?i)(VCRUNTIME|MSVCP)\d*\.dll|api-ms-win-crt-') {
+            Write-Host "::error::CRT dependency found in $exe import table (see dependents above)"
+            exit 1
+          }
+          Write-Host "OK: no CRT dependency in $exe import table"

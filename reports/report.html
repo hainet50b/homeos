@@ -238,6 +238,41 @@
 </p>
 </section>
 
+<section class="entry">
+  <h2>Enforce Windows CRT independence in CI</h2>
+
+  <h3>Judgement points</h3>
+  <ul>
+    <li>Inlined the same ~15-line <code>pwsh</code> check into both workflows rather than extracting a composite action. The task scope is two workflow files; a reusable action under <code>.github/actions/</code> would be a larger surface than two copies justify.</li>
+    <li>In <code>build.yml</code> the check is one <code>if: runner.os == 'Windows'</code> step that runs <code>cargo build</code> itself, then inspects <code>target/debug/homeos.exe</code> — following the task's note that fmt/clippy/test don't reliably leave a plain debug binary, and that the debug profile links the same CRT as release, so the debug binary is a valid subject.</li>
+    <li>In <code>release.yml</code> the step sits between <code>Build</code> and <code>Package (Windows)</code> so the exact artifact about to be zipped is what gets verified. It inspects <code>target/${{ matrix.target }}/release/homeos.exe</code>, which works unchanged for both the x86_64 entry and the cross-built aarch64 entry — <code>dumpbin /dependents</code> parses a PE regardless of its target architecture.</li>
+    <li>Flattened <code>dumpbin</code> output with <code>Out-String</code> and tested it with a single <code>-match '(?i)(VCRUNTIME|MSVCP)\d*\.dll|api-ms-win-crt-'</code>. The <code>(?i)</code> gives the required case-insensitivity; the <code>api-ms-win-crt-</code> arm is included because <code>+crt-static</code> statically links the UCRT too, so its forwarder DLLs must also be absent.</li>
+    <li>Echoed the full dependents list unconditionally (before the pass/fail branch) so any failure is diagnosable straight from the job log, and used GitHub <code>::error::</code> annotations on the two failure paths (dumpbin not found, CRT import present).</li>
+    <li>Located <code>dumpbin</code> via the preinstalled <code>vswhere.exe</code> at <code>${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe</code> with <code>-latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe'</code>, taking the first result — no third-party actions, per the task.</li>
+  </ul>
+
+  <h3>Unresolved / workarounds</h3>
+  <ul>
+    <li>Local <code>cargo test</code> is intermittently red on this Windows host due to the <em>pre-existing</em> PATH-mutation race that already has its own open PRD task ("Eliminate the process-wide PATH mutation in the <code>shell_command</code> tests"). Three <code>commands::plugin::refresh</code> tests panic with <code>program not found</code> on their <code>Command::new("git")</code> fixture when they run concurrently with the two PATH-rewriting <code>shell_command</code> tests. Confirmed unrelated to this change, which touches only YAML: the suite is 819/819 green with <code>--test-threads=1</code>, and the refresh tests pass 15/15 in isolation. Not fixed here, to keep the one-task-per-iteration boundary intact.</li>
+    <li>This task is not locally verifiable beyond YAML well-formedness — there is no Windows CI runner on this host. Both workflow files parse cleanly (validated with a YAML parser) and the new steps appear with the expected <code>if</code>/<code>shell</code>/<code>run</code> structure and ordering. First real execution is the next push to <code>main</code> (Build) and the v0.3.12 release flow (Release), which the maintainer watches.</li>
+  </ul>
+
+  <h3>Next PRD suggestions</h3>
+  <ul>
+    <li>The two workflows now carry a byte-identical pwsh verification block. If a third Windows-only verification ever lands, extracting a local composite action (e.g. <code>.github/actions/verify-crt-independence</code>) would remove the duplication — not worth it for two copies today.</li>
+    <li>Prioritizing the PATH-race fix task next would make the local <code>cargo test</code> gate reliable for every subsequent task, rather than green only single-threaded.</li>
+  </ul>
+
+  <h3>Change summary</h3>
+  <p>Both CI workflows now fail their Windows jobs if the built <code>homeos.exe</code> imports any CRT DLL (<code>VCRUNTIME*</code>, <code>MSVCP*</code>, or <code>api-ms-win-crt-*</code>), locking in the <code>+crt-static</code> guarantee so a future regression can't silently ship a binary that fails to start on a fresh Windows machine without the Visual C++ Redistributable. OS-level imports like <code>KERNEL32.dll</code> remain allowed.</p>
+
+  <h3>Review highlights</h3>
+  <ul>
+    <li>The gate regex is <code>(?i)(VCRUNTIME|MSVCP)\d*\.dll|api-ms-win-crt-</code>. Worth a glance to confirm the CRT DLL name set is complete for your shipping config; everything else (KERNEL32, ADVAPI32, ws2_32, bcrypt, ntdll, …) is intentionally allowed.</li>
+    <li>Because the host can't run the Windows jobs, the steps are unexecuted until CI runs them — the Build workflow triggers on push to <code>main</code>, the Release workflow during the v0.3.12 tag flow. Both are worth watching on first run.</li>
+  </ul>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
