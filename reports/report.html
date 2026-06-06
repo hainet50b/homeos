@@ -110,6 +110,73 @@
   <p>No automated coverage for <code>install.ps1</code> exists; the fix should be confirmed by a real curl-pipe-iex run on a 5.1 machine before the next release.</p>
 </section>
 
+<section>
+  <h2>cd-family Windows shell fallback (<code>pwsh</code> → <code>powershell</code>)</h2>
+
+  <h3>Judgement points</h3>
+  <p>
+    The task asked for a single source of truth for Windows shell selection reachable from both
+    the cd-family subshell path (<code>src/commands.rs</code>) and the action-execution path
+    (<code>src/commands/package/mod.rs</code>). I lifted <code>pwsh_on_path()</code> /
+    <code>pwsh_on_path_in()</code> into the parent <code>commands</code> module and added a shared
+    <code>windows_shell_for(pwsh_available)</code> helper that owns the pwsh-vs-powershell decision.
+    The action path's <code>shell_command_for</code> stayed in <code>package/mod.rs</code> because its
+    Unix arm returns <code>sh</code> (not the subshell's <code>/bin/sh</code>); only its Windows arm now
+    delegates to the shared helper. I kept the two contexts' Unix defaults distinct rather than forcing
+    them to share, since they were already intentionally different.
+  </p>
+  <p>
+    To make the new fallback testable without depending on the host's <code>PATH</code> or compile-time
+    <code>cfg!(windows)</code>, I introduced <code>resolve_shell_with(shell_env, is_windows,
+    pwsh_available)</code> — mirroring the existing <code>shell_command_for</code> parameter-injection
+    pattern — and had the production <code>resolve_shell</code> delegate to it. The old host-dependent
+    <code>test_resolve_shell_falls_back_when_env_unset</code> (which asserted <code>pwsh</code> on Windows
+    and would now be wrong/flaky on a pwsh-less Windows host) was replaced with four deterministic
+    parametrized cases (env-var-wins, Unix, Windows+pwsh, Windows-no-pwsh).
+  </p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>
+    The development host (Windows) has no MSVC toolchain, Windows SDK, or Visual Studio installed, so
+    <code>link.exe</code> is absent and MSVC-target builds cannot link locally. Per the project's
+    documented convention (Windows is verified via the Build CI workflow on push; local verification is
+    on Linux), I ran <code>cargo fmt --check</code>, <code>cargo clippy -- -D warnings</code>, and
+    <code>cargo test</code> inside WSL Fedora after installing the toolchain there
+    (<code>gcc rust cargo rustfmt clippy git</code>). All 819 tests pass on Linux. The
+    <code>#[cfg(windows)]</code>-gated tests in <code>package/mod.rs</code> are not exercised on Linux;
+    they are unchanged in behavior and will run on the Windows CI job. A git identity had to be set in WSL
+    for the clone-based test helpers to commit their fixture repos.
+  </p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>
+    The test fixture helpers (<code>create_local_git_repo</code> in <code>git.rs</code>,
+    <code>init.rs</code>, and <code>plugin/registry.rs</code>) call <code>git commit</code> without
+    passing <code>-c user.name</code> / <code>-c user.email</code> and ignore the commit's exit status.
+    On any machine without a global git identity, the fixture commits silently fail and the clone-based
+    tests produce confusing "Not a valid homeos plugin/repo" failures rather than a clear setup error.
+    Consider a follow-up task to pin a deterministic identity in those helpers (e.g.
+    <code>git -c user.name=homeos-test -c user.email=test@homeos.local commit ...</code>) so the suite is
+    self-contained regardless of ambient git config.
+  </p>
+
+  <h3>Change summary</h3>
+  <p>
+    On a fresh Windows machine with only Windows PowerShell 5.1, <code>homeos cd</code>,
+    <code>homeos package cd</code>, and <code>homeos plugin cd</code> no longer fail with
+    "program not found" — they now fall back to <code>powershell</code> when <code>pwsh</code> (PowerShell
+    7+) is not on <code>PATH</code>, matching the fallback already used for action-script execution. The
+    <code>SHELL</code> environment variable still takes priority when set.
+  </p>
+
+  <h3>Review highlights</h3>
+  <p>
+    Please confirm the placement of the shared Windows shell-selection helpers in the
+    <code>commands</code> module (vs. a dedicated module) reads well. Also note the local-verification
+    platform caveat above: this was validated on Linux/WSL because the Windows host cannot link MSVC
+    targets; Windows behavior rests on the CI Build workflow.
+  </p>
+</section>
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>

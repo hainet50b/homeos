@@ -7,8 +7,6 @@ pub use registry::{
     remove_dep, rename,
 };
 
-use std::ffi::OsStr;
-
 const WINDOWS_POWERSHELL_FALLBACK_NOTICE: &str =
     "(running under Windows PowerShell 5.1; PowerShell 7 recommended)";
 
@@ -33,14 +31,14 @@ pub(crate) fn all_script_extensions() -> &'static [&'static str] {
 ///   install pwsh` to bootstrap itself, instead of failing at the first script
 ///   execution.
 pub(crate) fn shell_command() -> &'static str {
-    shell_command_for(cfg!(windows), pwsh_on_path())
+    shell_command_for(cfg!(windows), crate::commands::pwsh_on_path())
 }
 
 /// Returns `true` when running on Windows AND `pwsh` is not on `PATH`,
 /// indicating that homeos will fall back to Windows PowerShell 5.1 for
 /// script execution. Returns `false` on every non-Windows host.
 pub(crate) fn is_windows_powershell_fallback() -> bool {
-    cfg!(windows) && !pwsh_on_path()
+    cfg!(windows) && !crate::commands::pwsh_on_path()
 }
 
 /// Returns the leading notice that should accompany every plan display when the
@@ -56,26 +54,10 @@ pub(crate) fn windows_powershell_fallback_notice() -> Option<&'static str> {
 
 fn shell_command_for(is_windows: bool, pwsh_available: bool) -> &'static str {
     if is_windows {
-        if pwsh_available { "pwsh" } else { "powershell" }
+        crate::commands::windows_shell_for(pwsh_available)
     } else {
         "sh"
     }
-}
-
-fn pwsh_on_path() -> bool {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    pwsh_on_path_in(&path)
-}
-
-fn pwsh_on_path_in(path: &OsStr) -> bool {
-    for dir in std::env::split_paths(path) {
-        for name in ["pwsh", "pwsh.exe"] {
-            if dir.join(name).is_file() {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -134,35 +116,6 @@ mod tests {
 
         // Assert
         assert_eq!(cmd, "powershell");
-    }
-
-    #[test]
-    fn test_pwsh_on_path_in_returns_true_when_pwsh_is_present() {
-        // Arrange
-        let dir = tempfile::tempdir().unwrap();
-        let exe_name = if cfg!(windows) { "pwsh.exe" } else { "pwsh" };
-        let pwsh_path = dir.path().join(exe_name);
-        std::fs::write(&pwsh_path, "").unwrap();
-        let path_var = dir.path().as_os_str().to_owned();
-
-        // Act
-        let found = pwsh_on_path_in(&path_var);
-
-        // Assert
-        assert!(found);
-    }
-
-    #[test]
-    fn test_pwsh_on_path_in_returns_false_when_pwsh_is_absent() {
-        // Arrange
-        let dir = tempfile::tempdir().unwrap();
-        let path_var = dir.path().as_os_str().to_owned();
-
-        // Act
-        let found = pwsh_on_path_in(&path_var);
-
-        // Assert
-        assert!(!found);
     }
 
     #[test]
