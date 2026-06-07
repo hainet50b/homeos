@@ -34,6 +34,20 @@ Open questions:
 - Presentation: one table with a meaningful sort, or subsection headings per group?
 - Implementation surface: likely a prose-only change to `AGENTS.md.tmpl`; note the maintainer has previously kept template prose edits out of the Ralph loop for voice consistency.
 
+## Background install execution with periodic progress reports
+
+*(noted 2026-06-07)*
+
+Large installs (GUI apps, toolchains, anything that downloads hundreds of MB) can run for many minutes with the agent silently blocked on the subprocess. From the user's side the session looks frozen — they can't tell a 10-minute download from a hung prompt (the no-tty failure mode `AGENTS.md.tmpl` already warns about).
+
+Idea: instruct the agent in `templates/AGENTS.md.tmpl` to run **every** install in the background rather than blocking on it, polling until completion, and to report interim progress to the user roughly every minute while one is still running. Making backgrounding unconditional is deliberate: it removes any "is this install large?" judgment call (LLM agents follow uniform rules more reliably than conditional ones), small installs simply finish by the first poll, and the periodic-report behavior emerges naturally for long-running ones. Both behaviors are phrased as "if your runtime supports it", since capabilities vary by agent: some can run subprocesses in the background and poll them; others execute commands strictly synchronously and can do neither. Agents that can't comply fall back to synchronous execution and instead set expectations up front for known-heavy packages ("this download is large; expect several minutes of silence").
+
+Open questions:
+
+- The critical risk is fire-and-forget: with synchronous execution the exit code and stderr land in the agent's context automatically, but a backgrounded install requires the agent to come back and collect them. The instruction needs wording strong enough that the agent never proceeds to verification/commit without confirming completion and exit code — how to phrase that so it survives across agent implementations?
+- What does a useful interim report contain when package-manager output isn't streamed back — elapsed time only, or tail of captured output?
+- Implementation surface: prose-only change to `AGENTS.md.tmpl`; note the maintainer has previously kept template prose edits out of the Ralph loop for voice consistency.
+
 ## Git bootstrap experience on fresh machines
 
 *(noted 2026-06-07)*
