@@ -134,13 +134,38 @@ where
         }
     };
 
-    if latest_tag != current_tag() {
+    if is_update_available(&latest_tag, &current_tag()) {
         writeln!(
             writer,
             "homeos: {latest_tag} available — update at {UPDATE_URL}"
         )?;
     }
     Ok(())
+}
+
+/// Parse a `vX.Y.Z` release tag into a numeric `(major, minor, patch)` triple.
+/// Returns `None` for anything that does not match the exact form (missing `v`
+/// prefix, wrong component count, or non-numeric components).
+fn parse_tag(tag: &str) -> Option<(u64, u64, u64)> {
+    let rest = tag.strip_prefix('v')?;
+    let mut parts = rest.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
+}
+
+/// True when `latest` is a strictly newer release than `current`, comparing
+/// `vX.Y.Z` numerically. Any unparseable tag yields `false` — the check is
+/// best-effort and silence beats a false alarm.
+fn is_update_available(latest: &str, current: &str) -> bool {
+    match (parse_tag(latest), parse_tag(current)) {
+        (Some(latest), Some(current)) => latest > current,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -370,5 +395,125 @@ mod tests {
             notice,
             format!("homeos: v99.0.0 available — update at {UPDATE_URL}\n")
         );
+    }
+
+    #[test]
+    fn test_latest_newer_notifies() {
+        // Arrange — fetched tag is one patch ahead of the current binary.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        let mut writer: Vec<u8> = Vec::new();
+        let current = current_tag();
+        let (major, minor, patch) = parse_tag(&current).unwrap();
+        let newer = format!("v{major}.{minor}.{}", patch + 1);
+        let newer_for_fetch = newer.clone();
+        let fetch = move || Some(newer_for_fetch.clone());
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert
+        let notice = String::from_utf8(writer).unwrap();
+        assert!(
+            notice.contains(&format!("{newer} available")),
+            "a strictly newer tag must notify, got: {notice:?}"
+        );
+    }
+
+    #[test]
+    fn test_equal_tag_is_silent() {
+        // Arrange — fresh cache holds exactly the current binary's tag.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        write_cache(
+            &cache_path(tmp.path()),
+            &UpdateCheckCache {
+                last_checked_at: fresh_timestamp(now),
+                latest_tag: current_tag(),
+            },
+        )
+        .unwrap();
+        let mut writer: Vec<u8> = Vec::new();
+        let fetch = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert
+        assert!(writer.is_empty(), "equal tag must not notify");
+    }
+
+    #[test]
+    fn test_latest_older_than_current_is_silent() {
+        // Arrange — fresh cache holds a tag OLDER than the current binary, the
+        // post-upgrade stale-cache case. No fetch happens on a fresh cache.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        write_cache(
+            &cache_path(tmp.path()),
+            &UpdateCheckCache {
+                last_checked_at: fresh_timestamp(now),
+                latest_tag: "v0.0.1".to_string(),
+            },
+        )
+        .unwrap();
+        let mut writer: Vec<u8> = Vec::new();
+        let fetch = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert
+        assert!(writer.is_empty(), "an older cached tag must not notify");
+    }
+
+    #[test]
+    fn test_unparseable_fetched_tag_is_silent() {
+        // Arrange — fetch returns a tag that is not in vX.Y.Z form.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        let mut writer: Vec<u8> = Vec::new();
+        let fetch = || Some("nightly".to_string());
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert — cache is still written, but no notice is emitted.
+        let cache = read_cache(&cache_path(tmp.path())).unwrap();
+        assert_eq!(cache.latest_tag, "nightly");
+        assert!(writer.is_empty(), "an unparseable tag must not notify");
+    }
+
+    #[test]
+    fn test_parse_tag_accepts_well_formed() {
+        // Arrange / Act / Assert
+        assert_eq!(parse_tag("v0.3.12"), Some((0, 3, 12)));
+        assert_eq!(parse_tag("v10.20.30"), Some((10, 20, 30)));
+    }
+
+    #[test]
+    fn test_parse_tag_rejects_malformed() {
+        // Arrange / Act / Assert
+        assert_eq!(parse_tag("0.3.12"), None); // missing v prefix
+        assert_eq!(parse_tag("v0.3"), None); // too few components
+        assert_eq!(parse_tag("v0.3.12.1"), None); // too many components
+        assert_eq!(parse_tag("vx.y.z"), None); // non-numeric
+        assert_eq!(parse_tag("nightly"), None); // not a version at all
+    }
+
+    #[test]
+    fn test_is_update_available_compares_strictly_newer() {
+        // Arrange / Act / Assert
+        assert!(is_update_available("v0.3.13", "v0.3.12"));
+        assert!(is_update_available("v0.4.0", "v0.3.12"));
+        assert!(is_update_available("v1.0.0", "v0.3.12"));
+        assert!(!is_update_available("v0.3.12", "v0.3.12")); // equal
+        assert!(!is_update_available("v0.3.11", "v0.3.12")); // older
+        assert!(!is_update_available("garbage", "v0.3.12")); // unparseable latest
+        assert!(!is_update_available("v0.3.13", "garbage")); // unparseable current
     }
 }

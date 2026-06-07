@@ -462,6 +462,50 @@
   </p>
 </section>
 
+<section class="entry">
+<h2>Notify only when the latest release is strictly newer</h2>
+
+<h3>Judgement points</h3>
+<ul>
+  <li>Replaced the plain <code>latest_tag != current_tag()</code> string inequality with a numeric comparison: <code>parse_tag</code> turns <code>vX.Y.Z</code> into a <code>(u64, u64, u64)</code> triple and <code>is_update_available</code> compares them with <code>&gt;</code>. Tuple ordering gives lexicographic major→minor→patch comparison for free, so no hand-written component loop was needed.</li>
+  <li><code>parse_tag</code> is strict about the exact <code>vX.Y.Z</code> shape — it requires the <code>v</code> prefix, exactly three dot-separated components, and all-numeric parts (rejecting <code>v0.3</code>, <code>v0.3.12.1</code>, <code>vx.y.z</code>, and bare <code>0.3.12</code>). The SPEC says any non-<code>vX.Y.Z</code> tag yields no notice, so being strict here is the safe reading.</li>
+  <li>On any parse failure (either side), <code>is_update_available</code> returns <code>false</code> rather than falling back to string comparison. This matches the spec's "silence beats false alarms" principle and folds the unparseable case into the same code path as equal/older.</li>
+  <li>Left the cache-write logic untouched — the strictly-newer rule only gates the stderr notice, not what gets persisted. An unparseable fetched tag is still written to the cache verbatim (the network said so); it just does not trigger a notice. Self-healing the cache for the older-than-current case is deliberately deferred — it is the next PRD task.</li>
+</ul>
+
+<h3>Unresolved / workarounds</h3>
+<ul>
+  <li>None.</li>
+</ul>
+
+<h3>Next PRD suggestions</h3>
+<ul>
+  <li>The post-upgrade stale cache (cached tag older than the running binary) is now silent but still asserts an outdated "latest" for up to 7 days — already captured as the immediately-following self-heal task in the PRD.</li>
+</ul>
+
+<h3>Change summary</h3>
+<p>
+  <code>homeos cd</code>'s "update available" notice no longer fires on a mere tag mismatch.
+  It now parses both the cached/fetched tag and the running binary's tag as
+  <code>vX.Y.Z</code> and prints the notice only when the latest is numerically newer.
+  This stops the field bug where a freshly upgraded binary kept announcing the previous
+  version (e.g. a v0.3.12 binary printing <code>homeos: v0.3.11 available</code>) for the
+  rest of the 7-day cache window. Equal, older, and unparseable tags are all silent.
+</p>
+
+<h3>Review highlights</h3>
+<p>
+  Verified on this Windows host: <code>cargo fmt --check</code> and
+  <code>cargo clippy -- -D warnings</code> clean, full <code>cargo test</code> at
+  827 passed / 0 failed. New coverage: <code>test_parse_tag_accepts_well_formed</code>,
+  <code>test_parse_tag_rejects_malformed</code>,
+  <code>test_is_update_available_compares_strictly_newer</code> (unit-level), plus
+  end-to-end <code>test_latest_newer_notifies</code>, <code>test_equal_tag_is_silent</code>,
+  <code>test_latest_older_than_current_is_silent</code>, and
+  <code>test_unparseable_fetched_tag_is_silent</code> through <code>check_and_notify_to</code>.
+</p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
