@@ -43,13 +43,9 @@ pub fn write_files(data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
 /// Regenerate AGENTS.md and CLAUDE.md if the version embedded in AGENTS.md's
 /// first-line marker does not match the current binary's version. Returns
-/// `true` when a refresh happened. A one-line notice is written to stderr on
-/// refresh so the user sees that the file changed.
-pub fn refresh_if_stale(data_dir: &Path) -> Result<bool, Box<dyn std::error::Error>> {
-    refresh_if_stale_to(data_dir, &mut std::io::stderr())
-}
-
-fn refresh_if_stale_to<W: Write>(
+/// `true` when a refresh happened. A one-line notice is written to `writer`
+/// (stderr in production) on refresh so the user sees that the file changed.
+pub(crate) fn refresh_if_stale_to<W: Write>(
     data_dir: &Path,
     writer: &mut W,
 ) -> Result<bool, Box<dyn std::error::Error>> {

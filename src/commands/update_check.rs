@@ -45,19 +45,20 @@ pub fn seed_cache(data_dir: &Path) -> std::io::Result<()> {
 }
 
 /// Best-effort update check. Reads the cache, fetches when stale or missing,
-/// writes back the result, and emits one stderr line when a newer release is
-/// available. Honors `HOMEOS_SKIP_UPDATE_CHECK` (any non-empty value disables
-/// both the cache read and the network call, with no file write either).
-pub fn check_and_notify(data_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+/// writes back the result, and emits one line to `writer` (stderr in
+/// production) when a newer release is available. Honors
+/// `HOMEOS_SKIP_UPDATE_CHECK` (any non-empty value disables both the cache read
+/// and the network call, with no file write either). Uses the real network
+/// fetch and clock; the injectable `writer` lets callers (the `homeos cd` entry
+/// sequence) capture the notice for ordering tests without spawning a shell.
+pub(crate) fn check_and_notify_to_writer<W: Write>(
+    data_dir: &Path,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
     if skip_check() {
         return Ok(());
     }
-    check_and_notify_to(
-        data_dir,
-        &mut std::io::stderr(),
-        default_fetch,
-        now_seconds(),
-    )
+    check_and_notify_to(data_dir, writer, default_fetch, now_seconds())
 }
 
 fn skip_check() -> bool {
@@ -360,7 +361,7 @@ mod tests {
         guard.set("1");
 
         // Act
-        check_and_notify(tmp.path()).unwrap();
+        check_and_notify_to_writer(tmp.path(), &mut std::io::sink()).unwrap();
 
         // Assert — no cache file was created and no notice was emitted.
         assert!(!cache_path(tmp.path()).exists());

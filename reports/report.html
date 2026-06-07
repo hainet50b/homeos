@@ -567,6 +567,76 @@
   </p>
 </section>
 
+<section>
+  <h2>Order the homeos cd entry sequence: AGENTS.md refresh before the update notice</h2>
+
+  <h3>Judgement points</h3>
+  <p>
+    The literal requirement was a two-line swap in <code>cd::run()</code>, but the task also
+    asked for a test that asserts the relative order of the two stderr lines. <code>run()</code>
+    itself spawns an interactive shell, so it can't be driven from a unit test, and both side
+    effects previously wrote straight to <code>std::io::stderr()</code> — there was no seam to
+    capture them. A test that didn't share code with <code>run()</code> would only assert its
+    own call order, guarding nothing. So I extracted the two calls into a private
+    <code>entry_sequence(dir, writer)</code> helper that takes an injectable writer:
+    <code>run()</code> passes real stderr, the test passes a <code>Vec&lt;u8&gt;</code> and
+    asserts the refresh line's byte offset precedes the update line's. This is the minimal honest
+    seam — naming the sequence and parameterizing the writer.
+  </p>
+  <p>
+    To route both writes through one buffer I exposed writer-injectable variants:
+    <code>agents_md::refresh_if_stale_to</code> became <code>pub(crate)</code>, and I added
+    <code>update_check::check_and_notify_to_writer</code> (skip-env + real fetch + real clock,
+    but writes to a caller-supplied writer). That made the two no-writer public wrappers
+    (<code>refresh_if_stale</code>, <code>check_and_notify</code>) dead in the non-test build, so
+    I removed them and pointed their two remaining test callers at the writer variants — rather
+    than leaving them behind an <code>#[allow(dead_code)]</code>.
+  </p>
+  <p>
+    The error semantics of the original two lines are preserved exactly: the AGENTS.md refresh
+    error propagates (a failed local-state write should block entering the shell), while the
+    best-effort update check stays <code>let _ =</code> (never blocks <code>cd</code>).
+  </p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>
+    The ordering test forces both stderr lines by arranging a stale AGENTS.md marker (triggers
+    refresh) plus a hand-written <code>.last-update-check</code> with a fresh timestamp and a
+    strictly-newer tag (<code>v99.0.0</code>, triggers the notice via cache reuse — no network).
+    It guards <code>HOMEOS_SKIP_UPDATE_CHECK</code> with the existing <code>EnvVarGuard</code>,
+    which is the same low-risk env var the suite already mutates elsewhere; no process-wide
+    <code>PATH</code> mutation is involved, so it doesn't reintroduce the cross-thread hazard
+    that an earlier task removed.
+  </p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>
+    PRD.md now has no remaining unchecked tasks. Nothing new surfaced — the <code>cd</code> entry
+    sequence reads cleanly as a single named block, and the spec files (<code>SPEC.md</code>
+    Ordering bullet, <code>COMMAND_OUTPUT.md</code> side-effects line) already documented this
+    order, so no spec drift remained to address.
+  </p>
+
+  <h3>Change summary</h3>
+  <p>
+    When <code>homeos cd</code> runs right after a binary upgrade, you now read
+    <code>homeos: refreshed AGENTS.md to v&lt;new&gt;</code> first and the update advisory
+    second, instead of the reverse — local state change before outside-world news, with the
+    actionable line closest to your prompt.
+  </p>
+
+  <h3>Review highlights</h3>
+  <p>
+    Worth a look: I removed the public <code>refresh_if_stale</code> /
+    <code>check_and_notify</code> wrappers because nothing in production called them once
+    <code>entry_sequence</code> took over — confirm you're comfortable with the writer variants
+    being the sole entry points. Verified on this Windows host: <code>cargo fmt --check</code>
+    and <code>cargo clippy --all-targets -- -D warnings</code> clean, full <code>cargo test</code>
+    at 831 passed / 0 failed, including the new
+    <code>test_entry_sequence_refreshes_agents_md_before_update_notice</code>.
+  </p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
