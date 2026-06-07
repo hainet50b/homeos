@@ -506,6 +506,67 @@
 </p>
 </section>
 
+<section>
+  <h2>Self-heal the update-check cache after a binary upgrade</h2>
+
+  <h3>Judgement points</h3>
+  <p>
+    The self-heal belongs only in the fresh-cache branch of
+    <code>check_and_notify_to</code>. The stale and missing branches already write a
+    <code>now</code> timestamp, so layering self-heal there would be redundant; the whole
+    point is the fresh branch that previously returned <code>c.latest_tag</code> verbatim
+    without ever touching the file.
+  </p>
+  <p>
+    I reused the existing <code>is_update_available(latest, current)</code> helper, calling it
+    as <code>is_update_available(&amp;current, &amp;c.latest_tag)</code> — "is the running binary
+    strictly newer than what the cache claims is latest?". This inherits the helper's
+    parse-failure → <code>false</code> semantics for free: an unparseable cached tag simply
+    means no heal (no-op), which is the safe choice and needs no extra branch.
+  </p>
+  <p>
+    <code>last_checked_at</code> is carried over from the cached entry rather than set to
+    <code>now</code>, because no network check happened — advancing it would shift the 7-day
+    TTL schedule and defer the next real fetch, which the spec forbids.
+  </p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>
+    Asserting "no rewrite happened" is not directly observable (a redundant write would
+    produce byte-identical content). I made it observable by pre-writing the equal-tag
+    fixture with pretty-printed JSON: <code>write_cache</code> emits compact JSON, so if the
+    fresh-equal branch had written, the bytes would differ. The test asserts the raw bytes are
+    unchanged. The idempotence test uses the same byte-equality technique across two runs.
+  </p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>
+    Only PRD #205 remains (reorder the <code>homeos cd</code> entry sequence so AGENTS.md
+    refresh precedes the update notice). No new tasks surfaced — the update-check module is now
+    internally consistent with the strictly-newer notify rule from the prior task.
+  </p>
+
+  <h3>Change summary</h3>
+  <p>
+    Right after you upgrade homeos, the cached "latest release" tag is older than the binary
+    you're now running. <code>homeos cd</code> now quietly corrects that cache entry to the
+    current version (keeping the existing check timestamp, no network call), so it stops
+    asserting a stale "latest" for the rest of the 7-day window.
+  </p>
+
+  <h3>Review highlights</h3>
+  <p>
+    Verified on this Windows host: <code>cargo fmt --check</code> and
+    <code>cargo clippy -- -D warnings</code> clean, full <code>cargo test</code> at
+    830 passed / 0 failed. New coverage:
+    <code>test_fresh_cache_with_older_tag_self_heals_to_current</code> (heal + timestamp
+    preserved + silent + fetch not called),
+    <code>test_self_heal_is_idempotent_on_subsequent_run</code> (second run rewrites nothing,
+    stays silent), and <code>test_fresh_cache_with_equal_tag_does_not_rewrite</code>
+    (byte-level no-write assertion).
+  </p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>

@@ -105,8 +105,24 @@ where
 
     let latest_tag = match previous {
         Some(c) if now.saturating_sub(c.last_checked_at) < CACHE_TTL_SECONDS => {
-            // Fresh — reuse without a network call or file write.
-            c.latest_tag
+            // Fresh — reuse without a network call. Self-heal when the running
+            // binary is strictly newer than the cached tag: the binary is itself
+            // proof a release at least that new exists, so rewrite latest_tag to
+            // the current tag, preserving last_checked_at (no check happened, so
+            // the TTL schedule must not shift).
+            let current = current_tag();
+            if is_update_available(&current, &c.latest_tag) {
+                let _ = write_cache(
+                    &path,
+                    &UpdateCheckCache {
+                        last_checked_at: c.last_checked_at,
+                        latest_tag: current.clone(),
+                    },
+                );
+                current
+            } else {
+                c.latest_tag
+            }
         }
         Some(c) => {
             // Stale — fetch and rewrite. Preserve previous tag on fetch failure.
@@ -469,6 +485,102 @@ mod tests {
 
         // Assert
         assert!(writer.is_empty(), "an older cached tag must not notify");
+    }
+
+    #[test]
+    fn test_fresh_cache_with_older_tag_self_heals_to_current() {
+        // Arrange — fresh cache holds a tag OLDER than the running binary, the
+        // post-upgrade case. No fetch happens on a fresh cache.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        let written_at = fresh_timestamp(now);
+        write_cache(
+            &cache_path(tmp.path()),
+            &UpdateCheckCache {
+                last_checked_at: written_at,
+                latest_tag: "v0.0.1".to_string(),
+            },
+        )
+        .unwrap();
+        let mut writer: Vec<u8> = Vec::new();
+        let fetch = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert — cache rewritten to the current tag, timestamp preserved, silent.
+        let cache = read_cache(&cache_path(tmp.path())).unwrap();
+        assert_eq!(cache.latest_tag, current_tag());
+        assert_eq!(cache.last_checked_at, written_at);
+        assert!(writer.is_empty(), "self-heal must not notify");
+    }
+
+    #[test]
+    fn test_self_heal_is_idempotent_on_subsequent_run() {
+        // Arrange — fresh cache with an older tag; the first run heals it.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        let written_at = fresh_timestamp(now);
+        write_cache(
+            &cache_path(tmp.path()),
+            &UpdateCheckCache {
+                last_checked_at: written_at,
+                latest_tag: "v0.0.1".to_string(),
+            },
+        )
+        .unwrap();
+        let fetch1 = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+        let fetch2 = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+
+        // Act — first run heals; capture the healed bytes, then run again.
+        let mut writer1: Vec<u8> = Vec::new();
+        check_and_notify_to(tmp.path(), &mut writer1, fetch1, now).unwrap();
+        let healed_bytes = fs::read_to_string(cache_path(tmp.path())).unwrap();
+        let mut writer2: Vec<u8> = Vec::new();
+        check_and_notify_to(tmp.path(), &mut writer2, fetch2, now).unwrap();
+
+        // Assert — the second run rewrites nothing and stays silent.
+        let after_bytes = fs::read_to_string(cache_path(tmp.path())).unwrap();
+        assert_eq!(after_bytes, healed_bytes, "second run must not rewrite");
+        assert!(writer2.is_empty(), "second run must be silent");
+        let cache = read_cache(&cache_path(tmp.path())).unwrap();
+        assert_eq!(cache.latest_tag, current_tag());
+        assert_eq!(cache.last_checked_at, written_at);
+    }
+
+    #[test]
+    fn test_fresh_cache_with_equal_tag_does_not_rewrite() {
+        // Arrange — fresh cache already holds the current tag, serialized in a
+        // non-canonical (pretty) form so any rewrite is byte-detectable.
+        let tmp = TempDir::new().unwrap();
+        let now = 1_700_000_000u64;
+        let pretty = serde_json::to_string_pretty(&UpdateCheckCache {
+            last_checked_at: fresh_timestamp(now),
+            latest_tag: current_tag(),
+        })
+        .unwrap();
+        fs::write(cache_path(tmp.path()), &pretty).unwrap();
+        let mut writer: Vec<u8> = Vec::new();
+        let fetch = || -> Option<String> {
+            panic!("fetch must not be called on a fresh cache hit");
+        };
+
+        // Act
+        check_and_notify_to(tmp.path(), &mut writer, fetch, now).unwrap();
+
+        // Assert — bytes untouched (no rewrite), and nothing is emitted.
+        let raw = fs::read_to_string(cache_path(tmp.path())).unwrap();
+        assert_eq!(
+            raw, pretty,
+            "equal-tag fresh hit must not rewrite the cache"
+        );
+        assert!(writer.is_empty());
     }
 
     #[test]
