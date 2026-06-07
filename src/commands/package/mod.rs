@@ -135,44 +135,14 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn test_shell_command_falls_back_when_pwsh_absent_on_windows() {
-        // Arrange — clear PATH so pwsh cannot be discovered
-        let guard = crate::env_test::EnvVarGuard::capture("PATH");
-        let empty_dir = tempfile::tempdir().unwrap();
-        guard.set(empty_dir.path().to_str().unwrap());
-
-        // Act
-        let cmd = shell_command();
-        let fallback = is_windows_powershell_fallback();
-        let notice = windows_powershell_fallback_notice();
-
-        // Assert
-        assert_eq!(cmd, "powershell");
-        assert!(fallback);
-        assert_eq!(notice, Some(WINDOWS_POWERSHELL_FALLBACK_NOTICE));
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn test_shell_command_prefers_pwsh_when_present_on_windows() {
-        // Arrange — point PATH at a directory containing a stub pwsh.exe
-        let guard = crate::env_test::EnvVarGuard::capture("PATH");
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("pwsh.exe"), "").unwrap();
-        guard.set(dir.path().to_str().unwrap());
-
-        // Act
-        let cmd = shell_command();
-        let fallback = is_windows_powershell_fallback();
-        let notice = windows_powershell_fallback_notice();
-
-        // Assert
-        assert_eq!(cmd, "pwsh");
-        assert!(!fallback);
-        assert_eq!(notice, None);
-    }
+    // NOTE: The composition `shell_command()` = `shell_command_for(cfg!(windows),
+    // pwsh_on_path())` is intentionally NOT exercised by a dedicated test here.
+    // Doing so previously required rewriting the process-global PATH (via
+    // EnvVarGuard) to fake pwsh presence/absence, which raced with any concurrent
+    // test spawning a subprocess (e.g. `git` in plugin::refresh), surfacing as
+    // intermittent "program not found" failures on the Windows suite. The two
+    // decision functions are fully covered without touching global state:
+    // `shell_command_for` above and `pwsh_on_path_in` in `crate::commands`.
 
     #[test]
     #[allow(clippy::type_complexity)]

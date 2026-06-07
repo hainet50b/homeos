@@ -273,6 +273,68 @@
   </ul>
 </section>
 
+<section>
+  <h2>De-flake the Windows suite: drop the PATH-mutating <code>shell_command</code> tests</h2>
+
+  <h3>Judgement points</h3>
+  <p>
+    The two <code>#[cfg(windows)]</code> tests in <code>src/commands/package/mod.rs</code>
+    (<code>test_shell_command_falls_back_when_pwsh_absent_on_windows</code> and
+    <code>test_shell_command_prefers_pwsh_when_present_on_windows</code>) faked pwsh
+    presence/absence by rewriting the process-global <code>PATH</code> via
+    <code>EnvVarGuard</code>. Rust runs the whole binary's tests on parallel threads in
+    one process, so during that mutation window any concurrently-spawning test resolved
+    binaries against the clobbered PATH — observed as <code>plugin refresh</code> tests
+    panicking at <code>Command::new("git")</code> with <em>program not found</em>, a
+    different failing set every run.
+  </p>
+  <p>
+    I chose to <strong>delete both</strong> rather than rewrite them. The decision logic
+    they covered is already fully exercised without touching global state:
+    <code>shell_command_for(is_windows, pwsh_available)</code> (same module) and
+    <code>pwsh_on_path_in(&amp;path)</code> (in <code>crate::commands</code>) are both
+    parameter-injected. The only thing the deleted pair added was the one-line composition
+    <code>shell_command()</code> = <code>shell_command_for(cfg!(windows), pwsh_on_path())</code>,
+    which the PRD task explicitly says is acceptable to drop. I left a comment in their
+    place documenting why no test wires that composition together, so a future contributor
+    doesn't "helpfully" re-add the racy version.
+  </p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>
+    None. Audited the whole suite for other <code>EnvVarGuard::capture("PATH")</code> usage
+    — these two were the only ones, as the PRD predicted. <code>EnvVarGuard</code> itself
+    stays; it's used for lower-risk vars (<code>HOMEOS_DATA_DIR</code>,
+    <code>HOMEOS_OUTPUT_FORMAT</code>, etc.) that no concurrent test reads implicitly during
+    a subprocess spawn.
+  </p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>
+    None new. (Task #202 — <code>-NoProfile -File</code> for Windows action scripts — remains
+    the last open Windows-hardening item.)
+  </p>
+
+  <h3>Change summary</h3>
+  <p>
+    Removed two flaky Windows-only tests that rewrote the global <code>PATH</code> and
+    intermittently broke unrelated subprocess-spawning tests. Shell-selection behaviour is
+    unchanged and still fully covered by state-free, parameter-injected tests.
+  </p>
+
+  <h3>Review highlights</h3>
+  <p>
+    <strong>Process note for the maintainer:</strong> this entry and the next
+    (<em>OS-appropriate fixtures</em>) were completed together in a single Ralph iteration,
+    deviating from the usual one-task-per-iteration rule. Reason: on the Windows dev host the
+    suite was red for <em>two independent</em> reasons (this PATH race + the <code>touch</code>
+    fixtures), and neither fix alone yields a deterministic green <code>cargo test</code> —
+    so the race fix is effectively a verification prerequisite for the fixture fix. Committed
+    separately so history stays clean. Confirmed green: three consecutive full runs at
+    817 passed / 0 failed.
+  </p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>
