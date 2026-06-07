@@ -795,12 +795,24 @@ mod tests {
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
         let script_path = pkg_dir.join(format!("{action}.{ext}"));
-        std::fs::write(
-            &script_path,
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
-        )
-        .unwrap();
+        std::fs::write(&script_path, marker_script(marker_path)).unwrap();
         (tmp, ctx)
+    }
+
+    /// Build an action-script body that creates `marker` as a side effect, in the
+    /// shell appropriate for the current OS. On Windows the OS-named script is `*.ps1`
+    /// and runs under PowerShell, so the body uses `New-Item`; elsewhere it is a POSIX
+    /// `sh` script using `touch`. This keeps the suite runnable on a stock Windows
+    /// machine where `touch` is not exposed to PowerShell via PATH.
+    fn marker_script(marker: &Path) -> String {
+        if cfg!(windows) {
+            format!(
+                "New-Item -ItemType File -Path '{}' | Out-Null\n",
+                marker.display()
+            )
+        } else {
+            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker.display())
+        }
     }
 
     #[test]
@@ -842,14 +854,7 @@ mod tests {
         let marker_path = tmp.path().join("marker.txt");
         let ext = script_extension();
         let script_path = tmp.path().join(format!("test.{ext}"));
-        let content = if cfg!(windows) {
-            format!(
-                "New-Item -Path '{}' -ItemType File | Out-Null\n",
-                marker_path.display()
-            )
-        } else {
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display())
-        };
+        let content = marker_script(&marker_path);
         std::fs::write(&script_path, content).unwrap();
 
         // Act
@@ -1020,7 +1025,7 @@ mod tests {
         // Only create install script (update is overridden to install)
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            marker_script(&marker_path),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -1272,7 +1277,7 @@ mod tests {
             let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("install.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -1506,7 +1511,7 @@ mod tests {
             let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -1656,7 +1661,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             zed_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", zed_marker.display()),
+            marker_script(&zed_marker),
         )
         .unwrap();
         let state = State {
@@ -1736,7 +1741,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             neovim_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
@@ -1784,7 +1789,7 @@ mod tests {
         std::fs::create_dir_all(&ripgrep_dir).unwrap();
         std::fs::write(
             ripgrep_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", ripgrep_marker.display()),
+            marker_script(&ripgrep_marker),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -1825,7 +1830,7 @@ mod tests {
             std::fs::create_dir_all(&pkg_dir).unwrap();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -1863,7 +1868,7 @@ mod tests {
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
             neovim_dir.join(format!("uninstall.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
         let ripgrep_dir = ctx.packages_dir().join("ripgrep");
@@ -1943,7 +1948,7 @@ mod tests {
             let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2079,7 +2084,7 @@ mod tests {
             let ext = script_extension();
             std::fs::write(
                 pkg_dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2467,7 +2472,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("install.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2522,7 +2527,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("install.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2563,7 +2568,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("install.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2601,7 +2606,7 @@ mod tests {
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
             neovim_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
 
@@ -2675,7 +2680,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2729,7 +2734,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2776,7 +2781,7 @@ mod tests {
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
             neovim_dir.join(format!("uninstall.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
         let state = State {
@@ -2851,7 +2856,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -2892,7 +2897,7 @@ mod tests {
         std::fs::create_dir_all(&neovim_dir).unwrap();
         std::fs::write(
             neovim_dir.join(format!("update.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
 
@@ -2930,11 +2935,7 @@ mod tests {
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
         let script_path = pkg_dir.join(format!("{action}.{ext}"));
-        std::fs::write(
-            &script_path,
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
-        )
-        .unwrap();
+        std::fs::write(&script_path, marker_script(marker_path)).unwrap();
     }
 
     #[test]
@@ -3479,8 +3480,8 @@ mod tests {
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
             format!(
-                "#!/usr/bin/env sh\n# Generated by homeos — fill in install logic.\ntouch '{}'\n",
-                marker_path.display()
+                "# Generated by homeos — fill in install logic.\n{}",
+                marker_script(&marker_path)
             ),
         )
         .unwrap();
@@ -3567,8 +3568,8 @@ mod tests {
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
             format!(
-                "#!/usr/bin/env sh\n# Generated by homeos — fill in install logic.\ntouch '{}'\n",
-                marker_path.display()
+                "# Generated by homeos — fill in install logic.\n{}",
+                marker_script(&marker_path)
             ),
         )
         .unwrap();
@@ -3609,8 +3610,8 @@ mod tests {
         std::fs::write(
             pkg_dir.join(format!("update.{ext}")),
             format!(
-                "#!/usr/bin/env sh\n# Generated by homeos — fill in update logic.\ntouch '{}'\n",
-                marker_path.display()
+                "# Generated by homeos — fill in update logic.\n{}",
+                marker_script(&marker_path)
             ),
         )
         .unwrap();
@@ -3918,7 +3919,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -3970,7 +3971,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -4013,7 +4014,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -4056,7 +4057,7 @@ mod tests {
         std::fs::create_dir_all(&git_dir).unwrap();
         std::fs::write(
             git_dir.join(format!("uninstall.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", git_marker.display()),
+            marker_script(&git_marker),
         )
         .unwrap();
         // Only git is installed, editor is not
@@ -4098,7 +4099,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join(format!("uninstall.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+                marker_script(&marker_path),
             )
             .unwrap();
         }
@@ -4140,7 +4141,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            marker_script(&marker_path),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -4209,7 +4210,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("uninstall.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            marker_script(&marker_path),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -4245,7 +4246,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            marker_script(&marker_path),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -4590,7 +4591,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -4631,7 +4632,7 @@ mod tests {
             std::fs::create_dir_all(&pkg_dir).unwrap();
             std::fs::write(
                 pkg_dir.join(format!("install.{ext}")),
-                format!("#!/usr/bin/env sh\ntouch '{}'\n", marker.display()),
+                marker_script(marker),
             )
             .unwrap();
         }
@@ -4675,7 +4676,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("update.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", neovim_marker.display()),
+            marker_script(&neovim_marker),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
@@ -4773,14 +4774,7 @@ mod tests {
         let pkg_dir = ctx.packages_dir().join("neovim");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         let ext = script_extension();
-        let content = if cfg!(windows) {
-            format!(
-                "New-Item -Path '{}' -ItemType File | Out-Null\n",
-                marker_path.display()
-            )
-        } else {
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display())
-        };
+        let content = marker_script(&marker_path);
         std::fs::write(pkg_dir.join(format!("install.{ext}")), content).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
@@ -4904,7 +4898,7 @@ mod tests {
         let ext = script_extension();
         std::fs::write(
             pkg_dir.join(format!("install.{ext}")),
-            format!("#!/usr/bin/env sh\ntouch '{}'\n", marker_path.display()),
+            marker_script(&marker_path),
         )
         .unwrap();
         let mut input = std::io::Cursor::new(b"n\n".to_vec());
