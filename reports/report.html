@@ -408,6 +408,60 @@
   </p>
 </section>
 
+<section>
+  <h2>Execute Windows action scripts with <code>-NoProfile -File</code></h2>
+
+  <h3>Judgement points</h3>
+  <p>
+    The task suggested a helper signature of <code>script_invocation(shell, script)</code>,
+    but a test on a Linux/macOS host cannot assert the <em>Windows</em> form unless the OS
+    is injectable. I added an <code>is_windows: bool</code> first parameter, matching the
+    existing <code>shell_command_for(is_windows, pwsh_available)</code> convention already in
+    <code>mod.rs</code> — single source of truth for "am I on Windows" in the helper layer.
+    <code>execute_script</code> calls it with <code>cfg!(windows)</code>.
+  </p>
+  <p>
+    The helper returns <code>(&amp;str, Vec&lt;&amp;OsStr&gt;)</code> (borrowed, no allocation):
+    the flag literals are <code>'static</code> and the script's <code>OsStr</code> borrows the
+    caller's <code>Path</code>. This keeps the script path as an <code>OsStr</code> rather than
+    a lossy <code>String</code>, so paths with non-UTF-8 / unusual characters pass through to
+    the shell intact.
+  </p>
+
+  <h3>Unresolved / workarounds</h3>
+  <p>None.</p>
+
+  <h3>Next PRD suggestions</h3>
+  <p>
+    With this landed, all Windows-bootstrap and Windows-hardening tasks in the current ledger
+    are complete. No new tasks surfaced. The only follow-up I'd flag is purely observational:
+    the SPEC already documents the <code>-NoProfile -File</code> behaviour (maintainer-owned),
+    so no spec drift to reconcile.
+  </p>
+
+  <h3>Change summary</h3>
+  <p>
+    On Windows, action scripts (<code>install/update/uninstall</code> via
+    <code>install</code>, <code>update</code>, <code>uninstall</code>, <code>apply</code>) now
+    run as <code>&lt;shell&gt; -NoProfile -File &lt;script&gt;</code> instead of bare
+    <code>&lt;shell&gt; &lt;script&gt;</code>. Scripts no longer load the user's
+    <code>$PROFILE</code> (no hidden machine-local aliases/functions, no profile startup cost,
+    no profile output mixed into script output), and the explicit <code>-File</code> fixes a
+    latent <code>powershell.exe</code> fallback bug where a bare path was treated as
+    <code>-Command</code>. Unix <code>sh &lt;script&gt;</code> is unchanged.
+  </p>
+
+  <h3>Review highlights</h3>
+  <p>
+    Verified on this Windows host: <code>cargo fmt --check</code> and
+    <code>cargo clippy -- -D warnings</code> clean, full <code>cargo test</code> at
+    820 passed / 0 failed (three new <code>script_invocation</code> unit tests, none of which
+    spawn a process). Because the existing <code>execute_script</code> integration tests run
+    on this Windows host, they now exercise the real <code>pwsh -NoProfile -File</code> path
+    end-to-end and still pass.
+  </p>
+</section>
+
 <script>window.scrollTo(0, document.body.scrollHeight);</script>
 </body>
 </html>

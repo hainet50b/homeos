@@ -6,6 +6,7 @@ use crate::plan::{Action, Plan, confirm_plan, plans_to_json, write_execution_res
 use crate::state::State;
 use crate::topo::topological_sort;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::io::{BufRead, Write};
 use std::path::Path;
 
@@ -661,9 +662,9 @@ fn resolve_script_name(pkg_config: &PackageConfig, action: Action) -> String {
 
 /// Execute a script file via the OS-appropriate shell with inherited stdin/stdout/stderr.
 fn execute_script(script_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let status = std::process::Command::new(super::shell_command())
-        .arg(script_path)
-        .status()?;
+    let shell = super::shell_command();
+    let (program, args) = script_invocation(cfg!(windows), shell, script_path);
+    let status = std::process::Command::new(program).args(args).status()?;
     if !status.success() {
         let code = status
             .code()
@@ -676,6 +677,37 @@ fn execute_script(script_path: &Path) -> Result<(), Box<dyn std::error::Error>> 
         .into());
     }
     Ok(())
+}
+
+/// Build the `(program, args)` invocation for running an action script.
+///
+/// On Windows the shell is `pwsh` / `powershell.exe`, both of which load the
+/// user's `$PROFILE` even for script runs, so the script is invoked as
+/// `<shell> -NoProfile -File <script>` to keep execution profile-independent
+/// (mirroring non-interactive `sh`, which reads no profile). `-File` is passed
+/// explicitly because the two shells disagree on the default first-argument
+/// interpretation — `pwsh` assumes `-File` but `powershell.exe` assumes
+/// `-Command`, which mis-parses script paths containing spaces. `-NonInteractive`
+/// is intentionally NOT passed: action scripts may prompt, and stdin/stdout/stderr
+/// are inherited by design. On Unix the script is passed positionally to `sh`.
+///
+/// `is_windows` is a parameter (rather than read from `cfg!`) so the invocation
+/// shape is unit-testable on any host without spawning a process.
+fn script_invocation<'a>(
+    is_windows: bool,
+    shell: &'a str,
+    script: &'a Path,
+) -> (&'a str, Vec<&'a OsStr>) {
+    let args = if is_windows {
+        vec![
+            OsStr::new("-NoProfile"),
+            OsStr::new("-File"),
+            script.as_os_str(),
+        ]
+    } else {
+        vec![script.as_os_str()]
+    };
+    (shell, args)
 }
 
 /// Expand a list of packages to include all transitive dependencies.
@@ -883,6 +915,54 @@ mod tests {
         // Assert
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("exit code 1"));
+    }
+
+    #[test]
+    fn test_script_invocation_windows_uses_noprofile_then_file() {
+        // Arrange
+        let script = Path::new("C:\\packages\\neovim\\install.ps1");
+
+        // Act
+        let (program, args) = script_invocation(true, "pwsh", script);
+
+        // Assert
+        assert_eq!(program, "pwsh");
+        assert_eq!(
+            args,
+            vec![
+                OsStr::new("-NoProfile"),
+                OsStr::new("-File"),
+                script.as_os_str(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_script_invocation_windows_fallback_shell_keeps_flags() {
+        // Arrange — the 5.1 fallback shell gets the same flags in the same order
+        let script = Path::new("C:\\packages\\neovim\\install.ps1");
+
+        // Act
+        let (program, args) = script_invocation(true, "powershell", script);
+
+        // Assert
+        assert_eq!(program, "powershell");
+        assert_eq!(args[0], OsStr::new("-NoProfile"));
+        assert_eq!(args[1], OsStr::new("-File"));
+        assert_eq!(args[2], script.as_os_str());
+    }
+
+    #[test]
+    fn test_script_invocation_unix_passes_script_positionally() {
+        // Arrange
+        let script = Path::new("/packages/neovim/install.sh");
+
+        // Act
+        let (program, args) = script_invocation(false, "sh", script);
+
+        // Assert — no profile flags on Unix; sh reads no profile non-interactively
+        assert_eq!(program, "sh");
+        assert_eq!(args, vec![script.as_os_str()]);
     }
 
     #[test]
