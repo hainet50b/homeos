@@ -193,6 +193,17 @@ Allowed pattern: `^[a-z0-9][a-z0-9._-]*$`
 | `HOMEOS_SKIP_UPDATE_CHECK` | Any non-empty value skips the `homeos cd` update check entirely (no cache read, no network, no file write) |
 | `HOMEOS_FORCE_INSTALL` | Any non-empty value bypasses `install.sh` / `install.ps1`'s version-check short-circuit |
 
+## Update check (`homeos cd`)
+
+`homeos cd` performs a best-effort update check as part of its entry sequence:
+
+- **Cache**: `<data_dir>/.last-update-check`, JSON with `last_checked_at` (Unix epoch seconds) and `latest_tag` (e.g., `"v0.3.12"`). Seeded by `homeos init` with the current binary's tag, no network call.
+- **TTL 7 days**: a fresh cache is reused without a network call; a stale or missing cache triggers a fetch of the latest release tag from the GitHub API (1500 ms timeout). `last_checked_at` always advances after a check attempt regardless of network outcome, bounding the cost for offline machines to one timeout per window.
+- **Notify condition**: one stderr line `homeos: <latest> available — update at https://github.com/hainet50b/homeos` is emitted only when `latest_tag` is **strictly newer** than the current binary's tag, comparing `vX.Y.Z` numerically (major, minor, patch). If either tag does not parse as `vX.Y.Z`, nothing is emitted — the check is best-effort and silence beats false alarms. Equality and older-than-current (a stale cache right after a binary update) are silent.
+- **Self-healing**: when the current binary's tag is strictly newer than the cached `latest_tag`, the cache's `latest_tag` is rewritten to the current tag (preserving `last_checked_at` — no check happened). The running binary is itself proof that a release at least that new exists.
+- **Ordering**: the cd entry sequence refreshes AGENTS.md first and emits the update notice second, so the local state change (`homeos: refreshed AGENTS.md to vX.Y.Z`) precedes the outside-world advisory (`homeos: vX.Y.Z available — ...`) and the actionable line lands closest to the prompt.
+- **Opt-out**: `HOMEOS_SKIP_UPDATE_CHECK` (any non-empty value) skips cache read, network call, and file write entirely.
+
 ## Git invocation conventions
 
 All `git` invocations from inside homeos prefix `-c core.autocrlf=false -c core.eol=lf` so the data directory and every plugin checkout are byte-faithful regardless of the user's global git config. Git for Windows defaults to `core.autocrlf=true`, and `* text` in an upstream `.gitattributes` routes line endings through `core.eol` (default `native` = CRLF on Windows); both overrides are needed to keep `homeos plugin refresh` from reporting spurious modifications and to keep rendered shell scripts LF-clean.
