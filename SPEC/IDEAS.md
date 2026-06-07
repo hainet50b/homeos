@@ -33,3 +33,16 @@ Open questions:
 - Where the grouping knowledge lives: pure agent judgment from the Purpose column, or explicit metadata in `homeos.yml` (e.g., a `tags`/`category` field — a larger change that would also benefit `package list`).
 - Presentation: one table with a meaningful sort, or subsection headings per group?
 - Implementation surface: likely a prose-only change to `AGENTS.md.tmpl`; note the maintainer has previously kept template prose edits out of the Ralph loop for voice consistency.
+
+## Git bootstrap experience on fresh machines
+
+*(noted 2026-06-07)*
+
+Git is a legitimate, permanent prerequisite — it is homeos's storage engine, and the product workflow (the AI agent committing after every mutation, the user pushing to a remote) uses the git CLI regardless of what homeos does internally. Vendoring a Rust git implementation (gitoxide / libgit2) was considered and rejected: it would only move the prerequisite, not remove it, while adding dependency weight and credential/SSH behavior differences against system git.
+
+What CAN improve is how a fresh machine (notably Windows, which ships without git) experiences the gap:
+
+1. **Fail informatively.** `Command::new("git")` spawn failure currently surfaces as the bare `Error: program not found` (the same unfriendly error class the pwsh fallback work eliminated). Catch the `NotFound` spawn error in `src/git.rs` (and any other direct git invocation) and emit a dedicated reason (e.g., `git-not-found`) with install guidance: `winget install --id Git.Git -e` on Windows, the platform package manager elsewhere. Note the self-help route through homeos itself is blocked: `plugin add` needs `git clone`, so the winget plugin cannot be used to install git.
+2. **Bootstrap assist in `install.ps1`.** The installer already does version checks and completion setup; add git detection and offer (or run after confirmation) `winget install --id Git.Git -e` — winget is preinstalled on Windows 11 / modern Windows 10, making it the one package manager reliably present on a fresh machine. `install.sh` needs at most a hint: macOS bootstraps git via xcode-select on first use, and Linux conventions vary too much to act on.
+
+Together these shrink the fresh-Windows path to: `irm ... | iex` → (git installed on the spot if missing) → `homeos init`. The README Prerequisites section (Git 2.28+) stays as-is; only the way it gets satisfied becomes automated.
