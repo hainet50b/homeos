@@ -34,6 +34,30 @@ Open questions:
 - Presentation: one table with a meaningful sort, or subsection headings per group?
 - Implementation surface: likely a prose-only change to `AGENTS.md.tmpl`; note the maintainer has previously kept template prose edits out of the Ralph loop for voice consistency.
 
+## Repository README Purpose column describes only the package itself
+
+*(noted 2026-06-08)*
+
+The "Filling in the tables" guidance in `templates/AGENTS.md.tmpl` defines the Packages table *Purpose* cell as "one short sentence — what the package does or why the user wants it." In practice the agent sometimes bleeds relationship facts into that cell — when a package has `depends_on`, script aliases, or dependents, it writes things like "required by X" or "installed before Y" into Purpose, which both duplicates the dedicated Dependencies column and shifts the cell from describing *the package* to describing *its role in the graph*.
+
+Idea: tighten the Purpose-column instruction so it describes only the package's own identity and function (what the tool is, why the user keeps it), explicitly excluding relationship facts — dependencies, dependents, install order, aliases — which already live in their own column or are implied by the table structure.
+
+Implementation surface: prose-only change to `AGENTS.md.tmpl`; the maintainer keeps template prose edits out of the Ralph loop for voice consistency.
+
+## Reconcile a stale repository README against current AGENTS.md guidance
+
+*(noted 2026-06-08)*
+
+The agent maintains `<data_dir>/README.md` per the "Maintaining the repository README" rules in `templates/AGENTS.md.tmpl`, but those rules evolve (a new column, an ordering convention, the Purpose-scope tightening above) and a README created under older guidance — or one the user hand-drifted — silently stays out of conformance. Nothing currently prompts a re-alignment, so the README quietly diverges from what the current AGENTS.md says it should be.
+
+Idea: instruct the agent that, when it next touches the README (or notices the mismatch at session start in the data dir), it should compare the existing file against the current guidance and, where it diverges, **propose** the correction to the user rather than silently restructuring. This is the umbrella mechanism for the specific README rules — meaningful ordering and the Purpose-column scope above each become "a thing to reconcile" rather than a one-off instruction.
+
+Open questions:
+
+- How aggressive: auto-fix the agent-owned Packages/Plugins sections (the ownership boundary already says the next update overwrites edits there) vs. propose-and-confirm? A wholesale restructure mid-session is surprising even within agent-owned sections, so leaning toward propose-first.
+- Distinguish "stale vs. current conventions" (safe to realign) from intentional user content — the **Notes** section is the user's and must never be touched.
+- Could be as light as a sentence folded into the ordering idea, or a standalone "keep the README current" instruction; decide when promoting.
+
 ## Background install execution with periodic progress reports
 
 *(noted 2026-06-07)*
