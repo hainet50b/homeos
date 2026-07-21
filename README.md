@@ -9,7 +9,7 @@
 *homeos* (ho-mee-os) — named after *homeostasis*, a layer above your install scripts, managed from a single Git repository.
 
 > [!IMPORTANT]
-> **Built for AI agents** *(since v0.3.0)*. A generated `AGENTS.md` (mirrored as `CLAUDE.md` for Claude Code) teaches your AI agent how to drive homeos and keep your repository self-documenting through an agent-maintained `README.md` at the root.
+> **Built for AI agents** *(since v0.3.0)*. A generated `AGENTS.md` (discovered by Claude Code through a one-line `CLAUDE.md` pointer) teaches your AI agent how to drive homeos and keep your repository self-documenting through an agent-maintained `README.md` at the root.
 
 ## Features
 
@@ -915,7 +915,7 @@ The canonical workflow:
 
 1. Run `homeos cd` to launch a shell in the data directory.
 2. Start your AI agent from that shell.
-3. Ask the agent for what you want. The agent reads `AGENTS.md` at the working directory (or `CLAUDE.md`, which is a symlink to the same file on Linux/macOS, or a content copy refreshed alongside `AGENTS.md` on Windows) and proceeds.
+3. Ask the agent for what you want. The agent reads `AGENTS.md` at the working directory (Claude Code discovers it through `CLAUDE.md`, a one-line pointer that imports `AGENTS.md`) and proceeds.
 
 For example, asking *"Install Neovim for me"* on a Fedora machine:
 
