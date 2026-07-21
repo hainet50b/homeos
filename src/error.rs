@@ -15,6 +15,7 @@ pub mod reasons {
     pub const SCRIPT_FAILED: &str = "script-failed";
     pub const SCRIPT_NOT_FOUND: &str = "script-not-found";
     pub const SCRIPT_UNMODIFIED: &str = "script-unmodified";
+    pub const GIT_NOT_FOUND: &str = "git-not-found";
     pub const GIT_CLONE_FAILED: &str = "git-clone-failed";
     pub const NOT_A_VALID_HOMEOS_REPO: &str = "not-a-valid-homeos-repo";
     pub const NOT_A_VALID_HOMEOS_PLUGIN: &str = "not-a-valid-homeos-plugin";

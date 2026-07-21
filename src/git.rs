@@ -3,7 +3,11 @@ use std::path::Path;
 use std::process::Command;
 
 pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let output = Command::new("git")
+    clone_with("git", url, target)
+}
+
+fn clone_with(program: &str, url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new(program)
         .args([
             "-c",
             "core.autocrlf=false",
@@ -13,7 +17,8 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
             url,
             &target.to_string_lossy(),
         ])
-        .output()?;
+        .output()
+        .map_err(spawn_error)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -28,7 +33,11 @@ pub fn clone(url: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>>
 }
 
 pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let output = Command::new("git")
+    init_with("git", target)
+}
+
+fn init_with(program: &str, target: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new(program)
         .args([
             "-c",
             "core.autocrlf=false",
@@ -38,7 +47,8 @@ pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
             "--initial-branch=main",
             &target.to_string_lossy(),
         ])
-        .output()?;
+        .output()
+        .map_err(spawn_error)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -50,6 +60,18 @@ pub fn init(target: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn spawn_error(e: std::io::Error) -> Box<dyn std::error::Error> {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        HomeosError::new(
+            reasons::GIT_NOT_FOUND,
+            "git not found on PATH. homeos requires Git 2.28+.",
+        )
+        .into()
+    } else {
+        e.into()
+    }
 }
 
 #[cfg(test)]
@@ -232,6 +254,45 @@ mod tests {
         );
         let head = String::from_utf8(output.stdout).unwrap();
         assert_eq!(head.trim(), "main");
+    }
+
+    #[test]
+    fn test_clone_with_missing_program_yields_git_not_found() {
+        // Arrange
+        let target_parent = TempDir::new().unwrap();
+        let target = target_parent.path().join("cloned");
+
+        // Act
+        let result = clone_with("homeos-test-no-such-git", "some-url", &target);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err.downcast_ref::<HomeosError>().unwrap();
+        assert_eq!(homeos_err.reason, reasons::GIT_NOT_FOUND);
+        assert_eq!(
+            homeos_err.message,
+            "git not found on PATH. homeos requires Git 2.28+."
+        );
+    }
+
+    #[test]
+    fn test_init_with_missing_program_yields_git_not_found() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let target = tmp.path().join("new-repo");
+        std::fs::create_dir_all(&target).unwrap();
+
+        // Act
+        let result = init_with("homeos-test-no-such-git", &target);
+
+        // Assert
+        let err = result.unwrap_err();
+        let homeos_err = err.downcast_ref::<HomeosError>().unwrap();
+        assert_eq!(homeos_err.reason, reasons::GIT_NOT_FOUND);
+        assert_eq!(
+            homeos_err.message,
+            "git not found on PATH. homeos requires Git 2.28+."
+        );
     }
 
     #[test]
