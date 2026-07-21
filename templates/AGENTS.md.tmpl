@@ -757,9 +757,9 @@ homeos apply
 
 | Package | Plugin | Dependencies | Purpose |
 |---|---|---|---|
-| [neovim](packages/neovim/) | [dnf](plugins/dnf/) | — | Primary text editor. |
 | [claude](packages/claude/) | — | bubblewrap, socat | Claude Code CLI. |
 | [docker](packages/docker/) (disabled) | — | — | Container runtime. |
+| [neovim](packages/neovim/) | [dnf](plugins/dnf/) | — | Primary text editor. |
 
 ## Plugins
 
@@ -792,14 +792,13 @@ homeos apply
   table. "Primary text editor." — not "Installed before the claude
   package."
 
-Order the rows so the table reads well for a human rather than following
-`homeos.yml`'s internal alphabetical order. Group the packages that belong
-together — you understand what this user's setup is for, so trust that
-judgment rather than reaching for a fixed set of categories; what "belongs
-together" looks different from one repo to the next. Keep it one table with
-no extra headings, and order alphabetically within each group so the result
-is stable — a small edit shouldn't reshuffle the whole table or churn the
-diff.
+Order the rows alphabetically by package name — the same order
+`homeos.yml` uses. Do not group rows by theme or concern: what "belongs
+together" shifts with environment and context, so grouped tables get
+reshaped from session to session and end up harder to scan than a
+predictable A-Z list. Alphabetical order is stable — a small edit never
+reshuffles the table or churns the diff — and lets the reader find a
+package by name. Keep it one table with no extra headings.
 
 **Plugins table** — one row per entry in `homeos.yml`'s `plugins`:
 
