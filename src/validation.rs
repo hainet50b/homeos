@@ -48,16 +48,19 @@ const ALLOWED_URL_SCHEMES: &[&str] = &["http", "https", "git", "ssh", "git+ssh"]
 
 /// Validate a URL passed to `homeos init <url>` or `homeos plugin add <url>`.
 ///
-/// Rejects:
+/// Accepts two forms: scheme-full `scheme://…` (scheme one of `http`,
+/// `https`, `git`, `ssh`, `git+ssh`) and SCP-like `user@host:path` (the form
+/// GitHub's SSH clone button produces), validated per component by
+/// `validate_scp_like`.
+///
+/// Rejects in both forms:
 /// - empty input
 /// - ASCII control characters (including NUL, CR, LF, tab)
 /// - percent-encoded NUL bytes (`%00`, case-insensitive)
 /// - percent-encoded `..` (`%2e%2e`, case-insensitive)
 /// - any `?` (query string) — git clone URLs have no legitimate query string,
 ///   so the presence of one indicates injection or misuse
-/// - any scheme other than `http`, `https`, `git`, `ssh`, or `git+ssh`
-///   (also rejects URLs with no explicit `scheme://` prefix, e.g. SCP-like
-///   syntax `git@host:path` or bare filesystem paths)
+/// - unknown schemes and bare filesystem paths (no scheme, no `@`)
 pub fn validate_url(url: &str) -> Result<(), HomeosError> {
     if url.is_empty() {
         return Err(HomeosError::new(
@@ -98,15 +101,7 @@ pub fn validate_url(url: &str) -> Result<(), HomeosError> {
 
     let scheme = match url.split_once("://") {
         Some((s, _)) => s,
-        None => {
-            return Err(HomeosError::new(
-                reasons::VALIDATION_ERROR,
-                format!(
-                    "URL '{url}' must have an explicit scheme. Allowed: {}",
-                    ALLOWED_URL_SCHEMES.join(", ")
-                ),
-            ));
-        }
+        None => return validate_scp_like(url),
     };
 
     if !ALLOWED_URL_SCHEMES.contains(&scheme) {
@@ -120,6 +115,65 @@ pub fn validate_url(url: &str) -> Result<(), HomeosError> {
     }
 
     Ok(())
+}
+
+/// Validate the SCP-like `user@host:path` form (no `://`) — the syntax
+/// GitHub's SSH clone button produces, e.g. `git@github.com:owner/repo.git`.
+///
+/// The component charsets deliberately exclude `:`, so the separator is the
+/// only colon in the string. Without `://`, git parses anything containing
+/// `::` as remote-helper syntax (`<helper>::<address>`, e.g. `ext::`, which
+/// executes arbitrary local commands); the structural exclusion is what keeps
+/// that injection surface closed. Do NOT relax this to a leading-dash-only
+/// check. The host rule is a character alphabet, not a host allowlist — any
+/// DNS name, IPv4 address, or ssh-config alias passes (IPv6 literals need the
+/// `ssh://` form).
+fn validate_scp_like(url: &str) -> Result<(), HomeosError> {
+    let neither_form = || {
+        HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!(
+                "URL '{url}' must be 'scheme://...' (allowed: {}) or SCP-like 'user@host:path'",
+                ALLOWED_URL_SCHEMES.join(", ")
+            ),
+        )
+    };
+
+    // An SCP-like attempt has an `@` followed by a later `:`; anything else
+    // (bare paths, schemeless host/path strings) matches neither form.
+    let Some((user, rest)) = url.split_once('@') else {
+        return Err(neither_form());
+    };
+    let Some((host, path)) = rest.split_once(':') else {
+        return Err(neither_form());
+    };
+
+    let invalid_component = |component: &str| {
+        HomeosError::new(
+            reasons::VALIDATION_ERROR,
+            format!("URL '{url}' has an invalid {component} in SCP-like form 'user@host:path'"),
+        )
+    };
+
+    if user.is_empty() || user.starts_with('-') || !user.chars().all(is_scp_user_host_char) {
+        return Err(invalid_component("user"));
+    }
+    if host.is_empty() || host.starts_with('-') || !host.chars().all(is_scp_user_host_char) {
+        return Err(invalid_component("host"));
+    }
+    if path.is_empty() || !path.chars().all(is_scp_path_char) {
+        return Err(invalid_component("path"));
+    }
+
+    Ok(())
+}
+
+fn is_scp_user_host_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')
+}
+
+fn is_scp_path_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '~' | '-')
 }
 
 #[cfg(test)]
@@ -503,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_validate_url_rejects_no_scheme() {
-        // Arrange — bare path with no scheme prefix
+        // Arrange — schemeless host/path string matches neither accepted form
         let url = "github.com/user/repo";
 
         // Act
@@ -512,13 +566,63 @@ mod tests {
         // Assert
         let err = result.unwrap_err();
         assert_eq!(err.reason, reasons::VALIDATION_ERROR);
-        assert!(err.message.contains("must have an explicit scheme"));
+        assert!(err.message.contains("must be 'scheme://...'"));
+        assert!(err.message.contains("SCP-like 'user@host:path'"));
     }
 
     #[test]
-    fn test_validate_url_rejects_scp_like_syntax() {
-        // Arrange — git's SCP-like syntax has no explicit scheme
-        let url = "git@github.com:user/repo.git";
+    fn test_validate_url_accepts_scp_like_github_url() {
+        // Arrange — the exact form GitHub's SSH clone button copies
+        let url = "git@github.com:hainet50b/homeos-plugin-dnf.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_scp_like_enterprise_host() {
+        // Arrange — GitHub Enterprise-style corporate FQDN
+        let url = "git@ghe.example.co.jp:org/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_scp_like_ssh_config_alias_host() {
+        // Arrange — ~/.ssh/config aliases are plain names, not DNS entries
+        let url = "git@github-work:org/repo.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_accepts_scp_like_tilde_path() {
+        // Arrange — scp-style home-relative path
+        let url = "git@host:~/repos/x.git";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_url_rejects_remote_helper_syntax() {
+        // Arrange — without ://, git parses `<helper>::<address>`; ext::
+        // executes arbitrary local commands
+        let url = "ext::sh -c payload";
 
         // Act
         let result = validate_url(url);
@@ -526,7 +630,76 @@ mod tests {
         // Assert
         let err = result.unwrap_err();
         assert_eq!(err.reason, reasons::VALIDATION_ERROR);
-        assert!(err.message.contains("must have an explicit scheme"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_double_colon_after_scp_shape() {
+        // Arrange — the second colon lands in the path component
+        let url = "foo@bar::baz";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("invalid path"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_scp_like_leading_dash_user() {
+        // Arrange — a leading dash could parse as a git/ssh option
+        let url = "-user@host:path";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("invalid user"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_scp_like_leading_dash_host() {
+        // Arrange
+        let url = "git@-host:path";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("invalid host"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_scp_like_empty_path() {
+        // Arrange
+        let url = "git@host:";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("invalid path"));
+    }
+
+    #[test]
+    fn test_validate_url_rejects_windows_drive_path() {
+        // Arrange — bare filesystem path; no `@`, so it matches neither form
+        let url = "C:\\repos\\x";
+
+        // Act
+        let result = validate_url(url);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.reason, reasons::VALIDATION_ERROR);
+        assert!(err.message.contains("must be 'scheme://...'"));
     }
 
     #[test]
