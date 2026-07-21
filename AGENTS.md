@@ -6,7 +6,6 @@ This project uses the **Ralph Loop** methodology — a development style that se
 - `SPEC/` — developer-facing internal spec. Always contains `SPEC/SPEC.md` (data model, execution model, invariants) and `SPEC/COMMAND_OUTPUT.md` (CLI output specification); read whatever is in there
 - `PRD.md` — What / Why + open Tasks
 - `CONVENTIONS.md` — how code is written here (Tech Stack, test pattern, lint/format/test commands, ordering, commit style)
-- `reports/report.html` — Ralph's most recent execution notes (if present)
 - `prompt.md` / `ralph.sh` / `ralph.ps1` — Ralph's driver
 
 ## Principles

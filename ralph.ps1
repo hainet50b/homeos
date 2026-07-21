@@ -7,15 +7,8 @@
 # Defaults:
 #   max-iterations: 10
 #
-# Environment variables:
-#   RALPH_REPORT_ROTATE_BYTES   size threshold for reports/report.html
-#                               rotation (default: 524288 = 512 KB)
-#
 # Behavior:
-#   - On each iteration: rotate reports/report.html if it exceeds the size
-#     threshold (the current file becomes reports/report-<UTC>.html and a
-#     fresh one is started on the next iteration), then invoke `claude`
-#     with prompt.md as the prompt.
+#   - On each iteration: invoke `claude` with prompt.md as the prompt.
 #   - claude failure exits immediately (no retry); transient failures are
 #     rare and retrying wastes time / tokens.
 #   - Detects `<promise>COMPLETE</promise>` in claude's output and exits 0
@@ -34,12 +27,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $PromptFile = 'prompt.md'
-$ReportsDir = 'reports'
-$ReportFile = Join-Path $ReportsDir 'report.html'
-$RotateBytes = if ($env:RALPH_REPORT_ROTATE_BYTES) { [int64]$env:RALPH_REPORT_ROTATE_BYTES } else { 524288 }
 $SleepSeconds = 2
-
-New-Item -ItemType Directory -Force -Path $ReportsDir | Out-Null
 
 if (-not (Test-Path -LiteralPath $PromptFile)) {
     Write-Error "error: $PromptFile not found in $(Get-Location)."
@@ -53,24 +41,12 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 
 Write-Host "=== Ralph Loop ==="
 Write-Host "Max iterations: $MaxIterations"
-Write-Host "Rotation threshold: $RotateBytes bytes"
 Write-Host ""
 
 $PromptContent = Get-Content -LiteralPath $PromptFile -Raw
 
 for ($i = 1; $i -le $MaxIterations; $i++) {
     Write-Host "--- Iteration $i / $MaxIterations ---"
-
-    # Rotate report.html before the iteration if it exceeds the threshold.
-    if (Test-Path -LiteralPath $ReportFile) {
-        $size = (Get-Item -LiteralPath $ReportFile).Length
-        if ($size -gt $RotateBytes) {
-            $ts = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
-            $archived = Join-Path $ReportsDir "report-$ts.html"
-            Move-Item -LiteralPath $ReportFile -Destination $archived
-            Write-Host "Rotated $ReportFile ($size bytes) -> $archived"
-        }
-    }
 
     $jsonText = & claude --dangerously-skip-permissions -p $PromptContent --output-format json 2>&1 | Out-String
 
