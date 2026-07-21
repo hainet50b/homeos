@@ -40,7 +40,7 @@ Subject line: present-imperative, ≤ 72 characters. Body optional and free-form
 
 ## Release Procedure
 
-1. Branch `v<X.Y.Z>` from main (work accumulates on local main between releases; the release branch carries it to origin).
+1. Branch `v<X.Y.Z>` from main. Day-to-day work happens on main and is pushed continuously (each push runs the Build workflow); the release branch exists only to carry the version bump through a PR.
 2. Bump `version` in `Cargo.toml`, run `cargo check` so `Cargo.lock` follows, commit `Bump version to <X.Y.Z>`, and push the branch.
 3. Trigger the Build workflow on the branch: `gh workflow run Build --ref v<X.Y.Z>`. Build runs only on push-to-main and manual dispatch, so PRs get no automatic checks — this dispatch is the pre-merge verification. Wait for green.
 4. Open a PR titled `v<X.Y.Z>` with a Summary (user-facing changes since the last tag) and a Test plan checklist. Check items off as they verify.
