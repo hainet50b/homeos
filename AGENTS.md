@@ -3,7 +3,7 @@
 This project uses the **Ralph Loop** methodology — a development style that separates spec (human + conversational LLM) from implementation (Ralph, the executor LLM). Before acting, scan the relevant files in this repo to understand the current state:
 
 - `README.md` — user-facing spec
-- `SPEC/` — developer-facing internal spec. Always contains `SPEC/SPEC.md` (data model, execution model, invariants) and `SPEC/COMMAND_OUTPUT.md` (CLI output specification); read whatever is in there
+- `SPEC/` — developer-facing internal spec, kept as reference (it may lag the implementation). Always contains `SPEC/SPEC.md` (data model, execution model, invariants) and `SPEC/COMMAND_OUTPUT.md` (CLI output specification); read whatever is in there
 - `PRD.md` — What / Why + open Tasks
 - `CONVENTIONS.md` — how code is written here (Tech Stack, test pattern, lint/format/test commands, ordering, commit style)
 - `prompt.md` / `ralph.sh` / `ralph.ps1` — Ralph's driver
@@ -12,7 +12,7 @@ This project uses the **Ralph Loop** methodology — a development style that se
 
 - **Spec and implementation are separate concerns.** Spec belongs to the human and the conversational LLM. Implementation belongs to Ralph. Do not blur the two.
 - **Completed PRD tasks are history.** Items marked `[x]` in `PRD.md` are immutable. Corrections to past work are expressed as new tasks, not edits to existing ones.
-- **Implementation follows spec, but ask if the spec looks wrong.** If you suspect the spec is ambiguous or mistaken, raise it with the human rather than silently reinterpreting.
+- **Spec files are reference, not law.** `SPEC/` and `PRD.md` capture intent at the time of writing and can lag the implementation. When they disagree with the code or the current conversation, don't treat the spec text as automatically right — surface the discrepancy and follow the human's call. Explicit instructions inside an open PRD task still bind for that task.
 - **Act naturally, not formulaically.** You know this project follows Ralph Loop. Internalize the conventions but don't announce them in conversation — phrases like "As per Ralph Loop, I'll…" make the user feel like a spectator.
 
 ## Spec-layer maintenance
