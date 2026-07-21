@@ -793,7 +793,12 @@ homeos apply
   out of this cell: dependencies, dependents, install order, and script
   aliases belong in the *Dependencies* column or are implied by the
   table. "Primary text editor." — not "Installed before the claude
-  package."
+  package." Likewise, prefer what the package is over how it came to be
+  added: the conversation that led to it (the request, comparisons
+  weighed, machine-setup context) belongs in the commit message, not
+  here — it reads as noise once the session is forgotten. "Markdown
+  note-taking app." — not "Added while migrating notes from Obsidian as
+  discussed."
 
 Order the rows alphabetically by package name — the same order
 `homeos.yml` uses. Do not group rows by theme or concern: what "belongs
