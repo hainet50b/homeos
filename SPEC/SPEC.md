@@ -178,11 +178,19 @@ Allowed pattern: `^[a-z0-9][a-z0-9._-]*$`
 
 ### URL inputs for `homeos init <url>` and `homeos plugin add <url>`
 
-- Allowed schemes: `http`, `https`, `git`, `ssh`, `git+ssh`
-- SCP-like `git@host:path` syntax is rejected — use `ssh://git@host/path` instead
-- Query strings are rejected (git clone URLs have no legitimate query string)
-- Percent-encoded NUL (`%00`) and percent-encoded `..` (`%2e%2e`, any case) are rejected
-- Control characters are rejected anywhere in the URL
+Two forms are accepted:
+
+- **Scheme-full**: `scheme://…` where the scheme is one of `http`, `https`, `git`, `ssh`, `git+ssh`.
+- **SCP-like**: `user@host:path` — the form GitHub's SSH clone button produces (`git@github.com:owner/repo.git`). Split at the first `@` and the first `:` after it; all three components must be non-empty and match:
+  - `user`: `[A-Za-z0-9._-]+`, no leading `-`
+  - `host`: `[A-Za-z0-9._-]+`, no leading `-` — a character alphabet, not a host allowlist: any DNS name, IPv4 address, or `~/.ssh/config` alias passes, so GitHub Enterprise and self-hosted forges are unaffected. IPv6 literals are not representable in this form; use `ssh://`.
+  - `path`: `[A-Za-z0-9._/~-]+`
+
+Rejected in both forms: query strings (`?`), percent-encoded NUL (`%00`), percent-encoded `..` (`%2e%2e`, any case), and control characters. Bare filesystem paths remain rejected (no scheme, no `@`).
+
+The SCP-like form is charset-validated rather than merely dash-checked because of git's remote-helper syntax: without `://`, git parses any input containing `::` as `<helper>::<address>` (e.g. `ext::`, which executes arbitrary local commands), so a leading-dash check alone would let `ext::…` through. The component charsets exclude `:` entirely, making the separator the only colon in the string and helper syntax structurally unreachable. The no-leading-`-` rules keep the argument from parsing as a git/ssh option (defense in depth — git 2.28+ carries its own protections here since CVE-2017-1000117).
+
+Error messages: an input matching neither form → `URL '{url}' must be 'scheme://...' (allowed: http, https, git, ssh, git+ssh) or SCP-like 'user@host:path'`. An SCP-like attempt (no `://`, but an `@` followed by a later `:`) with an invalid component → `URL '{url}' has an invalid {user|host|path} in SCP-like form 'user@host:path'`.
 
 ## Environment variables
 
