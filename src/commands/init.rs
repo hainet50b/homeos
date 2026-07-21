@@ -56,6 +56,7 @@ pub fn run(
         }
 
         crate::commands::agents_md::write_files(data_dir)?;
+        crate::commands::agents_md::ensure_claude_md_pointer(data_dir)?;
         crate::commands::update_check::seed_cache(data_dir)?;
 
         println!(
@@ -82,6 +83,7 @@ pub fn run(
         }
 
         crate::commands::agents_md::write_files(data_dir)?;
+        crate::commands::agents_md::ensure_claude_md_pointer(data_dir)?;
         crate::commands::update_check::seed_cache(data_dir)?;
 
         git::init(data_dir)?;
@@ -493,24 +495,19 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
-    fn test_init_scaffold_creates_claude_md_symlink_to_agents_md() {
+    fn test_init_scaffold_creates_claude_md_pointer() {
         // Arrange
         let (_tmp, ctx) = fixture();
 
         // Act
         run(&ctx, None, false).unwrap();
 
-        // Assert
+        // Assert — a plain one-line pointer file, identical on all platforms
         let claude_md = ctx.data_dir().join("CLAUDE.md");
         let metadata = fs::symlink_metadata(&claude_md).unwrap();
-        assert!(metadata.file_type().is_symlink());
-        let target = fs::read_link(&claude_md).unwrap();
-        assert_eq!(target, std::path::PathBuf::from("AGENTS.md"));
-        // Reading through the symlink yields the AGENTS.md content.
-        let resolved = fs::read_to_string(&claude_md).unwrap();
-        let agents_content = fs::read_to_string(ctx.data_dir().join("AGENTS.md")).unwrap();
-        assert_eq!(resolved, agents_content);
+        assert!(!metadata.file_type().is_symlink());
+        let content = fs::read_to_string(&claude_md).unwrap();
+        assert_eq!(content, "@AGENTS.md\n");
     }
 
     #[test]
