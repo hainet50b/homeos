@@ -360,22 +360,30 @@ Bad: `Neovim` (uppercase), `.hidden` (leading dot), `-rf` (leading dash),
 `foo/bar` (slash), `foo bar` (whitespace), `foo..bar` (double-dot),
 `foo$bar` (shell metacharacter), `café` (non-ASCII).
 
-### URL schemes for `homeos init <url>` and `homeos plugin add <url>`
+### URLs for `homeos init <url>` and `homeos plugin add <url>`
 
-Allowed schemes: `http`, `https`, `git`, `ssh`, `git+ssh`.
+Two forms are accepted:
 
-- The URL must have an explicit `scheme://` prefix. Git's SCP-like
-  `git@host:path` syntax is rejected — use `ssh://git@host/path` instead.
-- Query strings (`?key=value`) are rejected; git clone URLs have no
-  legitimate query string.
+- `scheme://…` with scheme one of `http`, `https`, `git`, `ssh`, `git+ssh`.
+- SCP-like `user@host:path` (the form GitHub's SSH clone button copies,
+  e.g. `git@github.com:user/repo.git`). Each component is charset-checked:
+  `user` and `host` allow ASCII letters, digits, `.`, `_`, `-` (no leading
+  `-`); `path` additionally allows `/` and `~`. IPv6 literals are not
+  representable in this form — use `ssh://` instead.
+
+Rejected in both forms:
+
+- Query strings (`?key=value`); git clone URLs have no legitimate query
+  string.
 - Percent-encoded NUL (`%00`) and percent-encoded `..` (`%2e%2e`,
-  case-insensitive) are rejected.
-- Control characters anywhere in the URL are rejected.
+  case-insensitive).
+- Control characters anywhere in the URL.
 
-Good: `https://github.com/user/repo`, `ssh://git@github.com/user/repo.git`.
+Good: `https://github.com/user/repo`, `git@github.com:user/repo.git`,
+`ssh://git@github.com/user/repo.git`.
 
 Bad: `file:///etc/passwd` (file scheme not allowed),
-`git@github.com:user/repo.git` (no explicit scheme),
+`/home/user/repo` (bare filesystem path — matches neither form),
 `https://example.com/repo.git?evil=1` (query string),
 `https://example.com/%2e%2e/etc` (percent-encoded traversal).
 
