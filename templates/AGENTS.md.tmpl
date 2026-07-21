@@ -757,7 +757,7 @@ homeos apply
 
 | Package | Plugin | Dependencies | Purpose |
 |---|---|---|---|
-| [claude](packages/claude/) | — | bubblewrap, socat | Claude Code CLI. |
+| [claude](packages/claude/) | — | [bubblewrap](packages/bubblewrap/), [socat](packages/socat/) | Claude Code CLI. |
 | [docker](packages/docker/) (disabled) | — | — | Container runtime. |
 | [neovim](packages/neovim/) | [dnf](plugins/dnf/) | — | Primary text editor. |
 
@@ -784,7 +784,10 @@ homeos apply
 - *Package*: link the name to `packages/<name>/` (relative path). Suffix
   with ` (disabled)` when the package's `enabled` is `false`.
 - *Plugin*: if set, link to `plugins/<plugin>/`. Otherwise use `—`.
-- *Dependencies*: comma-separated list from `depends_on`, or `—`.
+- *Dependencies*: comma-separated list from `depends_on`, each name
+  linked to `packages/<name>/` like the *Package* column (dependencies
+  are always packages in `homeos.yml`, so the link target exists), or
+  `—`.
 - *Purpose*: one short sentence describing the package itself — what the
   tool is, what it does, why the user keeps it. Keep relationship facts
   out of this cell: dependencies, dependents, install order, and script
