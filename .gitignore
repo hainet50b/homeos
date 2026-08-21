@@ -1,1 +1,6 @@
 /target
+
+# Run isolation
+.ralph/worktrees/
+.ralph/integrate.lock/
+.ralph/claims/

@@ -12,6 +12,10 @@ Reproducing a developer's software setup across machines today requires either r
 
 ## Tasks
 
+Each task is one concern and carries a stable id — `- [ ] T<n>: …`, where `<n>` is the next unused number at append time. Ids are never reused or renumbered. An open task may be amended until a run claims it (`ls .ralph/claims`); from then on it is frozen — changes become new tasks — and completed tasks (`- [x]`) are immutable history. Tasks are processed in order subject to their dependencies. Tasks completed before the id scheme was adopted carry no id and stay as-is.
+
+One blank line separates tasks, including before a newly appended one, so that concurrent checkoffs and appends merge without git conflicts.
+
 - [x] Scaffold Cargo project with clap CLI skeleton (`homeos --help` works). Base directory must be injectable so tests use a `tempdir` instead of the real data directory.
 - [x] Implement `homeos.yml` parsing with serde (packages with `script_aliases` and `enabled`)
 - [x] Implement `homeos init` — create directory structure and empty `homeos.yml`
