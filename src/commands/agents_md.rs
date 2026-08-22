@@ -343,6 +343,59 @@ mod tests {
     }
 
     #[test]
+    fn test_render_uninstall_walkthrough_is_machine_local() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — the pre-archived auto-disable guidance must be gone
+        assert!(rendered.contains("machine-local"));
+        assert!(rendered.contains("never edits `homeos.yml`"));
+        assert!(!rendered.contains("disables it in `homeos.yml`"));
+        assert!(!rendered.contains("Disable neovim after uninstall"));
+    }
+
+    #[test]
+    fn test_render_documents_archive_apply_as_removal_from_every_machine() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — archive + apply is the every-machine removal path
+        assert!(rendered.contains("homeos --yes --json package archive neovim"));
+        assert!(rendered.contains("tombstone"));
+        assert!(rendered.contains("homeos package unarchive <name>"));
+    }
+
+    #[test]
+    fn test_render_documents_package_remove_as_optional_final_cleanup() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert
+        assert!(rendered.contains("optional final cleanup"));
+        assert!(rendered.contains("Don't offer `remove` as a shortcut for `archive`."));
+    }
+
+    #[test]
+    fn test_render_apply_scope_mentions_uninstalling_archived_packages() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert
+        assert!(rendered.contains("uninstalls every archived package still in state"));
+    }
+
+    #[test]
+    fn test_render_readme_package_table_marks_archived_over_disabled() {
+        // Arrange & Act
+        let rendered = render();
+
+        // Assert — the archived suffix is documented and wins over the disabled one
+        assert!(rendered.contains("` (archived)` when the package's `archived` is `true`"));
+        assert!(rendered.contains("(packages/ollama/) (archived)"));
+        assert!(rendered.contains("the suffixes never combine"));
+    }
+
+    #[test]
     fn test_render_includes_git_commit_convention() {
         // Arrange & Act
         let rendered = render();
