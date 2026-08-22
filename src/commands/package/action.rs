@@ -37,13 +37,19 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
 
     let mut to_install = Vec::new();
     let mut to_update = Vec::new();
+    let mut to_uninstall = Vec::new();
     let mut disabled_packages = Vec::new();
 
     for (name, pkg) in &config.packages {
         // Archived packages are tombstones: never installed or updated by `apply`.
-        // They are omitted from the plan entirely rather than listed as skipped, so a
-        // dormant tombstone does not appear in every apply.
+        // The ones this machine still records in state.yml are reconciled away — that
+        // is how an archive performed on one machine reaches the others. A tombstone
+        // this machine does not have is omitted from the plan entirely (not even as a
+        // skipped entry), so dormant tombstones do not appear in every apply.
         if pkg.archived {
+            if installed.contains(name) {
+                to_uninstall.push(name.clone());
+            }
             continue;
         }
         if !pkg.enabled {
@@ -57,7 +63,33 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         }
     }
 
-    if to_install.is_empty() && to_update.is_empty() {
+    // state.yml entries whose homeos.yml definition is gone. Their action scripts left
+    // with the definition, so homeos cannot uninstall them — they are reported at the
+    // end of the plan and nothing is executed for them. Sorted so the report does not
+    // depend on the order state.yml happens to have accumulated entries in.
+    let mut orphaned: Vec<String> = installed
+        .iter()
+        .filter(|name| !config.packages.contains_key(*name))
+        .cloned()
+        .collect();
+    orphaned.sort();
+
+    // Uninstalls run in reverse dependency order (dependents before their
+    // dependencies). No reverse-dependency expansion is needed: `package archive`
+    // refuses a target that non-archived packages depend on, so every dependent of an
+    // archived package is itself archived and already in this set.
+    let mut uninstall_cycle: Vec<String> = Vec::new();
+    let ordered_uninstall: Vec<String> = if to_uninstall.is_empty() {
+        Vec::new()
+    } else {
+        let topo_result = topological_sort(&config, &to_uninstall)?;
+        uninstall_cycle = topo_result.cycle;
+        let mut sorted = topo_result.sorted;
+        sorted.reverse();
+        sorted
+    };
+
+    if to_install.is_empty() && to_update.is_empty() && to_uninstall.is_empty() {
         let plan = Plan::build(
             &config,
             &disabled_packages,
@@ -66,12 +98,18 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             Some(&ctx.packages_dir()),
         )?;
         if is_json {
-            let value = plan.to_json_value();
+            let value = plans_to_json(&[&plan], &orphaned);
             writeln!(writer, "{value}")?;
         } else {
             let display = plan.display();
             if !display.is_empty() {
                 writeln!(writer, "{display}")?;
+            }
+            let orphan_display = crate::plan::display_orphaned(&orphaned);
+            if !orphan_display.is_empty() {
+                writeln!(writer, "{orphan_display}")?;
+            }
+            if !display.is_empty() || !orphan_display.is_empty() {
                 writeln!(writer)?;
             }
             writeln!(writer, "Nothing to do.")?;
@@ -113,7 +151,11 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         .collect();
     let topo_result = topological_sort(&config, &all_packages)?;
     let ordered = topo_result.sorted;
-    let cycle_packages = topo_result.cycle;
+    // Cycles found on either side land in the same consolidated skipped section.
+    let mut cycle_packages = topo_result.cycle;
+    cycle_packages.extend(uninstall_cycle);
+    cycle_packages.sort();
+    cycle_packages.dedup();
 
     // Compute intra-set "required by" notes. For each package in the merged ordered set,
     // find a direct requester among the other packages in the set; if multiple, pick the
@@ -147,6 +189,12 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         } else {
             ordered_actions.push((name.clone(), Action::Install));
         }
+    }
+    // Uninstalls run last, matching the order the plan displays them in. They are
+    // already in reverse dependency order and disjoint from the install / update set
+    // (archived packages never enter it).
+    for name in &ordered_uninstall {
+        ordered_actions.push((name.clone(), Action::Uninstall));
     }
 
     // Build plans for display (still separate for clear output)
@@ -198,42 +246,47 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     } else {
         None
     };
+    let uninstall_plan = if !ordered_uninstall.is_empty() {
+        Some(Plan::build(
+            &config,
+            &ordered_uninstall,
+            Action::Uninstall,
+            &installed,
+            Some(&ctx.packages_dir()),
+        )?)
+    } else {
+        None
+    };
 
-    // Surface update-side `script_unmodified` entries through install_plan's
-    // consolidated skipped section. update_plan can only contribute
-    // script_unmodified to skipped in apply (its input is enabled+in_state, so
-    // Action::Update never produces disabled/not_installed/dependency_disabled
-    // entries), and only install_plan.display_skipped() is rendered, so without
-    // this merge update-side unmodified scripts would be silently dropped.
-    if let Some(ref update_p) = update_plan
-        && !update_p.script_unmodified.is_empty()
+    // Surface update- and uninstall-side `script_unmodified` entries through
+    // install_plan's consolidated skipped section. Those plans can only contribute
+    // script_unmodified to skipped in apply (their input is in_state, so neither
+    // Action::Update nor Action::Uninstall produces disabled / not_installed /
+    // dependency_disabled entries), and only install_plan.display_skipped() is
+    // rendered, so without this merge their unmodified scripts would be silently
+    // dropped.
+    for side in [update_plan.as_ref(), uninstall_plan.as_ref()]
+        .into_iter()
+        .flatten()
     {
-        let install_p = install_plan.get_or_insert_with(|| Plan {
-            action: Action::Install,
-            enabled: Vec::new(),
-            disabled: Vec::new(),
-            archived: Vec::new(),
-            already_installed: Vec::new(),
-            not_installed: Vec::new(),
-            circular_dependency: Vec::new(),
-            dependency_disabled: std::collections::BTreeMap::new(),
-            script_unmodified: std::collections::BTreeMap::new(),
-            plugins: std::collections::BTreeMap::new(),
-            notes: std::collections::BTreeMap::new(),
-        });
-        for (name, script_name) in &update_p.script_unmodified {
+        if side.script_unmodified.is_empty() {
+            continue;
+        }
+        let install_p = install_plan.get_or_insert_with(empty_install_plan);
+        for (name, script_name) in &side.script_unmodified {
             install_p
                 .script_unmodified
                 .insert(name.clone(), script_name.clone());
-            if let Some(plugin) = update_p.plugins.get(name) {
+            if let Some(plugin) = side.plugins.get(name) {
                 install_p.plugins.insert(name.clone(), plugin.clone());
             }
         }
     }
 
-    // Display: enabled sections first (install, then update) so the order matches
-    // README — installed → updated → skipped — followed by one consolidated skipped
-    // section sourced from install_plan (which absorbs all skipped entries).
+    // Display: enabled sections first (install, then update, then uninstall) so the
+    // order matches README — installed → updated → uninstalled → skipped → orphaned —
+    // followed by one consolidated skipped section sourced from install_plan (which
+    // absorbs all skipped entries) and the report-only orphan section.
     if is_json {
         // install_plan goes first so its skipped section becomes the canonical one
         // (mirrors the text rendering where only install_plan.display_skipped() is used).
@@ -244,6 +297,9 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         if let Some(ref p) = update_plan {
             plans.push(p);
         }
+        if let Some(ref p) = uninstall_plan {
+            plans.push(p);
+        }
         let value = if plans.is_empty() {
             serde_json::json!({
                 "is_empty": true,
@@ -251,9 +307,10 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
                 "update": [],
                 "uninstall": [],
                 "skipped": [],
+                "orphaned": orphaned,
             })
         } else {
-            plans_to_json(&plans)
+            plans_to_json(&plans, &orphaned)
         };
         writeln!(writer, "{value}")?;
     } else {
@@ -261,13 +318,14 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             writeln!(writer, "{notice}")?;
             writeln!(writer)?;
         }
-        if let Some(ref plan) = install_plan {
-            let s = plan.display_enabled();
-            if !s.is_empty() {
-                writeln!(writer, "{s}")?;
-            }
-        }
-        if let Some(ref plan) = update_plan {
+        for plan in [
+            install_plan.as_ref(),
+            update_plan.as_ref(),
+            uninstall_plan.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let s = plan.display_enabled();
             if !s.is_empty() {
                 writeln!(writer, "{s}")?;
@@ -279,11 +337,17 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
                 writeln!(writer, "{s}")?;
             }
         }
+        let orphan_display = crate::plan::display_orphaned(&orphaned);
+        if !orphan_display.is_empty() {
+            writeln!(writer, "{orphan_display}")?;
+        }
     }
 
-    // If all packages were in cycle and nothing to install/update, show nothing to do
+    // If everything landed in a skipped bucket, there is nothing left to execute.
+    // Orphans are report-only and deliberately do not count here.
     if install_plan.as_ref().is_none_or(|p| p.is_empty())
         && update_plan.as_ref().is_none_or(|p| p.is_empty())
+        && uninstall_plan.as_ref().is_none_or(|p| p.is_empty())
     {
         if !is_json {
             writeln!(writer)?;
@@ -310,12 +374,16 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         }
     }
 
-    // Collect enabled packages from both plans
+    // Collect enabled packages from every plan
     let install_enabled: HashSet<&str> = install_plan
         .as_ref()
         .map(|p| p.enabled.iter().map(|s| s.as_str()).collect())
         .unwrap_or_default();
     let update_enabled: HashSet<&str> = update_plan
+        .as_ref()
+        .map(|p| p.enabled.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+    let uninstall_enabled: HashSet<&str> = uninstall_plan
         .as_ref()
         .map(|p| p.enabled.iter().map(|s| s.as_str()).collect())
         .unwrap_or_default();
@@ -327,7 +395,7 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         let is_enabled = match action {
             Action::Install => install_enabled.contains(name.as_str()),
             Action::Update => update_enabled.contains(name.as_str()),
-            Action::Uninstall => false,
+            Action::Uninstall => uninstall_enabled.contains(name.as_str()),
         };
         if !is_enabled {
             continue;
@@ -380,6 +448,25 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     }
 
     Ok(())
+}
+
+/// An otherwise-empty install plan, used by `apply` as the carrier for the
+/// consolidated skipped section when the install side has no entries of its own but
+/// the update or uninstall side contributed skipped ones.
+fn empty_install_plan() -> Plan {
+    Plan {
+        action: Action::Install,
+        enabled: Vec::new(),
+        disabled: Vec::new(),
+        archived: Vec::new(),
+        already_installed: Vec::new(),
+        not_installed: Vec::new(),
+        circular_dependency: Vec::new(),
+        dependency_disabled: std::collections::BTreeMap::new(),
+        script_unmodified: std::collections::BTreeMap::new(),
+        plugins: std::collections::BTreeMap::new(),
+        notes: std::collections::BTreeMap::new(),
+    }
 }
 
 pub fn install(
@@ -3521,12 +3608,14 @@ mod tests {
 
     #[test]
     fn test_apply_omits_archived_packages_from_update() {
-        // Arrange: ollama is archived and in state; apply must not update it
+        // Arrange: ollama is archived and in state; apply must uninstall it, not update it
         let marker_dir = TempDir::new().unwrap();
-        let ollama_marker = marker_dir.path().join("ollama_update");
+        let update_marker = marker_dir.path().join("ollama_update");
+        let uninstall_marker = marker_dir.path().join("ollama_uninstall");
         let yaml = "packages:\n  ollama:\n    archived: true\n";
         let (_tmp, ctx) = fixture(yaml);
-        write_script(&ctx, "ollama", "update", &ollama_marker);
+        write_script(&ctx, "ollama", "update", &update_marker);
+        write_script(&ctx, "ollama", "uninstall", &uninstall_marker);
         let state = State {
             installed: vec!["ollama".to_string()],
         };
@@ -3539,9 +3628,285 @@ mod tests {
 
         // Assert
         let written = String::from_utf8(output).unwrap();
-        assert!(written.contains("Nothing to do."));
         assert!(!written.contains("Updating ollama"));
+        assert!(!update_marker.exists());
+        assert!(written.contains("Uninstalling ollama...\ndone"));
+        assert!(uninstall_marker.exists());
+    }
+
+    #[test]
+    fn test_apply_uninstalls_archived_package_still_in_state() {
+        // Arrange: ollama is archived and installed here; zed is a normal install
+        let marker_dir = TempDir::new().unwrap();
+        let zed_marker = marker_dir.path().join("zed_install");
+        let ollama_marker = marker_dir.path().join("ollama_uninstall");
+        let yaml = "packages:\n  ollama:\n    archived: true\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", &zed_marker);
+        write_script(&ctx, "ollama", "uninstall", &ollama_marker);
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be uninstalled:\n  ollama"));
+        assert!(written.contains("Uninstalling ollama...\ndone"));
+        assert!(ollama_marker.exists());
+        assert!(zed_marker.exists());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["zed"]);
+    }
+
+    #[test]
+    fn test_apply_omits_archived_package_not_in_state_from_plan() {
+        // Arrange: ollama is archived and never installed here — a dormant tombstone
+        let marker_dir = TempDir::new().unwrap();
+        let zed_marker = marker_dir.path().join("zed_install");
+        let ollama_marker = marker_dir.path().join("ollama_uninstall");
+        let yaml = "packages:\n  ollama:\n    archived: true\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", &zed_marker);
+        write_script(&ctx, "ollama", "uninstall", &ollama_marker);
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — absent entirely, not even as a skipped entry
+        let written = String::from_utf8(output).unwrap();
+        assert!(!written.contains("ollama"));
+        assert!(!written.contains("will be uninstalled"));
         assert!(!ollama_marker.exists());
+    }
+
+    #[test]
+    fn test_apply_uninstalls_archived_packages_in_reverse_dependency_order() {
+        // Arrange: app depends on lib; both archived and installed. The dependent goes
+        // first so `lib` is still present while `app`'s uninstall script runs.
+        let marker_dir = TempDir::new().unwrap();
+        let app_marker = marker_dir.path().join("app_uninstall");
+        let lib_marker = marker_dir.path().join("lib_uninstall");
+        let yaml = "\
+packages:
+  app:
+    archived: true
+    depends_on: [lib]
+  lib:
+    archived: true
+";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "app", "uninstall", &app_marker);
+        write_script(&ctx, "lib", "uninstall", &lib_marker);
+        State {
+            installed: vec!["lib".to_string(), "app".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be uninstalled:\n  app\n  lib"));
+        let app_at = written.find("Uninstalling app...").unwrap();
+        let lib_at = written.find("Uninstalling lib...").unwrap();
+        assert!(app_at < lib_at);
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.is_empty());
+    }
+
+    #[test]
+    fn test_apply_uninstall_only_plan_prompts_and_executes() {
+        // Arrange: nothing to install or update, one archived package to remove
+        let marker_dir = TempDir::new().unwrap();
+        let ollama_marker = marker_dir.path().join("ollama_uninstall");
+        let yaml = "packages:\n  ollama:\n    archived: true\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "ollama", "uninstall", &ollama_marker);
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("The following packages will be uninstalled:\n  ollama"));
+        assert!(written.contains("Proceed? [y/N]"));
+        assert!(!written.contains("Nothing to do."));
+        assert!(written.contains("Uninstalling ollama...\ndone"));
+        assert!(ollama_marker.exists());
+    }
+
+    #[test]
+    fn test_apply_uninstall_only_plan_aborts_without_confirmation() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let ollama_marker = marker_dir.path().join("ollama_uninstall");
+        let yaml = "packages:\n  ollama:\n    archived: true\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "ollama", "uninstall", &ollama_marker);
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Aborted."));
+        assert!(!ollama_marker.exists());
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert_eq!(state.installed, vec!["ollama"]);
+    }
+
+    #[test]
+    fn test_apply_orders_uninstall_section_after_install_and_update() {
+        // Arrange: one install, one update, one archived uninstall
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "\
+packages:
+  claude: {}
+  neovim: {}
+  ollama:
+    archived: true
+";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "claude", "install", &marker_dir.path().join("claude"));
+        write_script(&ctx, "neovim", "update", &marker_dir.path().join("neovim"));
+        write_script(
+            &ctx,
+            "ollama",
+            "uninstall",
+            &marker_dir.path().join("ollama"),
+        );
+        State {
+            installed: vec!["neovim".to_string(), "ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"n\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let installed_at = written.find("will be installed:").unwrap();
+        let updated_at = written.find("will be updated:").unwrap();
+        let uninstalled_at = written.find("will be uninstalled:").unwrap();
+        assert!(installed_at < updated_at);
+        assert!(updated_at < uninstalled_at);
+    }
+
+    #[test]
+    fn test_apply_reports_orphaned_state_entry_without_executing() {
+        // Arrange: state.yml records a package homeos.yml no longer defines
+        let marker_dir = TempDir::new().unwrap();
+        let zed_marker = marker_dir.path().join("zed_install");
+        let yaml = "packages:\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", &zed_marker);
+        State {
+            installed: vec!["old-package".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains(
+            "The following state.yml entries have no package definition:\n  old-package"
+        ));
+        assert!(!written.contains("Uninstalling old-package"));
+        // Report-only: the entry stays in state.yml untouched.
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.contains(&"old-package".to_string()));
+    }
+
+    #[test]
+    fn test_apply_reports_orphan_after_skipped_section() {
+        // Arrange: a disabled package (skipped) plus an orphan, nothing to execute
+        let yaml = "packages:\n  docker:\n    enabled: false\n";
+        let (_tmp, ctx) = fixture(yaml);
+        State {
+            installed: vec!["old-package".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — orphans are report-only and do not make the plan non-empty
+        let written = String::from_utf8(output).unwrap();
+        let expected = "\
+The following packages will be skipped:
+  docker (disabled)
+The following state.yml entries have no package definition:
+  old-package
+
+Nothing to do.
+";
+        assert_eq!(written, expected);
+    }
+
+    #[test]
+    fn test_apply_reports_multiple_orphans_sorted() {
+        // Arrange
+        let yaml = "packages: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        State {
+            installed: vec!["zeta".to_string(), "alpha".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — sorted, so the report does not depend on state.yml's accumulation order
+        let written = String::from_utf8(output).unwrap();
+        let expected = "\
+The following state.yml entries have no package definition:
+  alpha
+  zeta
+
+Nothing to do.
+";
+        assert_eq!(written, expected);
     }
 
     #[test]
@@ -5513,6 +5878,111 @@ mod tests {
         assert_eq!(parsed["is_empty"], true);
         assert_eq!(parsed["skipped"][0]["name"], "neovim");
         assert_eq!(parsed["skipped"][0]["reason"], "disabled");
+        assert_eq!(parsed["orphaned"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_apply_json_plan_includes_archived_uninstall_entries() {
+        // Arrange — ollama is archived and installed here
+        let (_tmp, ctx) = fixture_json("packages:\n  ollama:\n    archived: true\n  zed: {}\n");
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["is_empty"], false);
+        assert_eq!(parsed["uninstall"][0]["name"], "ollama");
+        assert_eq!(
+            parsed["uninstall"][0]["depends_on"],
+            serde_json::Value::Null
+        );
+        assert_eq!(parsed["install"][0]["name"], "zed");
+    }
+
+    #[test]
+    fn test_apply_json_uninstall_only_plan_is_not_empty() {
+        // Arrange — the only work is removing an archived package
+        let (_tmp, ctx) = fixture_json("packages:\n  ollama:\n    archived: true\n");
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, true, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["is_empty"], false);
+        assert_eq!(parsed["uninstall"][0]["name"], "ollama");
+    }
+
+    #[test]
+    fn test_apply_json_uninstall_execution_results_carry_uninstall_action() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let ollama_marker = marker_dir.path().join("ollama_uninstall");
+        let (_tmp, ctx) = fixture_json("packages:\n  ollama:\n    archived: true\n");
+        write_script(&ctx, "ollama", "uninstall", &ollama_marker);
+        State {
+            installed: vec!["ollama".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let result_line = written
+            .lines()
+            .find(|l| l.contains("\"action\":\"uninstall\""))
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(result_line).unwrap();
+        assert_eq!(parsed["package"], "ollama");
+        assert_eq!(parsed["status"], "success");
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.is_empty());
+    }
+
+    #[test]
+    fn test_apply_json_reports_orphans_without_affecting_is_empty() {
+        // Arrange — nothing to execute, one orphaned state.yml entry
+        let (_tmp, ctx) = fixture_json("packages: {}\n");
+        State {
+            installed: vec!["old-package".to_string()],
+        }
+        .save(&ctx.state_path())
+        .unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(written.trim()).unwrap();
+        assert_eq!(parsed["orphaned"], serde_json::json!(["old-package"]));
+        assert_eq!(parsed["is_empty"], true);
+        // Report-only: no execution result line was written for the orphan.
+        assert!(!written.contains("\"package\":\"old-package\""));
     }
 
     // --- --yes flag tests ---

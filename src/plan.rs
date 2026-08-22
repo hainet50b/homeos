@@ -390,6 +390,10 @@ impl Plan {
             "update": update,
             "uninstall": uninstall,
             "skipped": skipped_entries,
+            // `orphaned` is an `apply`-only concept (state.yml entries with no
+            // homeos.yml definition), but the envelope shape is stable across
+            // commands, so single-plan commands always emit an empty array.
+            "orphaned": Vec::<String>::new(),
         })
     }
 
@@ -472,12 +476,28 @@ impl Plan {
     }
 }
 
+/// Render the report-only "state.yml entries with no package definition" section.
+/// Returns an empty string when there are no orphans. `apply` only: the entries have
+/// lost their `homeos.yml` definition (and with it their action scripts), so homeos
+/// cannot act on them — they are reported so the user can clean them up by hand.
+pub fn display_orphaned(orphaned: &[String]) -> String {
+    if orphaned.is_empty() {
+        return String::new();
+    }
+    let mut lines = vec!["The following state.yml entries have no package definition:".to_string()];
+    for name in orphaned {
+        lines.push(format!("  {name}"));
+    }
+    lines.join("\n")
+}
+
 /// Build a merged JSON plan envelope from one or more plans. Used by `apply` where
-/// the install plan and update plan are rendered together. Each plan contributes its
-/// enabled entries to the matching action array; the skipped section is taken from
-/// the first plan only (callers must consolidate skipped entries into a single plan
-/// before calling, matching the text rendering convention in `apply_to`).
-pub fn plans_to_json(plans: &[&Plan]) -> serde_json::Value {
+/// the install, update, and uninstall plans are rendered together. Each plan
+/// contributes its enabled entries to the matching action array; the skipped section
+/// is taken from the first plan only (callers must consolidate skipped entries into a
+/// single plan before calling, matching the text rendering convention in `apply_to`).
+/// `orphaned` is report-only and does not influence `is_empty`.
+pub fn plans_to_json(plans: &[&Plan], orphaned: &[String]) -> serde_json::Value {
     let mut install: Vec<serde_json::Value> = Vec::new();
     let mut update: Vec<serde_json::Value> = Vec::new();
     let mut uninstall: Vec<serde_json::Value> = Vec::new();
@@ -511,6 +531,7 @@ pub fn plans_to_json(plans: &[&Plan]) -> serde_json::Value {
         "update": update,
         "uninstall": uninstall,
         "skipped": skipped,
+        "orphaned": orphaned,
     })
 }
 
@@ -2786,7 +2807,7 @@ The following packages will be skipped:
         };
 
         // Act
-        let sut = plans_to_json(&[&install_plan, &update_plan]);
+        let sut = plans_to_json(&[&install_plan, &update_plan], &[]);
 
         // Assert
         assert_eq!(sut["is_empty"], false);
@@ -2826,12 +2847,105 @@ The following packages will be skipped:
         };
 
         // Act
-        let sut = plans_to_json(&[&install_plan, &update_plan]);
+        let sut = plans_to_json(&[&install_plan, &update_plan], &[]);
 
         // Assert — only install_plan's skipped entries appear.
         let skipped = sut["skipped"].as_array().unwrap();
         assert_eq!(skipped.len(), 1);
         assert_eq!(skipped[0]["name"], "docker");
+    }
+
+    #[test]
+    fn test_to_json_value_orphaned_is_always_empty_for_single_plan_commands() {
+        // Arrange
+        let config = fixture_config(vec![("neovim", true)]);
+        let plan =
+            Plan::build(&config, &["neovim".to_string()], Action::Install, &[], None).unwrap();
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert — `orphaned` is apply-only, but the envelope shape stays stable.
+        assert_eq!(sut["orphaned"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_plans_to_json_carries_orphaned_entries() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Uninstall,
+            enabled: vec!["ollama".to_string()],
+            disabled: vec![],
+            archived: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+        let orphaned = vec!["gone".to_string(), "old-package".to_string()];
+
+        // Act
+        let sut = plans_to_json(&[&plan], &orphaned);
+
+        // Assert
+        assert_eq!(sut["orphaned"], serde_json::json!(["gone", "old-package"]));
+        assert_eq!(sut["uninstall"][0]["name"], "ollama");
+    }
+
+    #[test]
+    fn test_plans_to_json_orphaned_alone_does_not_clear_is_empty() {
+        // Arrange — an all-skipped plan plus orphans: orphans are report-only.
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec!["docker".to_string()],
+            archived: vec![],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plans_to_json(&[&plan], &["old-package".to_string()]);
+
+        // Assert
+        assert_eq!(sut["is_empty"], true);
+        assert_eq!(sut["orphaned"], serde_json::json!(["old-package"]));
+    }
+
+    #[test]
+    fn test_display_orphaned_lists_entries_under_header() {
+        // Arrange
+        let orphaned = vec!["gone".to_string(), "old-package".to_string()];
+
+        // Act
+        let sut = display_orphaned(&orphaned);
+
+        // Assert
+        let expected = "\
+The following state.yml entries have no package definition:
+  gone
+  old-package";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_orphaned_is_empty_without_entries() {
+        // Arrange
+        let orphaned: Vec<String> = Vec::new();
+
+        // Act
+        let sut = display_orphaned(&orphaned);
+
+        // Assert
+        assert_eq!(sut, "");
     }
 
     #[test]
@@ -3005,7 +3119,7 @@ The following packages will be skipped:
         };
 
         // Act
-        let value = plans_to_json(&[&plan]);
+        let value = plans_to_json(&[&plan], &[]);
 
         // Assert
         assert!(value.get("windows_powershell_fallback").is_some());
