@@ -3,8 +3,8 @@ mod registry;
 
 pub use action::{apply, install, uninstall, update};
 pub use registry::{
-    add, add_alias, add_dep, cat, cd, disable, enable, info, list, remove, remove_alias,
-    remove_dep, rename,
+    add, add_alias, add_dep, archive, cat, cd, disable, enable, info, list, remove, remove_alias,
+    remove_dep, rename, unarchive,
 };
 
 const WINDOWS_POWERSHELL_FALLBACK_NOTICE: &str =

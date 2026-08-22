@@ -54,6 +54,8 @@ pub struct Plan {
     pub action: Action,
     pub enabled: Vec<String>,
     pub disabled: Vec<String>,
+    /// Packages marked `archived: true` (skipped by install / update).
+    pub archived: Vec<String>,
     pub already_installed: Vec<String>,
     pub not_installed: Vec<String>,
     /// Packages involved in a circular dependency (skipped).
@@ -87,6 +89,7 @@ impl Plan {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut enabled = Vec::new();
         let mut disabled = Vec::new();
+        let mut archived = Vec::new();
         let mut already_installed = Vec::new();
         let mut not_installed = Vec::new();
 
@@ -100,9 +103,14 @@ impl Plan {
 
             let in_state = installed.contains(name);
 
+            // `archived` dominates `enabled` / `disabled`: an archived package should not
+            // be installed anywhere, so install and update skip it regardless of the
+            // enabled flag underneath. Uninstall ignores both statuses.
             match action {
                 Action::Install => {
-                    if !pkg.enabled {
+                    if pkg.archived {
+                        archived.push(name.clone());
+                    } else if !pkg.enabled {
                         disabled.push(name.clone());
                     } else if in_state {
                         already_installed.push(name.clone());
@@ -111,7 +119,9 @@ impl Plan {
                     }
                 }
                 Action::Update => {
-                    if !pkg.enabled {
+                    if pkg.archived {
+                        archived.push(name.clone());
+                    } else if !pkg.enabled {
                         disabled.push(name.clone());
                     } else if in_state {
                         enabled.push(name.clone());
@@ -181,6 +191,7 @@ impl Plan {
         for name in enabled
             .iter()
             .chain(disabled.iter())
+            .chain(archived.iter())
             .chain(already_installed.iter())
             .chain(not_installed.iter())
             .chain(dependency_disabled.keys())
@@ -197,6 +208,7 @@ impl Plan {
             action,
             enabled,
             disabled,
+            archived,
             already_installed,
             not_installed,
             circular_dependency: Vec::new(),
@@ -274,6 +286,14 @@ impl Plan {
                 .map(|p| format!(", plugin: {p}"))
                 .unwrap_or_default();
             skipped.push(format!("  {name} (disabled{plugin_suffix})"));
+        }
+        for name in &self.archived {
+            let plugin_suffix = self
+                .plugins
+                .get(name)
+                .map(|p| format!(", plugin: {p}"))
+                .unwrap_or_default();
+            skipped.push(format!("  {name} (archived{plugin_suffix})"));
         }
         for name in &self.already_installed {
             let plugin_suffix = self
@@ -429,6 +449,9 @@ impl Plan {
         let mut entries: Vec<serde_json::Value> = Vec::new();
         for name in &self.disabled {
             entries.push(self.skipped_entry_json(name, "disabled", None));
+        }
+        for name in &self.archived {
+            entries.push(self.skipped_entry_json(name, "archived", None));
         }
         for name in &self.already_installed {
             entries.push(self.skipped_entry_json(name, "already-installed", None));
@@ -603,6 +626,215 @@ mod tests {
         }
     }
 
+    /// Config fixture where each package carries an explicit `(enabled, archived)` pair.
+    fn fixture_config_with_archived(packages: Vec<(&str, bool, bool)>) -> Config {
+        let mut map = BTreeMap::new();
+        for (name, enabled, archived) in packages {
+            map.insert(
+                name.to_string(),
+                PackageConfig {
+                    enabled,
+                    archived,
+                    ..Default::default()
+                },
+            );
+        }
+        Config {
+            packages: map,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_build_plan_install_skips_archived() {
+        // Arrange
+        let config =
+            fixture_config_with_archived(vec![("neovim", true, false), ("ollama", true, true)]);
+        let packages: Vec<String> = vec!["neovim", "ollama"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+        assert_eq!(sut.archived, vec!["ollama"]);
+        assert!(sut.disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_update_skips_archived() {
+        // Arrange — ollama is archived and in state; update must still skip it
+        let config =
+            fixture_config_with_archived(vec![("neovim", true, false), ("ollama", true, true)]);
+        let packages: Vec<String> = vec!["neovim", "ollama"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let installed = vec!["neovim".to_string(), "ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Update, &installed, None).unwrap();
+
+        // Assert
+        assert_eq!(sut.enabled, vec!["neovim"]);
+        assert_eq!(sut.archived, vec!["ollama"]);
+    }
+
+    #[test]
+    fn test_build_plan_uninstall_executes_archived_in_state() {
+        // Arrange
+        let config = fixture_config_with_archived(vec![("ollama", true, true)]);
+        let packages: Vec<String> = vec!["ollama".to_string()];
+        let installed = vec!["ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Uninstall, &installed, None).unwrap();
+
+        // Assert — uninstall ignores the archived status, only state.yml matters
+        assert_eq!(sut.enabled, vec!["ollama"]);
+        assert!(sut.archived.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_uninstall_skips_archived_not_in_state() {
+        // Arrange
+        let config = fixture_config_with_archived(vec![("ollama", true, true)]);
+        let packages: Vec<String> = vec!["ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Uninstall, &[], None).unwrap();
+
+        // Assert
+        assert!(sut.enabled.is_empty());
+        assert_eq!(sut.not_installed, vec!["ollama"]);
+        assert!(sut.archived.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_archived_dominates_disabled() {
+        // Arrange — archived: true with enabled: false underneath
+        let config = fixture_config_with_archived(vec![("ollama", false, true)]);
+        let packages: Vec<String> = vec!["ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert_eq!(sut.archived, vec!["ollama"]);
+        assert!(sut.disabled.is_empty());
+    }
+
+    #[test]
+    fn test_build_plan_archived_dominates_already_installed() {
+        // Arrange
+        let config = fixture_config_with_archived(vec![("ollama", true, true)]);
+        let packages: Vec<String> = vec!["ollama".to_string()];
+        let installed = vec!["ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &installed, None).unwrap();
+
+        // Assert
+        assert_eq!(sut.archived, vec!["ollama"]);
+        assert!(sut.already_installed.is_empty());
+    }
+
+    #[test]
+    fn test_display_shows_archived_after_disabled() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec!["neovim".to_string()],
+            disabled: vec!["docker".to_string()],
+            archived: vec!["ollama".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::new(),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display_with_notice(None);
+
+        // Assert
+        let expected = "\
+The following packages will be installed:
+  neovim
+The following packages will be skipped:
+  docker (disabled)
+  ollama (archived)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_display_shows_archived_with_plugin_suffix() {
+        // Arrange
+        let plan = Plan {
+            action: Action::Install,
+            enabled: vec![],
+            disabled: vec![],
+            archived: vec!["ollama".to_string()],
+            already_installed: vec![],
+            not_installed: vec![],
+            circular_dependency: vec![],
+            dependency_disabled: BTreeMap::new(),
+            script_unmodified: BTreeMap::new(),
+            plugins: BTreeMap::from([("ollama".to_string(), "dnf".to_string())]),
+            notes: BTreeMap::new(),
+        };
+
+        // Act
+        let sut = plan.display_with_notice(None);
+
+        // Assert
+        let expected = "\
+The following packages will be skipped:
+  ollama (archived, plugin: dnf)";
+        assert_eq!(sut, expected);
+    }
+
+    #[test]
+    fn test_to_json_value_skipped_includes_archived_reason() {
+        // Arrange
+        let config =
+            fixture_config_with_archived(vec![("neovim", true, false), ("ollama", true, true)]);
+        let packages: Vec<String> = vec!["neovim", "ollama"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let plan = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Act
+        let sut = plan.to_json_value();
+
+        // Assert
+        let skipped = sut["skipped"].as_array().unwrap();
+        assert_eq!(skipped.len(), 1);
+        assert_eq!(skipped[0]["name"], "ollama");
+        assert_eq!(skipped[0]["reason"], "archived");
+        assert_eq!(skipped[0]["detail"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn test_build_plan_populates_plugin_for_archived_package() {
+        // Arrange
+        let mut config = fixture_config_with_archived(vec![("ollama", true, true)]);
+        config.packages.get_mut("ollama").unwrap().plugin = Some("dnf".to_string());
+        let packages: Vec<String> = vec!["ollama".to_string()];
+
+        // Act
+        let sut = Plan::build(&config, &packages, Action::Install, &[], None).unwrap();
+
+        // Assert
+        assert_eq!(sut.plugins.get("ollama"), Some(&"dnf".to_string()));
+    }
+
     #[test]
     fn test_build_plan_separates_enabled_and_disabled() {
         // Arrange
@@ -677,6 +909,7 @@ mod tests {
             action: Action::Install,
             enabled: vec!["neovim".to_string(), "zed".to_string()],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -706,6 +939,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -732,6 +966,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -755,6 +990,7 @@ The following packages will be skipped:
             action: Action::Uninstall,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -844,6 +1080,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -874,6 +1111,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -894,6 +1132,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -952,6 +1191,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["zed".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1044,6 +1284,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec!["zed".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
             circular_dependency: vec![],
@@ -1070,6 +1311,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["zed".to_string()],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1099,6 +1341,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1123,6 +1366,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec!["ripgrep".to_string()],
             circular_dependency: vec![],
@@ -1513,6 +1757,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["zed".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1637,6 +1882,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1657,6 +1903,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1685,6 +1932,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1711,6 +1959,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["neovim".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1737,6 +1986,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec!["neovim".to_string()],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1763,6 +2013,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec!["neovim".to_string()],
             circular_dependency: vec![],
@@ -1789,6 +2040,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string(), "zed".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1878,6 +2130,7 @@ The following packages will be installed:
             action: Action::Uninstall,
             enabled: vec!["editor".to_string(), "git".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1905,6 +2158,7 @@ The following packages will be uninstalled:
             action: Action::Uninstall,
             enabled: vec!["editor".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -1933,6 +2187,7 @@ The following packages will be uninstalled:
             action: Action::Install,
             enabled: vec!["zed".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string(), "b".to_string()],
@@ -1962,6 +2217,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string(), "b".to_string()],
@@ -1989,6 +2245,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec!["a".to_string()],
@@ -2161,6 +2418,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["zed".to_string()],
             disabled: vec!["b".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2190,6 +2448,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2216,6 +2475,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2257,6 +2517,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2286,6 +2547,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2311,6 +2573,7 @@ The following packages will be skipped:
             action: Action::Uninstall,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2337,6 +2600,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2360,6 +2624,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2383,6 +2648,7 @@ The following packages will be skipped:
             action: Action::Uninstall,
             enabled: vec!["mise".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2406,6 +2672,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2433,6 +2700,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["a".to_string()],
+            archived: vec![],
             already_installed: vec!["b".to_string()],
             not_installed: vec!["c".to_string()],
             circular_dependency: vec!["d".to_string()],
@@ -2468,6 +2736,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2493,6 +2762,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["claude".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2505,6 +2775,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2531,6 +2802,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2543,6 +2815,7 @@ The following packages will be skipped:
             action: Action::Update,
             enabled: vec!["neovim".to_string()],
             disabled: vec!["other".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2608,6 +2881,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec!["docker".to_string()],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2639,6 +2913,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2662,6 +2937,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec![],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2689,6 +2965,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],
@@ -2717,6 +2994,7 @@ The following packages will be skipped:
             action: Action::Install,
             enabled: vec!["neovim".to_string()],
             disabled: vec![],
+            archived: vec![],
             already_installed: vec![],
             not_installed: vec![],
             circular_dependency: vec![],

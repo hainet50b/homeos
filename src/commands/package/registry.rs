@@ -41,6 +41,7 @@ fn list_json<W: Write>(
             serde_json::json!({
                 "name": name,
                 "enabled": pkg.enabled,
+                "archived": pkg.archived,
                 "installed": installed,
                 "plugin": pkg.plugin,
                 "depends_on": pkg.depends_on,
@@ -64,12 +65,13 @@ fn list_text<W: Write>(
         .unwrap_or(0)
         .max(7); // "Package" header length
 
+    let status_header = "Status";
     let deps_header = "Dependencies";
     let installed_header = "Installed";
     let installed_width = installed_header.len();
     let plugin_header = "Plugin";
 
-    let rows: Vec<(String, bool, bool, String, String)> = config
+    let rows: Vec<(String, String, bool, String, String)> = config
         .packages
         .iter()
         .map(|(name, pkg)| {
@@ -80,9 +82,22 @@ fn list_text<W: Write>(
             } else {
                 pkg.depends_on.join(", ")
             };
-            (name.clone(), pkg.enabled, installed, plugin, deps)
+            (
+                name.clone(),
+                package_status(pkg).to_string(),
+                installed,
+                plugin,
+                deps,
+            )
         })
         .collect();
+
+    let status_width = rows
+        .iter()
+        .map(|(_, s, _, _, _)| s.len())
+        .max()
+        .unwrap_or(0)
+        .max(status_header.len());
 
     let plugin_width = rows
         .iter()
@@ -100,30 +115,41 @@ fn list_text<W: Write>(
 
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
-        "Package", "Enabled", installed_header, plugin_header, deps_header
+        "{:<name_width$}  {:<status_width$}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
+        "Package", status_header, installed_header, plugin_header, deps_header
     )?;
     writeln!(
         writer,
-        "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
+        "{:<name_width$}  {:<status_width$}  {:<installed_width$}  {:<plugin_width$}  {:<deps_width$}",
         "-".repeat(name_width),
-        "-------",
+        "-".repeat(status_width),
         "-".repeat(installed_width),
         "-".repeat(plugin_width),
         "-".repeat(deps_width)
     )?;
 
-    for (name, enabled, installed, plugin, deps) in &rows {
-        let enabled_str = if *enabled { "yes" } else { "no" };
+    for (name, status, installed, plugin, deps) in &rows {
         let installed_str = if *installed { "yes" } else { "no" };
         writeln!(
             writer,
-            "{:<name_width$}  {:<7}  {:<installed_width$}  {:<plugin_width$}  {}",
-            name, enabled_str, installed_str, plugin, deps
+            "{:<name_width$}  {:<status_width$}  {:<installed_width$}  {:<plugin_width$}  {}",
+            name, status, installed_str, plugin, deps
         )?;
     }
 
     Ok(())
+}
+
+/// Render a package's lifecycle status. `archived` wins over the underlying
+/// enabled/disabled value, which is kept intact so it resurfaces on unarchive.
+fn package_status(pkg: &PackageConfig) -> &'static str {
+    if pkg.archived {
+        "archived"
+    } else if pkg.enabled {
+        "enabled"
+    } else {
+        "disabled"
+    }
 }
 
 pub fn add(
@@ -145,10 +171,16 @@ pub fn add(
     }
 
     for dep in depends_on {
-        if !config.packages.contains_key(dep.as_str()) {
-            return Err(HomeosError::new(
+        let dep_config = config.packages.get(dep.as_str()).ok_or_else(|| {
+            HomeosError::new(
                 reasons::DEPENDENCY_NOT_FOUND,
                 format!("Dependency '{dep}' not found"),
+            )
+        })?;
+        if dep_config.archived {
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!("Dependency '{dep}' is archived"),
             )
             .into());
         }
@@ -502,10 +534,16 @@ fn add_dep_to(
     }
 
     for dependency in dependencies {
-        if !config.packages.contains_key(dependency.as_str()) {
-            return Err(HomeosError::new(
+        let dep_config = config.packages.get(dependency.as_str()).ok_or_else(|| {
+            HomeosError::new(
                 reasons::DEPENDENCY_NOT_FOUND,
                 format!("Dependency '{dependency}' not found"),
+            )
+        })?;
+        if dep_config.archived {
+            return Err(HomeosError::new(
+                reasons::VALIDATION_ERROR,
+                format!("Dependency '{dependency}' is archived"),
             )
             .into());
         }
@@ -704,6 +742,109 @@ pub fn disable(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
+pub fn archive(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    archive_to(ctx, packages, &mut std::io::stdout())
+}
+
+fn archive_to<W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    for package in packages {
+        if !config.packages.contains_key(package.as_str()) {
+            return Err(HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+            .into());
+        }
+    }
+
+    // Refuse while a non-archived package still depends on the target, mirroring
+    // `package remove`. Packages in this same batch are excluded because they end up
+    // archived too. Already-archived dependents are fine: the whole subgraph is a
+    // tombstone.
+    for package in packages {
+        let dependents: Vec<&String> = config
+            .packages
+            .iter()
+            .filter(|(name, _)| !packages.contains(name))
+            .filter(|(_, pkg)| !pkg.archived && pkg.depends_on.contains(package))
+            .map(|(name, _)| name)
+            .collect();
+
+        if !dependents.is_empty() {
+            let list = dependents
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(HomeosError::new(
+                reasons::DEPENDENT_EXISTS,
+                format!("Cannot archive package '{package}' because it is depended on by: {list}"),
+            )
+            .into());
+        }
+    }
+
+    for package in packages {
+        let pkg = config.packages.get_mut(package.as_str()).unwrap();
+
+        if pkg.archived {
+            writeln!(writer, "Package '{package}' is already archived")?;
+            continue;
+        }
+
+        pkg.archived = true;
+        writeln!(writer, "Archived package '{package}'")?;
+    }
+
+    config.save(&ctx.config_path())?;
+    Ok(())
+}
+
+pub fn unarchive(ctx: &Context, packages: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    unarchive_to(ctx, packages, &mut std::io::stdout())
+}
+
+fn unarchive_to<W: Write>(
+    ctx: &Context,
+    packages: &[String],
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Config::load(&ctx.config_path())?;
+
+    for package in packages {
+        if !config.packages.contains_key(package.as_str()) {
+            return Err(HomeosError::new(
+                reasons::PACKAGE_NOT_FOUND,
+                format!("Package '{package}' not found"),
+            )
+            .into());
+        }
+    }
+
+    for package in packages {
+        let pkg = config.packages.get_mut(package.as_str()).unwrap();
+
+        if !pkg.archived {
+            writeln!(writer, "Package '{package}' is not archived")?;
+            continue;
+        }
+
+        // `enabled` was never touched by `archive`, so the package returns with the
+        // enabled/disabled status it had before.
+        pkg.archived = false;
+        writeln!(writer, "Unarchived package '{package}'")?;
+    }
+
+    config.save(&ctx.config_path())?;
+    Ok(())
+}
+
 pub fn info(ctx: &Context, package: &str) -> Result<(), Box<dyn std::error::Error>> {
     info_to(ctx, package, &mut std::io::stdout())
 }
@@ -779,6 +920,7 @@ fn info_json<W: Write>(
     let value = serde_json::json!({
         "name": package,
         "enabled": pkg.enabled,
+        "archived": pkg.archived,
         "installed": installed,
         "plugin": pkg.plugin,
         "params": pkg.params,
@@ -804,6 +946,11 @@ fn info_text<W: Write>(
         writer,
         "Enabled: {}",
         if pkg.enabled { "yes" } else { "no" }
+    )?;
+    writeln!(
+        writer,
+        "Archived: {}",
+        if pkg.archived { "yes" } else { "no" }
     )?;
     writeln!(
         writer,
@@ -1026,7 +1173,7 @@ mod tests {
         assert!(result.is_ok());
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("Package"));
-        assert!(text.contains("Enabled"));
+        assert!(text.contains("Status"));
         assert!(text.contains("Installed"));
         assert!(text.contains("Dependencies"));
         assert!(text.contains("neovim"));
@@ -1047,7 +1194,7 @@ mod tests {
         assert!(result.is_ok());
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("Package"));
-        assert!(text.contains("Enabled"));
+        assert!(text.contains("Status"));
         assert!(text.contains("Installed"));
         assert!(text.contains("Dependencies"));
         let lines: Vec<&str> = text.lines().collect();
@@ -1081,8 +1228,59 @@ mod tests {
         let text = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         // neovim is disabled, ripgrep is enabled
-        assert!(lines[2].contains("neovim") && lines[2].contains("no"));
-        assert!(lines[3].contains("ripgrep") && lines[3].contains("yes"));
+        assert!(lines[2].contains("neovim") && lines[2].contains("disabled"));
+        assert!(lines[3].contains("ripgrep") && lines[3].contains("enabled"));
+    }
+
+    #[test]
+    fn test_list_shows_archived_status() {
+        // Arrange — ollama is archived while still enabled underneath; archived wins
+        let (_tmp, ctx) = fixture(
+            "packages:\n  neovim: {}\n  ollama:\n    archived: true\n  zed:\n    enabled: false\n    archived: true\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[2].contains("neovim") && lines[2].contains("enabled"));
+        assert!(lines[3].contains("ollama") && lines[3].contains("archived"));
+        assert!(lines[4].contains("zed") && lines[4].contains("archived"));
+    }
+
+    #[test]
+    fn test_list_status_column_separator_matches_widest_value() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  zed:\n    enabled: false\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert — "disabled" (8 chars) is wider than the "Status" header (6 chars)
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let status_separator = lines[1].split("  ").nth(1).unwrap();
+        assert_eq!(status_separator, "-".repeat(8));
+    }
+
+    #[test]
+    fn test_list_status_column_separator_matches_header_when_values_shorter() {
+        // Arrange — every value is "enabled" (7 chars), still wider than "Status" (6)
+        let (_tmp, ctx) = fixture("packages: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert — with no rows the separator falls back to the header width
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let status_separator = lines[1].split("  ").nth(1).unwrap();
+        assert_eq!(status_separator, "-".repeat(6));
     }
 
     #[test]
@@ -1140,7 +1338,7 @@ mod tests {
         let text = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines[0].contains("Package"));
-        assert!(lines[0].contains("Enabled"));
+        assert!(lines[0].contains("Status"));
         assert!(lines[0].contains("Installed"));
         assert!(lines[0].contains("Dependencies"));
         // Second line is separator
@@ -2829,6 +3027,25 @@ mod tests {
     }
 
     #[test]
+    fn test_add_dep_errors_when_dependency_is_archived() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ollama:\n    archived: true\n");
+
+        // Act
+        let result = add_dep(&ctx, "neovim", &["ollama".to_string()]);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Dependency 'ollama' is archived");
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::VALIDATION_ERROR);
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
     fn test_add_dep_errors_when_one_of_multiple_dependencies_not_found() {
         // Arrange
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  git: {}\n");
@@ -2845,6 +3062,33 @@ mod tests {
         // Verify no partial changes were saved
         let config = Config::load(&ctx.config_path()).unwrap();
         assert!(config.packages["neovim"].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_add_with_depends_on_errors_when_dependency_is_archived() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    archived: true\n");
+        std::fs::create_dir_all(ctx.packages_dir()).unwrap();
+
+        // Act
+        let result = add(
+            &ctx,
+            "neovim",
+            &["ollama".to_string()],
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+        );
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Dependency 'ollama' is archived");
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::VALIDATION_ERROR);
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages.contains_key("neovim"));
     }
 
     #[test]
@@ -3706,6 +3950,298 @@ mod tests {
     }
 
     #[test]
+    fn test_archive_sets_archived_true() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["ollama".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Archived package 'ollama'\n"
+        );
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["ollama"].archived);
+    }
+
+    #[test]
+    fn test_archive_leaves_enabled_untouched() {
+        // Arrange — both an enabled and a disabled package get archived
+        let (_tmp, ctx) = fixture("packages:\n  ollama: {}\n  zed:\n    enabled: false\n");
+        let mut output = Vec::new();
+
+        // Act
+        archive_to(
+            &ctx,
+            &["ollama".to_string(), "zed".to_string()],
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert — `enabled` keeps its value underneath so it resurfaces on unarchive
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["ollama"].archived);
+        assert!(config.packages["ollama"].enabled);
+        assert!(config.packages["zed"].archived);
+        assert!(!config.packages["zed"].enabled);
+    }
+
+    #[test]
+    fn test_archive_already_archived_is_noop() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    archived: true\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["ollama".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Package 'ollama' is already archived\n"
+        );
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["ollama"].archived);
+    }
+
+    #[test]
+    fn test_archive_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ollama: {}\n  zed: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        archive_to(
+            &ctx,
+            &["ollama".to_string(), "zed".to_string()],
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["ollama"].archived);
+        assert!(config.packages["zed"].archived);
+        assert!(!config.packages["neovim"].archived);
+    }
+
+    #[test]
+    fn test_archive_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["nonexistent".to_string()], &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Package 'nonexistent' not found");
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_archive_errors_when_non_archived_dependents_exist() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  mise:\n    depends_on: [copr]\n  copr: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["copr".to_string()], &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Cannot archive package 'copr' because it is depended on by: mise"
+        );
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::DEPENDENT_EXISTS);
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["copr"].archived);
+    }
+
+    #[test]
+    fn test_archive_ignores_already_archived_dependents() {
+        // Arrange — mise is already a tombstone, so archiving its dependency is fine
+        let (_tmp, ctx) =
+            fixture("packages:\n  mise:\n    archived: true\n    depends_on: [copr]\n  copr: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["copr".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["copr"].archived);
+    }
+
+    #[test]
+    fn test_archive_allows_dependent_in_same_batch() {
+        // Arrange — archiving mise and its dependency together is one coherent removal
+        let (_tmp, ctx) = fixture("packages:\n  mise:\n    depends_on: [copr]\n  copr: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["mise".to_string(), "copr".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(config.packages["mise"].archived);
+        assert!(config.packages["copr"].archived);
+    }
+
+    #[test]
+    fn test_archive_lists_only_non_archived_dependents() {
+        // Arrange — two dependents, one already archived
+        let (_tmp, ctx) = fixture(
+            "packages:\n  a:\n    depends_on: [copr]\n  b:\n    archived: true\n    depends_on: [copr]\n  copr: {}\n",
+        );
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["copr".to_string()], &mut output);
+
+        // Assert
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Cannot archive package 'copr' because it is depended on by: a"
+        );
+    }
+
+    #[test]
+    fn test_archive_errors_when_not_initialized() {
+        // Arrange
+        let tmp = TempDir::new().unwrap();
+        let ctx = Context::new(Some(tmp.path().to_path_buf()));
+        let mut output = Vec::new();
+
+        // Act
+        let result = archive_to(&ctx, &["neovim".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unarchive_clears_archived() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    archived: true\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = unarchive_to(&ctx, &["ollama".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Unarchived package 'ollama'\n"
+        );
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["ollama"].archived);
+    }
+
+    #[test]
+    fn test_unarchive_restores_previous_enabled_status() {
+        // Arrange — zed was disabled before it was archived
+        let (_tmp, ctx) = fixture("packages:\n  zed:\n    enabled: false\n    archived: true\n");
+        let mut output = Vec::new();
+
+        // Act
+        unarchive_to(&ctx, &["zed".to_string()], &mut output).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["zed"].archived);
+        assert!(!config.packages["zed"].enabled);
+    }
+
+    #[test]
+    fn test_unarchive_not_archived_is_noop() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = unarchive_to(&ctx, &["neovim".to_string()], &mut output);
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Package 'neovim' is not archived\n"
+        );
+    }
+
+    #[test]
+    fn test_unarchive_multiple_packages() {
+        // Arrange
+        let (_tmp, ctx) =
+            fixture("packages:\n  ollama:\n    archived: true\n  zed:\n    archived: true\n");
+        let mut output = Vec::new();
+
+        // Act
+        unarchive_to(
+            &ctx,
+            &["ollama".to_string(), "zed".to_string()],
+            &mut output,
+        )
+        .unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["ollama"].archived);
+        assert!(!config.packages["zed"].archived);
+    }
+
+    #[test]
+    fn test_unarchive_errors_when_package_not_found() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        let result = unarchive_to(&ctx, &["nonexistent".to_string()], &mut output);
+
+        // Assert
+        let err = result.unwrap_err();
+        assert_eq!(err.to_string(), "Package 'nonexistent' not found");
+        let homeos_err = err
+            .downcast_ref::<HomeosError>()
+            .expect("expected HomeosError");
+        assert_eq!(homeos_err.reason, reasons::PACKAGE_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_archive_then_unarchive_round_trip() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama: {}\n");
+        let mut output = Vec::new();
+
+        // Act
+        archive_to(&ctx, &["ollama".to_string()], &mut output).unwrap();
+        unarchive_to(&ctx, &["ollama".to_string()], &mut output).unwrap();
+
+        // Assert
+        let config = Config::load(&ctx.config_path()).unwrap();
+        assert!(!config.packages["ollama"].archived);
+        assert!(config.packages["ollama"].enabled);
+    }
+
+    #[test]
     fn test_info_displays_package_details() {
         // Arrange
         let (_tmp, ctx) = fixture(
@@ -3725,6 +4261,7 @@ mod tests {
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("Package: claude"));
         assert!(text.contains("Enabled: yes"));
+        assert!(text.contains("Archived: no"));
         assert!(text.contains("Installed: yes"));
         assert!(text.contains("Plugin: -"));
         assert!(text.contains("Dependencies:"));
@@ -3773,6 +4310,23 @@ mod tests {
         assert!(text.contains("Dependents:\n  (none)"));
         assert!(text.contains("Script aliases:\n  (none)"));
         assert!(text.contains("Scripts:"));
+    }
+
+    #[test]
+    fn test_info_shows_archived_line_after_enabled() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    archived: true\n");
+        let mut output = Vec::new();
+
+        // Act
+        info_to(&ctx, "ollama", &mut output).unwrap();
+
+        // Assert — the Archived line sits between Enabled and Installed
+        let text = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[1], "Enabled: yes");
+        assert_eq!(lines[2], "Archived: yes");
+        assert_eq!(lines[3], "Installed: no");
     }
 
     #[test]
@@ -3895,6 +4449,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["name"], "claude");
         assert_eq!(value["enabled"], true);
+        assert_eq!(value["archived"], false);
         assert_eq!(value["installed"], true);
         assert_eq!(value["plugin"], serde_json::Value::Null);
         assert_eq!(value["params"], serde_json::json!({}));
@@ -3908,6 +4463,28 @@ mod tests {
             serde_json::json!({"update": "install"})
         );
         assert!(value["scripts"].is_array());
+    }
+
+    #[test]
+    fn test_info_json_archived_field_is_boolean() {
+        // Arrange
+        let (_tmp, ctx) = fixture("packages:\n  ollama:\n    archived: true\n  neovim: {}\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut archived_output = Vec::new();
+        let mut plain_output = Vec::new();
+
+        // Act
+        info_to(&ctx, "ollama", &mut archived_output).unwrap();
+        info_to(&ctx, "neovim", &mut plain_output).unwrap();
+
+        // Assert
+        let archived: serde_json::Value =
+            serde_json::from_str(&String::from_utf8(archived_output).unwrap()).unwrap();
+        let plain: serde_json::Value =
+            serde_json::from_str(&String::from_utf8(plain_output).unwrap()).unwrap();
+        assert_eq!(archived["archived"], true);
+        assert_eq!(archived["enabled"], true);
+        assert_eq!(plain["archived"], false);
     }
 
     #[test]
@@ -4504,6 +5081,27 @@ mod tests {
         assert_eq!(array[0]["name"], "neovim");
         assert_eq!(array[0]["enabled"], false);
         assert_eq!(array[1]["name"], "ripgrep");
+        assert_eq!(array[1]["enabled"], true);
+    }
+
+    #[test]
+    fn test_list_json_archived_field_is_boolean() {
+        // Arrange — ollama is archived while enabled underneath
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ollama:\n    archived: true\n");
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut output = Vec::new();
+
+        // Act
+        list_to(&ctx, &mut output).unwrap();
+
+        // Assert
+        let text = String::from_utf8(output).unwrap();
+        let value: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        let array = value.as_array().unwrap();
+        assert_eq!(array[0]["name"], "neovim");
+        assert_eq!(array[0]["archived"], false);
+        assert_eq!(array[1]["name"], "ollama");
+        assert_eq!(array[1]["archived"], true);
         assert_eq!(array[1]["enabled"], true);
     }
 

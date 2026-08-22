@@ -40,6 +40,12 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
     let mut disabled_packages = Vec::new();
 
     for (name, pkg) in &config.packages {
+        // Archived packages are tombstones: never installed or updated by `apply`.
+        // They are omitted from the plan entirely rather than listed as skipped, so a
+        // dormant tombstone does not appear in every apply.
+        if pkg.archived {
+            continue;
+        }
         if !pkg.enabled {
             disabled_packages.push(name.clone());
             continue;
@@ -86,7 +92,12 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
         expand_dependencies(&config, &to_install)
             .0
             .into_iter()
-            .filter(|name| config.packages.get(name).is_none_or(|p| p.enabled))
+            .filter(|name| {
+                config
+                    .packages
+                    .get(name)
+                    .is_none_or(|p| p.enabled && !p.archived)
+            })
             .collect()
     } else {
         Vec::new()
@@ -201,6 +212,7 @@ pub(crate) fn apply_to<R: BufRead, W: Write>(
             action: Action::Install,
             enabled: Vec::new(),
             disabled: Vec::new(),
+            archived: Vec::new(),
             already_installed: Vec::new(),
             not_installed: Vec::new(),
             circular_dependency: Vec::new(),
@@ -1028,6 +1040,111 @@ mod tests {
         assert!(written.contains("Nothing to do."));
         assert!(!written.contains("Installing"));
         assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_skips_archived_packages_for_install() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  ollama:\n    archived: true\n",
+            "ollama",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["ollama".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("ollama (archived)"));
+        assert!(written.contains("will be skipped"));
+        assert!(written.contains("Nothing to do."));
+        assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_skips_archived_packages_for_update() {
+        // Arrange — archived and in state; update must still skip it
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("should_not_run");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  ollama:\n    archived: true\n",
+            "ollama",
+            "update",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["ollama".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["ollama".to_string()],
+            Action::Update,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("ollama (archived)"));
+        assert!(written.contains("Nothing to do."));
+        assert!(!marker_path.exists());
+    }
+
+    #[test]
+    fn test_run_action_uninstall_executes_archived_package() {
+        // Arrange — a named uninstall ignores the archived status
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("ollama_uninstall");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  ollama:\n    archived: true\n",
+            "ollama",
+            "uninstall",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["ollama".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        let result = run_action(
+            &ctx,
+            &["ollama".to_string()],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+        );
+
+        // Assert
+        assert!(result.is_ok());
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Uninstalling ollama...\ndone"));
+        assert!(!written.contains("(archived)"));
+        assert!(marker_path.exists());
     }
 
     #[test]
@@ -3088,6 +3205,55 @@ mod tests {
         assert!(written.contains("neovim (disabled)"));
         assert!(written.contains("will be skipped"));
         assert!(written.contains("Nothing to do."));
+    }
+
+    #[test]
+    fn test_apply_omits_archived_packages_from_install() {
+        // Arrange: ollama is archived but enabled underneath; zed is a normal install
+        let marker_dir = TempDir::new().unwrap();
+        let zed_marker = marker_dir.path().join("zed_install");
+        let ollama_marker = marker_dir.path().join("ollama_install");
+        let yaml = "packages:\n  ollama:\n    archived: true\n  zed: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "zed", "install", &zed_marker);
+        write_script(&ctx, "ollama", "install", &ollama_marker);
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert — a dormant tombstone is absent from the plan entirely, not "skipped"
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Installing zed...\ndone"));
+        assert!(!written.contains("ollama"));
+        assert!(zed_marker.exists());
+        assert!(!ollama_marker.exists());
+    }
+
+    #[test]
+    fn test_apply_omits_archived_packages_from_update() {
+        // Arrange: ollama is archived and in state; apply must not update it
+        let marker_dir = TempDir::new().unwrap();
+        let ollama_marker = marker_dir.path().join("ollama_update");
+        let yaml = "packages:\n  ollama:\n    archived: true\n";
+        let (_tmp, ctx) = fixture(yaml);
+        write_script(&ctx, "ollama", "update", &ollama_marker);
+        let state = State {
+            installed: vec!["ollama".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+
+        // Act
+        apply_to(&ctx, false, &mut input, &mut output).unwrap();
+
+        // Assert
+        let written = String::from_utf8(output).unwrap();
+        assert!(written.contains("Nothing to do."));
+        assert!(!written.contains("Updating ollama"));
+        assert!(!ollama_marker.exists());
     }
 
     #[test]

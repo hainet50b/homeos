@@ -38,6 +38,8 @@ pub struct PackageConfig {
     pub script_aliases: BTreeMap<String, String>,
     #[serde(default = "default_enabled", skip_serializing_if = "is_true")]
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub archived: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,6 +53,7 @@ impl Default for PackageConfig {
         Self {
             script_aliases: BTreeMap::new(),
             enabled: true,
+            archived: false,
             depends_on: Vec::new(),
             plugin: None,
             params: BTreeMap::new(),
@@ -64,6 +67,10 @@ fn default_enabled() -> bool {
 
 fn is_true(v: &bool) -> bool {
     *v
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 impl Config {
@@ -109,10 +116,81 @@ mod tests {
 
         // Assert
         assert!(sut.enabled);
+        assert!(!sut.archived);
         assert!(sut.script_aliases.is_empty());
         assert!(sut.depends_on.is_empty());
         assert_eq!(sut.plugin, None);
         assert!(sut.params.is_empty());
+    }
+
+    #[test]
+    fn test_parse_archived() {
+        // Arrange
+        let yaml = "packages:\n  ollama:\n    archived: true\n  neovim: {}\n";
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert!(sut.packages["ollama"].archived);
+        assert!(!sut.packages["neovim"].archived);
+    }
+
+    #[test]
+    fn test_archived_leaves_enabled_untouched() {
+        // Arrange
+        let yaml = "packages:\n  ollama:\n    enabled: false\n    archived: true\n";
+
+        // Act
+        let sut: Config = yaml_serde::from_str(yaml).unwrap();
+
+        // Assert
+        assert!(sut.packages["ollama"].archived);
+        assert!(!sut.packages["ollama"].enabled);
+    }
+
+    #[test]
+    fn test_serialize_includes_archived_when_true() {
+        // Arrange
+        let config = Config {
+            packages: BTreeMap::from([(
+                "ollama".to_string(),
+                PackageConfig {
+                    archived: true,
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+
+        // Act
+        let sut = yaml_serde::to_string(&config).unwrap();
+
+        // Assert
+        assert!(sut.contains("archived"));
+    }
+
+    #[test]
+    fn test_save_and_reload_with_archived() {
+        // Arrange
+        let mut config = Config::default();
+        config.packages.insert(
+            "ollama".to_string(),
+            PackageConfig {
+                enabled: false,
+                archived: true,
+                ..Default::default()
+            },
+        );
+        let tmp = NamedTempFile::new().unwrap();
+
+        // Act
+        config.save(tmp.path()).unwrap();
+        let sut = Config::load(tmp.path()).unwrap();
+
+        // Assert
+        assert!(sut.packages["ollama"].archived);
+        assert!(!sut.packages["ollama"].enabled);
     }
 
     #[test]
@@ -205,6 +283,7 @@ packages:
             PackageConfig {
                 script_aliases: BTreeMap::from([("update".to_string(), "install".to_string())]),
                 enabled: true,
+                archived: false,
                 depends_on: Vec::new(),
                 plugin: None,
                 params: BTreeMap::new(),
@@ -229,6 +308,7 @@ packages:
                 PackageConfig {
                     script_aliases: BTreeMap::new(),
                     enabled: true,
+                    archived: false,
                     depends_on: Vec::new(),
                     plugin: None,
                     params: BTreeMap::new(),
@@ -243,6 +323,7 @@ packages:
         // Assert
         assert!(!sut.contains("script_aliases"));
         assert!(!sut.contains("enabled"));
+        assert!(!sut.contains("archived"));
     }
 
     #[test]

@@ -247,6 +247,18 @@ pub enum PackageCommands {
         #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
         packages: Vec<String>,
     },
+    /// Archive packages: mark them as removed from every machine
+    Archive {
+        /// Package names
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
+        packages: Vec<String>,
+    },
+    /// Unarchive packages
+    Unarchive {
+        /// Package names
+        #[arg(required = true, add = ArgValueCompleter::new(completers::package_completer))]
+        packages: Vec<String>,
+    },
     /// Display package details
     Info {
         /// Package name
@@ -366,6 +378,8 @@ fn validate_args(command: &Commands) -> Result<(), error::HomeosError> {
             }
             PackageCommands::Enable { packages }
             | PackageCommands::Disable { packages }
+            | PackageCommands::Archive { packages }
+            | PackageCommands::Unarchive { packages }
             | PackageCommands::Install { packages, .. }
             | PackageCommands::Update { packages, .. }
             | PackageCommands::Uninstall { packages, .. } => {
@@ -449,6 +463,8 @@ fn dispatch(ctx: &context::Context, command: Commands) -> Result<(), Box<dyn std
             }
             PackageCommands::Enable { packages } => commands::package::enable(ctx, &packages),
             PackageCommands::Disable { packages } => commands::package::disable(ctx, &packages),
+            PackageCommands::Archive { packages } => commands::package::archive(ctx, &packages),
+            PackageCommands::Unarchive { packages } => commands::package::unarchive(ctx, &packages),
             PackageCommands::Info { package } => commands::package::info(ctx, &package),
             PackageCommands::Cat { package } => commands::package::cat(ctx, &package),
             PackageCommands::Cd { package, print } => {
