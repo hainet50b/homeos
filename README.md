@@ -345,6 +345,7 @@ plugins:
 - `depends_on` — declare dependencies on other packages.
 - `script_aliases` — map an action to another script (e.g., run `install.sh` for `update`).
 - `enabled` — `true` by default. Set to `false` to skip the package in operations.
+- `archived` — `false` by default. `true` marks a package as removed from every machine: `apply` uninstalls it wherever it is still installed, and `install` / `update` skip it. Set via `homeos package archive`.
 - `plugin` — plugin name to use for script generation.
 - `params` — values passed to the plugin's templates.
 
@@ -377,7 +378,7 @@ Options:
 
 #### `homeos apply`
 
-Install new packages and update installed ones.
+Install new packages, update installed ones, and uninstall archived ones.
 
 ```
 Usage: homeos apply [OPTIONS]
@@ -396,6 +397,8 @@ The following packages will be installed:
   claude
 The following packages will be updated:
   neovim
+The following packages will be uninstalled:
+  ollama
 The following packages will be skipped:
   zed (disabled)
 
@@ -403,11 +406,13 @@ Proceed? [y/N]
 ```
 
 > [!NOTE]
-> Packages are installed in dependency order based on `depends_on`.
+> Packages are installed in dependency order based on `depends_on`; uninstalls run in reverse dependency order.
+
+`apply` is how an uninstall performed on one machine reaches the others: archiving a package (see `homeos package archive`) marks it in `homeos.yml`, and each machine's next `apply` uninstalls it there. Entries that remain in `state.yml` without a package definition (e.g., removed before every machine caught up) are reported at the end of the plan; homeos cannot act on them because their scripts are gone.
 
 ### Manage packages
 
-Packages can be **enabled** or **disabled**. Disabled packages are skipped by `apply`, `install`, and `update`. `uninstall` runs regardless of the enabled status. Newly added packages are enabled by default.
+Packages can be **enabled**, **disabled**, or **archived**. Disabled packages are frozen: skipped by `apply`, `install`, and `update`, but kept installed where they are. Archived packages should not be installed anywhere: `install` and `update` skip them, and `apply` uninstalls them wherever they are still installed. `uninstall` runs regardless of the status. Newly added packages are enabled by default.
 
 Packages can declare **dependencies** on other packages. homeos handles them in the right order.
 
@@ -421,15 +426,16 @@ Usage: homeos package list
 
 Also available as `homeos package ls`.
 
-Displays a table with package name, enabled status, installed status, backing plugin, and dependencies.
+Displays a table with package name, status (`enabled` / `disabled` / `archived`), installed status, backing plugin, and dependencies.
 
 ```
 $ homeos package list
-Package  Enabled  Installed  Plugin  Dependencies
--------  -------  ---------  ------  -----------------
-neovim   yes      yes        dnf     -
-claude   yes      yes        -       bubblewrap, socat
-docker   no       no         dnf     -
+Package  Status    Installed  Plugin  Dependencies
+-------  --------  ---------  ------  -----------------
+neovim   enabled   yes        dnf     -
+claude   enabled   yes        -       bubblewrap, socat
+docker   disabled  no         dnf     -
+ollama   archived  yes        -       -
 ```
 
 #### `homeos package add`
@@ -551,6 +557,32 @@ Arguments:
   <PACKAGES>...  Package names
 ```
 
+#### `homeos package archive`
+
+Archive packages: mark them as removed from every machine. Sets `archived: true` in `homeos.yml`; the entry and the package directory stay in the repository as a tombstone, so the uninstall scripts reach every machine. On each machine, the next `homeos apply` uninstalls archived packages that are still installed there — including the machine that ran `archive`.
+
+```
+Usage: homeos package archive <PACKAGES>...
+
+Arguments:
+  <PACKAGES>...  Package names
+```
+
+Archiving is refused while non-archived packages depend on the target.
+
+The removal flow across machines: `archive` → `apply` on each machine → optionally `package remove` once no machine has it installed.
+
+#### `homeos package unarchive`
+
+Unarchive packages. The package returns with the enabled/disabled status it had before archiving.
+
+```
+Usage: homeos package unarchive <PACKAGES>...
+
+Arguments:
+  <PACKAGES>...  Package names
+```
+
 #### `homeos package info`
 
 Display package details.
@@ -562,12 +594,13 @@ Arguments:
   <PACKAGE>  Package name
 ```
 
-Shows enabled/installed status, plugin, dependencies, dependents, and script aliases.
+Shows enabled/archived/installed status, plugin, dependencies, dependents, and script aliases.
 
 ```
 $ homeos package info claude
 Package: claude
 Enabled: yes
+Archived: no
 Installed: yes
 Plugin: -
 Dependencies:
@@ -642,9 +675,11 @@ A confirmation prompt is shown before execution. On script failure, the error is
 | enabled + in state          | Skip (already installed) | Execute                 | Execute                 |
 | disabled + not in state     | Skip (disabled)          | Skip (disabled)         | Skip (not installed)    |
 | disabled + in state         | Skip (disabled)          | Skip (disabled)         | Execute                 |
+| archived + not in state     | Skip (archived)          | Skip (archived)         | Skip (not installed)    |
+| archived + in state         | Skip (archived)          | Skip (archived)         | Execute                 |
 
 > [!NOTE]
-> `uninstall` ignores the enabled/disabled status — its only concern is whether the package is in `state.yml`. After a successful uninstall, the package is automatically disabled in `homeos.yml`.
+> `uninstall` ignores the enabled/disabled/archived status — its only concern is whether the package is in `state.yml`. These commands never modify `homeos.yml`: uninstalling a package that is not archived leaves it declared as before, so the next `apply` can reinstall it. homeos prints a hint pointing at `homeos package archive` in that case.
 
 #### `homeos package install`
 
@@ -676,7 +711,7 @@ Options:
 
 #### `homeos package uninstall`
 
-Execute uninstall scripts. Disables packages in `homeos.yml` and removes them from `state.yml`. The package directory is not deleted.
+Execute uninstall scripts and remove the packages from `state.yml`. `homeos.yml` is not modified and the package directory is not deleted. To remove a package from every machine, use `homeos package archive` instead — `uninstall` only affects this machine.
 
 ```
 Usage: homeos package uninstall [OPTIONS] [PACKAGES]...

@@ -21,6 +21,7 @@ plugins:
 
 - `packages.<name>.script_aliases` redirects one action to another's script (e.g., `update` runs `install.sh`)
 - `enabled` defaults to `true` when omitted
+- `archived` defaults to `false` when omitted and is omitted from serialization when `false`; `true` marks a package no machine should have installed (see Package lifecycle). `enabled` keeps its last value underneath and resurfaces on unarchive
 - `depends_on` is omitted from serialization when empty
 - `plugin` and `params` are present only on plugin-backed packages
 - `plugins.<name>.url` is optional; absent for `plugin add --local` plugins, and the `url` field is omitted from the YAML when absent
@@ -93,12 +94,27 @@ Each action looks up `script_aliases.<action>` first; if present, runs the alias
 
 The subprocess inherits the user's stdin / stdout / stderr (it is not captured), so user-authored scripts can prompt interactively (e.g., for a `sudo` password).
 
+## Package lifecycle
+
+`homeos.yml` is the desired state shared across machines; `state.yml` is this machine's observed state; `apply` reconciles the two in both directions.
+
+- **enabled** (default) — should be installed on every machine.
+- **disabled** (`enabled: false`) — frozen: skipped by install / update, kept installed where it is installed.
+- **archived** (`archived: true`) — should not be installed anywhere: skipped by install / update, and `apply` uninstalls it wherever `state.yml` still records it. The entry and `packages/<name>/` stay in the repo as a tombstone, so the uninstall scripts reach every machine through git; `package remove` is an optional final cleanup once no machine has it installed. `archived` dominates `enabled`/`disabled` behaviour.
+
+Supporting rules:
+
+- Archiving a package that non-archived packages depend on is refused (`dependent-exists`), mirroring `package remove`. Adding a `depends_on` reference to an archived package is refused (`validation-error`).
+- Operate commands (`install` / `update` / `uninstall`) never edit `homeos.yml`. In particular, `uninstall` does not auto-disable (it did before the archived phase existed); after successfully uninstalling a non-archived package it emits a one-line stderr hint pointing at `package archive` (wording in `COMMAND_OUTPUT.md`).
+- `apply` reports `state.yml` entries that have no `homeos.yml` definition (report-only, nothing executed) — the safety net for entries removed before every machine uninstalled.
+
 ## Plan classification
 
 The planner classifies each requested package into exactly one bucket:
 
 - **enabled** — will run the action
 - **disabled** — `enabled: false`, skipped (uninstall ignores this and proceeds anyway)
+- **archived** — `archived: true`, skipped with `(archived)` (install / update only; a named uninstall of an archived package still executes). `apply` additionally plans an uninstall for every archived package present in `state.yml`, in reverse dependency order
 - **not_installed** — not in `state.yml`, skipped (update / uninstall only)
 - **already_installed** — in `state.yml`, skipped (install only)
 - **circular** — part of a `depends_on` cycle; skipped with `(circular dependency)` annotation, the rest of the plan continues

@@ -65,14 +65,15 @@ Each error condition below is annotated with `(reason: <kebab-id>)`. The full se
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Plan display | stdout | (see Plan Display section below) |
+| Plan display | stdout | (see Plan Display section below) — includes an uninstall section for archived packages still in `state.yml` |
 | Dry-run (`--dry-run`) | stdout | Plan display only; exits without prompt or execution |
 | User confirms | stdout | Executes with progress messages |
 | User declines | stdout | `Aborted.` |
-| Script execution | stdout | `Installing {name}...` / `done` or `Error:` then `FAILED` |
+| Script execution | stdout | `Installing {name}...` / `Updating {name}...` / `Uninstalling {name}...` then `done` or `Error:` then `FAILED` |
 | Script not found (per-package stdout) | stdout | `Error: Script not found: {path}` |
 | Script execution fails (per-package stdout) | stdout | `Error: Script failed with exit code {code}` |
 | Some packages fail | stdout | `Some packages failed` |
+| State orphans (report-only) | stdout | `The following state.yml entries have no package definition:` / `  {name}` — displayed after the skipped section; nothing is executed for them and they do not affect `is_empty` |
 
 ## homeos package list
 
@@ -80,10 +81,10 @@ Aliases: `ls`.
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Text mode | stdout | Table: `Package`, `Enabled`, `Installed`, `Plugin`, `Dependencies` columns (empty table if no packages) |
+| Text mode | stdout | Table: `Package`, `Status`, `Installed`, `Plugin`, `Dependencies` columns (empty table if no packages) |
 | JSON mode | stdout | JSON array of package objects (empty array if no packages) |
 
-In text mode, the `Plugin` column renders the backing plugin name (e.g., `dnf`, `winget`) or `-` when the package is not plugin-backed.
+In text mode, the `Plugin` column renders the backing plugin name (e.g., `dnf`, `winget`) or `-` when the package is not plugin-backed. The `Status` column renders `enabled`, `disabled`, or `archived`; `archived` wins over the underlying enabled/disabled value.
 
 JSON schema (one object per package, ordered alphabetically by name):
 
@@ -92,6 +93,7 @@ JSON schema (one object per package, ordered alphabetically by name):
   {
     "name": "claude",
     "enabled": true,
+    "archived": false,
     "installed": true,
     "plugin": null,
     "depends_on": ["bubblewrap", "socat"]
@@ -103,6 +105,7 @@ JSON schema (one object per package, ordered alphabetically by name):
 |-------|------|-------|
 | `name` | string | Package name (the `homeos.yml` key) |
 | `enabled` | boolean | Whether the package is enabled |
+| `archived` | boolean | Whether the package is archived |
 | `installed` | boolean | Whether the package is in `state.yml` |
 | `plugin` | string \| null | Backing plugin name from the package's `plugin:` field; `null` when absent |
 | `depends_on` | array of strings | Forward dependencies; empty array when none |
@@ -118,6 +121,7 @@ JSON schema (one object per package, ordered alphabetically by name):
 | Missing plugin params (error) | stderr | `Error: Missing required plugin parameters: {params}` (reason: `validation-error`) |
 | Invalid key=value pair (error, surfaced by clap) | stderr | `error: invalid value '{input}' for '--param <PARAM>': invalid key=value pair: no '=' found in '{input}'` |
 | Dependency not found (error) | stderr | `Error: Dependency '{dependency}' not found` (reason: `dependency-not-found`) |
+| Dependency archived (error) | stderr | `Error: Dependency '{dependency}' is archived` (reason: `validation-error`) |
 | Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` (reason: `circular-dependency`) |
 
 ## homeos package remove
@@ -149,6 +153,7 @@ JSON schema (one object per package, ordered alphabetically by name):
 | Success | stdout | `Package '{name}' now depends on '{dependency}'` |
 | Already depends | stdout | `Package '{name}' already depends on '{dependency}'` |
 | Dependency not found (error) | stderr | `Error: Dependency '{dependency}' not found` (reason: `dependency-not-found`) |
+| Dependency archived (error) | stderr | `Error: Dependency '{dependency}' is archived` (reason: `validation-error`) |
 | Circular dependency (error) | stderr | `Error: Circular dependency detected among packages: {names}` (reason: `circular-dependency`) |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
 
@@ -192,11 +197,28 @@ JSON schema (one object per package, ordered alphabetically by name):
 | Already disabled | stdout | `Package '{name}' is already disabled` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
 
+## homeos package archive
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Archived package '{name}'` |
+| Already archived | stdout | `Package '{name}' is already archived` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
+| Non-archived dependents exist (error) | stderr | `Error: Cannot archive package '{name}' because it is depended on by: {dependents}` (reason: `dependent-exists`; `{dependents}` lists only non-archived dependents) |
+
+## homeos package unarchive
+
+| Condition | Dest | Output |
+|-----------|------|--------|
+| Success | stdout | `Unarchived package '{name}'` |
+| Not archived | stdout | `Package '{name}' is not archived` |
+| Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
+
 ## homeos package info
 
 | Condition | Dest | Output |
 |-----------|------|--------|
-| Text mode | stdout | Package details: enabled, installed, plugin, dependencies, dependents, script aliases, scripts |
+| Text mode | stdout | Package details: enabled, archived (an `Archived: yes` / `Archived: no` line after `Enabled:`), installed, plugin, dependencies, dependents, script aliases, scripts |
 | JSON mode | stdout | JSON object describing the package |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
 
@@ -206,6 +228,7 @@ JSON schema:
 {
   "name": "claude",
   "enabled": true,
+  "archived": false,
   "installed": true,
   "plugin": null,
   "params": {},
@@ -227,6 +250,7 @@ JSON schema:
 |-------|------|-------|
 | `name` | string | Package name (the `homeos.yml` key) |
 | `enabled` | boolean | Whether the package is enabled |
+| `archived` | boolean | Whether the package is archived |
 | `installed` | boolean | Whether the package is in `state.yml` |
 | `plugin` | string or null | Plugin name; `null` when the package has no plugin |
 | `params` | object | Plugin parameters as a `key → value` map; empty object when no params |
@@ -292,6 +316,9 @@ JSON schema:
 | Script execution fails (per-package stdout) | stdout | `Error: Script failed with exit code {code}` |
 | Package not found (error) | stderr | `Error: Package '{name}' not found` (reason: `package-not-found`) |
 | Some packages fail | stdout | `Some packages failed` |
+| Successful uninstall of a non-archived package | stderr | `homeos: '{name}' is not archived — apply may reinstall it. To remove it from every machine: homeos package archive {name}` (one line per package, after that package's successful uninstall; identical across output modes) |
+
+`uninstall` does not modify `homeos.yml` (the pre-archived auto-disable behaviour is removed).
 
 ## homeos plugin list
 
@@ -504,11 +531,14 @@ The following packages will be {installed|updated|uninstalled}:
   {name} (depends on {package})     # uninstall only — pulled in as a reverse dependency
 The following packages will be skipped:
   {name} (disabled)
+  {name} (archived)                      # install/update only — apply plans an uninstall instead when the package is still in state.yml
   {name} (already installed)
   {name} (not installed)
   {name} (circular dependency)
   {name} (dependency disabled: {dep})    # install/apply only — dep chain includes a disabled package
   {name} (script unmodified: {script})   # action script still contains the `Generated by homeos` marker
+The following state.yml entries have no package definition:    # apply only, report-only
+  {name}
 
 Proceed? [y/N]
 ```
@@ -557,12 +587,14 @@ Plan envelope:
   ],
   "skipped": [
     {"name": "docker", "reason": "disabled", "plugin": null, "detail": null},
+    {"name": "ollama", "reason": "archived", "plugin": null, "detail": null},
     {"name": "neovim", "reason": "already-installed", "plugin": null, "detail": null},
     {"name": "ripgrep", "reason": "not-installed", "plugin": null, "detail": null},
     {"name": "a", "reason": "circular-dependency", "plugin": null, "detail": null},
     {"name": "claude", "reason": "dependency-disabled", "plugin": null, "detail": "bubblewrap"},
     {"name": "neovim", "reason": "script-unmodified", "plugin": null, "detail": "install.sh"}
-  ]
+  ],
+  "orphaned": ["old-package"]
 }
 ```
 
@@ -572,8 +604,9 @@ Plan envelope:
 | `windows_powershell_fallback` | boolean | `true` on a Windows host where `pwsh` is not on `PATH` and homeos falls back to Windows PowerShell 5.1 for script execution; `false` on every other host |
 | `install` | array of objects | Packages that will be installed; empty for `update` / `uninstall` commands |
 | `update` | array of objects | Packages that will be updated; empty for `install` / `uninstall` commands |
-| `uninstall` | array of objects | Packages that will be uninstalled; empty for `install` / `update` / `apply` |
+| `uninstall` | array of objects | Packages that will be uninstalled; empty for `install` / `update` commands. For `apply`, the archived packages still present in `state.yml`, in reverse dependency order |
 | `skipped` | array of objects | Packages excluded from execution, with reason annotations |
+| `orphaned` | array of strings | `apply` only: `state.yml` entries with no `homeos.yml` definition, report-only (nothing is executed and they do not affect `is_empty`); empty array otherwise |
 
 Per-package entry in `install` / `update`:
 
@@ -596,7 +629,7 @@ Per-package entry in `skipped`:
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | string | Package name |
-| `reason` | string | One of `disabled`, `already-installed`, `not-installed`, `circular-dependency`, `dependency-disabled`, `script-unmodified` |
+| `reason` | string | One of `disabled`, `archived`, `already-installed`, `not-installed`, `circular-dependency`, `dependency-disabled`, `script-unmodified` |
 | `plugin` | string or null | Plugin name when the package uses one; `null` otherwise |
 | `detail` | string or null | For `dependency-disabled`, the unavailable dep name. For `script-unmodified`, the script filename (e.g., `install.sh`). `null` for other reasons. |
 
