@@ -161,6 +161,7 @@ fn format_arg_entry(arg: &Arg) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn test_render_substitutes_version_marker() {
@@ -278,43 +279,53 @@ mod tests {
         assert!(rendered.contains("--json"));
     }
 
+    /// Every reason string declared in the `reasons` module of `src/error.rs`,
+    /// parsed from the source itself so that a newly added constant cannot
+    /// escape the rendered reason table unnoticed.
+    fn declared_reasons() -> BTreeSet<String> {
+        const ERROR_RS: &str = include_str!("../error.rs");
+        ERROR_RS
+            .lines()
+            .skip_while(|line| !line.starts_with("pub mod reasons {"))
+            .skip(1)
+            .take_while(|line| !line.starts_with('}'))
+            .filter_map(|line| {
+                let declaration = line.trim().strip_prefix("pub const ")?;
+                let value = declaration.split_once("= \"")?.1;
+                value.strip_suffix("\";").map(str::to_string)
+            })
+            .collect()
+    }
+
+    /// The reasons documented in the rendered reason table. It is the only
+    /// table in the template whose rows open with a backticked cell, so the
+    /// prefix alone identifies its rows.
+    fn documented_reasons(rendered: &str) -> BTreeSet<String> {
+        rendered
+            .lines()
+            .filter_map(|line| line.strip_prefix("| `"))
+            .filter_map(|row| row.split_once('`').map(|(reason, _)| reason.to_string()))
+            .collect()
+    }
+
     #[test]
     fn test_render_enumerates_canonical_error_reasons() {
-        // Arrange — spot-check a representative subset of the canonical reasons
-        let reasons = [
-            "package-not-found",
-            "plugin-not-found",
-            "already-exists",
-            "validation-error",
-            "circular-dependency",
-            "dependency-not-found",
-            "dependent-exists",
-            "script-failed",
-            "script-not-found",
-            "script-unmodified",
-            "git-clone-failed",
-            "not-a-valid-homeos-repo",
-            "not-a-valid-homeos-plugin",
-            "not-initialized",
-            "data-dir-not-empty",
-            "data-dir-not-found",
-            "directory-not-found",
-            "not-found-on-github",
-            "network-error",
-            "package-installed",
-            "internal-error",
-        ];
+        // Arrange — the full set of reasons, straight from src/error.rs
+        let declared = declared_reasons();
+        assert!(
+            declared.len() >= 20,
+            "failed to parse the reasons module of src/error.rs, got: {declared:?}"
+        );
 
         // Act
         let rendered = render();
 
-        // Assert
-        for reason in reasons {
-            assert!(
-                rendered.contains(reason),
-                "rendered template missing canonical reason: {reason}"
-            );
-        }
+        // Assert — the table matches src/error.rs exactly, in both directions
+        assert_eq!(
+            documented_reasons(&rendered),
+            declared,
+            "rendered reason table drifted from the reasons module of src/error.rs"
+        );
     }
 
     #[test]
