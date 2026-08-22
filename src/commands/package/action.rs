@@ -467,6 +467,28 @@ pub fn run_action<R: BufRead, W: Write>(
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_action_to(
+        ctx,
+        packages,
+        action,
+        dry_run,
+        reader,
+        writer,
+        &mut std::io::stderr(),
+    )
+}
+
+/// `run_action` with the stderr sink injected as well, so the post-uninstall
+/// archive hint can be asserted without touching the real process stderr.
+pub(crate) fn run_action_to<R: BufRead, W: Write, E: Write>(
+    ctx: &Context,
+    packages: &[String],
+    action: Action,
+    dry_run: bool,
+    reader: &mut R,
+    writer: &mut W,
+    stderr: &mut E,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load(&ctx.config_path())?;
 
     let state_path = ctx.state_path();
@@ -597,6 +619,9 @@ pub fn run_action<R: BufRead, W: Write>(
                     writeln!(writer, "done")?;
                 }
                 update_state_per_package(ctx, action, name)?;
+                if let Some(hint) = uninstall_archive_hint(action, pkg_config, name) {
+                    writeln!(stderr, "{hint}")?;
+                }
             }
             Err(e) => {
                 let err_string = e.to_string();
@@ -619,6 +644,9 @@ pub fn run_action<R: BufRead, W: Write>(
 }
 
 /// Update state.yml for a single package after successful script execution.
+/// `homeos.yml` is never touched: install / update / uninstall are Operate
+/// commands, and the desired state they would have edited is the user's to change
+/// via `package disable` / `package archive`.
 fn update_state_per_package(
     ctx: &Context,
     action: Action,
@@ -644,20 +672,30 @@ fn update_state_per_package(
                 state.installed.retain(|n| n != name);
                 state.save(&state_path)?;
             }
-
-            let config_path = ctx.config_path();
-            let mut config = Config::load(&config_path)?;
-            if let Some(pkg) = config.packages.get_mut(name)
-                && pkg.enabled
-            {
-                pkg.enabled = false;
-                config.save(&config_path)?;
-            }
         }
         Action::Update => {}
     }
 
     Ok(())
+}
+
+/// The one-line stderr hint emitted after a package is successfully uninstalled
+/// while `homeos.yml` still declares it as not archived: the declaration is
+/// untouched, so the next `apply` on this machine reinstalls it. Archived packages
+/// are already marked for removal everywhere and get no hint. Returns `None` for
+/// install and update.
+fn uninstall_archive_hint(
+    action: Action,
+    pkg_config: &PackageConfig,
+    name: &str,
+) -> Option<String> {
+    if action != Action::Uninstall || pkg_config.archived {
+        return None;
+    }
+    Some(format!(
+        "homeos: '{name}' is not archived — apply may reinstall it. \
+         To remove it from every machine: homeos package archive {name}"
+    ))
 }
 
 /// Resolve the script filename for a given action, considering aliases.
@@ -2100,7 +2138,7 @@ mod tests {
     }
 
     #[test]
-    fn test_uninstall_disables_package_in_config() {
+    fn test_uninstall_leaves_config_byte_identical() {
         // Arrange
         let marker_dir = TempDir::new().unwrap();
         let marker_path = marker_dir.path().join("uninstall_marker");
@@ -2114,6 +2152,7 @@ mod tests {
             installed: vec!["neovim".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let before = std::fs::read(ctx.config_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -2128,13 +2167,13 @@ mod tests {
         )
         .unwrap();
 
-        // Assert
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages["neovim"].enabled);
+        // Assert — uninstall is machine-local: homeos.yml is never rewritten
+        assert_eq!(std::fs::read(ctx.config_path()).unwrap(), before);
+        assert!(marker_path.exists());
     }
 
     #[test]
-    fn test_uninstall_disables_multiple_packages_in_config() {
+    fn test_uninstall_leaves_config_byte_identical_for_multiple_packages() {
         // Arrange
         let marker_dir = TempDir::new().unwrap();
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n  ripgrep: {}\n");
@@ -2153,6 +2192,7 @@ mod tests {
             installed: vec!["neovim".to_string(), "ripgrep".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let before = std::fs::read(ctx.config_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -2168,13 +2208,13 @@ mod tests {
         .unwrap();
 
         // Assert
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages["neovim"].enabled);
-        assert!(!config.packages["ripgrep"].enabled);
+        assert_eq!(std::fs::read(ctx.config_path()).unwrap(), before);
+        let state = State::load(&ctx.state_path()).unwrap();
+        assert!(state.installed.is_empty());
     }
 
     #[test]
-    fn test_uninstall_does_not_disable_on_failure() {
+    fn test_uninstall_leaves_config_byte_identical_on_failure() {
         // Arrange: neovim has no script, so uninstall will fail
         let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
         std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
@@ -2182,6 +2222,7 @@ mod tests {
             installed: vec!["neovim".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let before = std::fs::read(ctx.config_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
@@ -2195,13 +2236,12 @@ mod tests {
             &mut output,
         );
 
-        // Assert: package should still be enabled since uninstall failed
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(config.packages["neovim"].enabled);
+        // Assert
+        assert_eq!(std::fs::read(ctx.config_path()).unwrap(), before);
     }
 
     #[test]
-    fn test_uninstall_already_disabled_stays_disabled() {
+    fn test_uninstall_of_disabled_package_leaves_config_byte_identical() {
         // Arrange
         let marker_dir = TempDir::new().unwrap();
         let marker_path = marker_dir.path().join("uninstall_marker");
@@ -2215,10 +2255,11 @@ mod tests {
             installed: vec!["neovim".to_string()],
         };
         state.save(&ctx.state_path()).unwrap();
+        let before = std::fs::read(ctx.config_path()).unwrap();
         let mut input = std::io::Cursor::new(b"y\n".to_vec());
         let mut output = Vec::new();
 
-        // Act — disabled packages are skipped by the plan, so uninstall is a no-op
+        // Act — uninstall ignores the disabled status and executes
         run_action(
             &ctx,
             &["neovim".to_string()],
@@ -2229,9 +2270,256 @@ mod tests {
         )
         .unwrap();
 
-        // Assert: package remains disabled
-        let config = Config::load(&ctx.config_path()).unwrap();
-        assert!(!config.packages["neovim"].enabled);
+        // Assert
+        assert_eq!(std::fs::read(ctx.config_path()).unwrap(), before);
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_uninstall_hints_at_archive_for_non_archived_package() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("uninstall_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        run_action_to(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        )
+        .unwrap();
+
+        // Assert
+        assert_eq!(
+            String::from_utf8(errors).unwrap(),
+            "homeos: 'neovim' is not archived — apply may reinstall it. \
+             To remove it from every machine: homeos package archive neovim\n"
+        );
+    }
+
+    #[test]
+    fn test_uninstall_does_not_hint_for_archived_package() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("uninstall_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  ollama:\n    archived: true\n",
+            "ollama",
+            "uninstall",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["ollama".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        run_action_to(
+            &ctx,
+            &["ollama".to_string()],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        )
+        .unwrap();
+
+        // Assert — an archived package is already marked for removal everywhere
+        assert!(errors.is_empty());
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_uninstall_hint_is_identical_in_json_mode() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("uninstall_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "uninstall",
+            &marker_path,
+        );
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let ctx = ctx.with_output_format(OutputFormat::Json);
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        run_action_to(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        )
+        .unwrap();
+
+        // Assert — stdout differs between modes, stderr does not
+        assert_eq!(
+            String::from_utf8(errors).unwrap(),
+            "homeos: 'neovim' is not archived — apply may reinstall it. \
+             To remove it from every machine: homeos package archive neovim\n"
+        );
+    }
+
+    #[test]
+    fn test_uninstall_hints_once_per_package() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let yaml = "packages:\n  neovim: {}\n  ollama:\n    archived: true\n  ripgrep: {}\n";
+        let (_tmp, ctx) = fixture(yaml);
+        for pkg in &["neovim", "ollama", "ripgrep"] {
+            let marker_path = marker_dir.path().join(format!("{pkg}_marker"));
+            let pkg_dir = ctx.packages_dir().join(pkg);
+            std::fs::create_dir_all(&pkg_dir).unwrap();
+            let ext = script_extension();
+            std::fs::write(
+                pkg_dir.join(format!("uninstall.{ext}")),
+                marker_script(&marker_path),
+            )
+            .unwrap();
+        }
+        let state = State {
+            installed: vec![
+                "neovim".to_string(),
+                "ollama".to_string(),
+                "ripgrep".to_string(),
+            ],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        run_action_to(
+            &ctx,
+            &[
+                "neovim".to_string(),
+                "ollama".to_string(),
+                "ripgrep".to_string(),
+            ],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        )
+        .unwrap();
+
+        // Assert — exactly the two non-archived packages are hinted
+        let written = String::from_utf8(errors).unwrap();
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().any(|l| l.contains("'neovim' is not archived")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("'ripgrep' is not archived"))
+        );
+        assert!(!written.contains("ollama"));
+    }
+
+    #[test]
+    fn test_uninstall_does_not_hint_on_failure() {
+        // Arrange: neovim has no script, so uninstall will fail
+        let (_tmp, ctx) = fixture("packages:\n  neovim: {}\n");
+        std::fs::create_dir_all(ctx.packages_dir().join("neovim")).unwrap();
+        let state = State {
+            installed: vec!["neovim".to_string()],
+        };
+        state.save(&ctx.state_path()).unwrap();
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        let _ = run_action_to(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Uninstall,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        );
+
+        // Assert
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_install_does_not_emit_archive_hint() {
+        // Arrange
+        let marker_dir = TempDir::new().unwrap();
+        let marker_path = marker_dir.path().join("install_marker");
+        let (_tmp, ctx) = fixture_with_script(
+            "packages:\n  neovim: {}\n",
+            "neovim",
+            "install",
+            &marker_path,
+        );
+        let mut input = std::io::Cursor::new(b"y\n".to_vec());
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+
+        // Act
+        run_action_to(
+            &ctx,
+            &["neovim".to_string()],
+            Action::Install,
+            false,
+            &mut input,
+            &mut output,
+            &mut errors,
+        )
+        .unwrap();
+
+        // Assert
+        assert!(errors.is_empty());
+        assert!(marker_path.exists());
+    }
+
+    #[test]
+    fn test_uninstall_archive_hint_returns_none_for_install_and_update() {
+        // Arrange
+        let pkg_config = PackageConfig::default();
+
+        // Act
+        let install = uninstall_archive_hint(Action::Install, &pkg_config, "neovim");
+        let update = uninstall_archive_hint(Action::Update, &pkg_config, "neovim");
+
+        // Assert
+        assert_eq!(install, None);
+        assert_eq!(update, None);
     }
 
     #[test]
