@@ -811,7 +811,6 @@ homeos apply
 | [claude](packages/claude/) | — | [bubblewrap](packages/bubblewrap/), [socat](packages/socat/) | Claude Code CLI. |
 | [docker](packages/docker/) (disabled) | — | — | Container runtime. |
 | [neovim](packages/neovim/) | [dnf](plugins/dnf/) | — | Primary text editor. |
-| [ollama](packages/ollama/) (archived) | — | — | Local LLM runtime. |
 
 ## Plugins
 
@@ -831,12 +830,15 @@ homeos apply
 
 ### Filling in the tables
 
-**Packages table** — one row per entry in `homeos.yml`'s `packages`:
+**Packages table** — one row per entry in `homeos.yml`'s `packages` whose
+`archived` is not `true`. Archived entries are machine-reconciliation
+tombstones, not part of the setup a human reader is looking at, so they get
+no row at all; `homeos package list` (its `Status` column reports `enabled` /
+`disabled` / `archived`) and `homeos package info` (its `Archived:` line) are
+where to look for them.
 
 - *Package*: link the name to `packages/<name>/` (relative path). Suffix
-  with ` (archived)` when the package's `archived` is `true`, otherwise with
-  ` (disabled)` when its `enabled` is `false`. Archived wins: `archived`
-  dominates the enabled/disabled value, and the suffixes never combine.
+  with ` (disabled)` when the package's `enabled` is `false`.
 - *Plugin*: if set, link to `plugins/<plugin>/`. Otherwise use `—`.
 - *Dependencies*: comma-separated list from `depends_on`, each name
   linked to `packages/<name>/` like the *Package* column (dependencies

@@ -400,14 +400,15 @@ mod tests {
     }
 
     #[test]
-    fn test_render_readme_package_table_marks_archived_over_disabled() {
+    fn test_render_readme_package_table_excludes_archived_packages() {
         // Arrange & Act
         let rendered = render();
 
-        // Assert — the archived suffix is documented and wins over the disabled one
-        assert!(rendered.contains("` (archived)` when the package's `archived` is `true`"));
-        assert!(rendered.contains("(packages/ollama/) (archived)"));
-        assert!(rendered.contains("the suffixes never combine"));
+        // Assert — archived packages get no row, and the example table shows none
+        assert!(rendered.contains("`archived` is not `true`"));
+        assert!(!rendered.contains("(packages/ollama/) (archived)"));
+        // Assert — the disabled suffix rule survives untouched
+        assert!(rendered.contains("` (disabled)` when the package's `enabled` is `false`"));
     }
 
     #[test]
