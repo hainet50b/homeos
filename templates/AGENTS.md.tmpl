@@ -598,21 +598,33 @@ So ask which the user means, and don't assume the broader one:
 
 - **Just this machine** — the commands above are the whole job. Nothing to
   commit; the installation state is gitignored.
-- **Every machine** — archive the package, then apply. `archive` marks
-  `archived: true` in `homeos.yml`; the entry and `packages/<name>/` stay in
-  the repo as a tombstone so the uninstall scripts reach every machine.
+- **Every machine** — archive the package, then uninstall it here. `archive`
+  marks `archived: true` in `homeos.yml`; the entry and `packages/<name>/`
+  stay in the repo as a tombstone so the uninstall scripts reach every
+  machine. Archive first: the "not archived — apply may reinstall it" hint
+  only fires for non-archived packages, so the uninstall that follows stays
+  quiet.
 
 ```sh
 homeos --yes --json package archive neovim
-homeos --json apply --dry-run                # plan shows: will be uninstalled
-homeos --yes --json apply
+homeos --json package uninstall neovim --dry-run
+homeos --yes --json package uninstall neovim
 git commit -am "Archive neovim"
 ```
 
-Push the commit (with approval) so the other machines pick the tombstone up
-on their next pull + `apply`. `homeos` refuses to archive a package that
-non-archived packages still depend on — archive or detach the dependents
-first.
+That `package uninstall neovim` removes it from *this* machine, right now.
+It is the narrowest command that does the job — you know the target by name
+and it is installed here — so there is no reason to widen to `apply`, which
+would also install every other enabled package not yet in state and update
+the ones that are. `uninstall` ignores archived status, so it runs
+unconditionally.
+
+*Every other* machine is reconciled by `apply`, later and on its own: each
+one picks the tombstone up on its next pull and uninstalls the package as
+part of that `apply` run. Nobody runs `apply` here for this. Push the commit
+(with approval) so that next pull has something to find. `homeos` refuses to
+archive a package that non-archived packages still depend on — archive or
+detach the dependents first.
 
 Reversal is `homeos package unarchive <name>`: it clears `archived` and the
 package's previous enabled/disabled value resurfaces underneath.

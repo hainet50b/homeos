@@ -366,14 +366,18 @@ mod tests {
     }
 
     #[test]
-    fn test_render_documents_archive_apply_as_removal_from_every_machine() {
+    fn test_render_documents_archive_then_uninstall_as_removal_from_every_machine() {
         // Arrange & Act
         let rendered = render();
 
-        // Assert — archive + apply is the every-machine removal path
+        // Assert — archive + narrow uninstall is the every-machine removal path
         assert!(rendered.contains("homeos --yes --json package archive neovim"));
         assert!(rendered.contains("tombstone"));
         assert!(rendered.contains("homeos package unarchive <name>"));
+        assert!(rendered.contains("package uninstall neovim"));
+        // Assert — `apply` remains the mechanism the *other* machines use
+        assert!(rendered.contains("reconciled by `apply`"));
+        assert!(rendered.contains("next pull"));
     }
 
     #[test]
